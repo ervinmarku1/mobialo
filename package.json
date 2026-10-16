@@ -1,0 +1,7 @@
+{
+  "name": "mobialo-storefront",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bilingual MOBIALO eSIM storefront preview",
+  "scripts": { "dev": "node scripts/serve.mjs", "check": "node --check dist/app.js" }
+}
