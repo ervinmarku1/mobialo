@@ -8,12 +8,12 @@ const dataFor = plan => plan.dataAmount && plan.dataUnit ? `${plan.dataAmount} $
 const durationFor = plan => plan.validityHours ? `${plan.validityHours%24===0?plan.validityHours/24:plan.validityHours} ${plan.validityHours%24===0?t('days'):((lang==='it'?"ore":lang==='sq'?'orë':'hours'))}` : ((lang==='it'?"Vedi dettagli":lang==='sq'?'Shiko detajet':'See details'));
 const livePlansFor = destination => destination.plans;
 
-Object.assign(translations.en, {demoPrices:'MobiMatter · Live catalog · EUR',previewNote:'Live plans and prices in EUR. Checkout is not available yet.',review:'View plan details',total:'Plan price',notLive:'This is a live catalog preview. Checkout is not available; no order or eSIM will be created.',noResults:'No matching destinations. Try another country or region.'});
-Object.assign(translations.sq, {demoPrices:'MobiMatter · Katalog real · EUR',previewNote:'Paketa dhe çmime reale në EUR. Blerjet nuk janë ende të disponueshme.',review:'Shiko detajet e paketës',total:'Çmimi i paketës',notLive:'Ky është prezantimi i katalogut real. Blerjet nuk janë hapur; nuk krijohet porosi apo eSIM.',noResults:'Nuk u gjet destinacioni. Provo një shtet ose rajon tjetër.'});
+Object.assign(translations.en, {demoPrices:'MOBIALO · Live catalog · EUR',previewNote:'Live plans and prices in EUR. Checkout is not available yet.',review:'View plan details',total:'Plan price',notLive:'This is a live catalog preview. Checkout is not available; no order or eSIM will be created.',noResults:'No matching destinations. Try another country or region.'});
+Object.assign(translations.sq, {demoPrices:'MOBIALO · Katalog real · EUR',previewNote:'Paketa dhe çmime reale në EUR. Blerjet nuk janë ende të disponueshme.',review:'Shiko detajet e paketës',total:'Çmimi i paketës',notLive:'Ky është prezantimi i katalogut real. Blerjet nuk janë hapur; nuk krijohet porosi apo eSIM.',noResults:'Nuk u gjet destinacioni. Provo një shtet ose rajon tjetër.'});
 translations.en.faq[3]=['Do these plans include calls and texts?','Inclusions vary by plan. Read the provider’s package details before purchasing.'];
 translations.sq.faq[3]=['A përfshijnë paketat thirrje dhe SMS?','Përfshirjet ndryshojnë sipas paketës. Lexo detajet e ofruesit para blerjes.'];
-translations.en.faq[4]=['Can I buy a plan on MOBIALO now?','Not yet. The catalog shows live MobiMatter plans, but payments and eSIM ordering are not connected.'];
-translations.sq.faq[4]=['A mund të blej tani në MOBIALO?','Ende jo. Katalogu shfaq paketat reale të MobiMatter, por pagesat dhe porositë e eSIM nuk janë lidhur.'];
+translations.en.faq[4]=['Can I buy a plan on MOBIALO now?','Not yet. The catalog shows live MOBIALO plans, but payments and eSIM ordering are not connected.'];
+translations.sq.faq[4]=['A mund të blej tani në MOBIALO?','Ende jo. Katalogu shfaq paketat reale të MOBIALO, por pagesat dhe porositë e eSIM nuk janë lidhur.'];
 
 function buildDestinations(products) {
   const countries=new Map(),regions=new Map(),globalPlans=[];
