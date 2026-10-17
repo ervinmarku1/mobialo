@@ -7,26 +7,32 @@ const translations = {
   }
 };
 
+Object.assign(translations.en, {
+  signIn: 'Sign in', joinAccount: 'Join',
+  howCheck: 'Before you start, check that your phone supports eSIM.',
+  howCheckLink: 'Check compatible phones ↗',
+  step1: 'Choose your destination & plan',
+  step1text: 'Find your destination and choose the data allowance and duration that fit your trip.',
+  step2: 'Install your eSIM',
+  step2text: 'Connect to Wi-Fi and follow your plan’s instructions to install the eSIM on your compatible phone.',
+  step3: 'Connect and enjoy your trip',
+  step3text: 'At your destination, activate your plan as instructed and select your eSIM for mobile data.'
+});
+Object.assign(translations.sq, {
+  signIn: 'Hyr', joinAccount: 'Bashkohu',
+  howCheck: 'Para se të fillosh, kontrollo nëse telefoni yt mbështet eSIM.',
+  howCheckLink: 'Shiko telefonat e përshtatshëm ↗',
+  step1: 'Zgjidh destinacionin dhe paketën',
+  step1text: 'Gjej destinacionin dhe zgjidh sasinë e internetit e kohëzgjatjen që i përshtaten udhëtimit tënd.',
+  step2: 'Instalo eSIM tënde',
+  step2text: 'Lidhu me Wi-Fi dhe ndiq udhëzimet e paketës për të instaluar eSIM në telefonin tënd të përshtatshëm.',
+  step3: 'Lidhu dhe shijo udhëtimin',
+  step3text: 'Në destinacion, aktivizo paketën sipas udhëzimeve dhe zgjidh eSIM për internetin celular.'
+});
+
 // Demonstration data only. Replace through a server-side catalog adapter when
 // MobiMatter is integrated. Partner credentials must never be added to this file.
-const catalog = [
-  {id:'al',en:'Albania',sq:'Shqipëri',price:4.5,type:'local'},
-  {id:'tr',en:'Turkey',sq:'Turqi',price:3.5,type:'local'},
-  {id:'us',en:'United States',sq:'Shtetet e Bashkuara',price:4,type:'local',aliases:'USA America Amerikë'},
-  {id:'it',en:'Italy',sq:'Itali',price:3.9,type:'local'},
-  {id:'de',en:'Germany',sq:'Gjermani',price:3.9,type:'local'},
-  {id:'jp',en:'Japan',sq:'Japoni',price:4.5,type:'local'},
-  {id:'gb',en:'United Kingdom',sq:'Mbretëria e Bashkuar',price:4,type:'local',aliases:'UK Britain England Angli'},
-  {id:'fr',en:'France',sq:'Francë',price:3.9,type:'local'},
-  {id:'ae',en:'United Arab Emirates',sq:'Emiratet e Bashkuara',price:5.5,type:'local',aliases:'Dubai UAE Abu Dhabi'},
-  {id:'es',en:'Spain',sq:'Spanjë',price:3.9,type:'local'},
-  {id:'ch',en:'Switzerland',sq:'Zvicër',price:4.9,type:'local'},
-  {id:'gr',en:'Greece',sq:'Greqi',price:3.9,type:'local'},
-  {id:'eu',en:'Europe',sq:'Evropë',price:5.5,type:'regional',symbol:'◎'},
-  {id:'balkan',en:'Balkans',sq:'Ballkani',price:6.5,type:'regional',symbol:'◎'},
-  {id:'asia',en:'Asia',sq:'Azi',price:7,type:'regional',symbol:'◎'},
-  {id:'global',en:'Global',sq:'Globale',price:9.5,type:'global',symbol:'◉'}
-];
+let catalog = [];
 let lang = 'en';
 try { lang = localStorage.getItem('mobialo-language') === 'sq' ? 'sq' : 'en'; } catch {}
 let activeTab = 'local';
@@ -35,17 +41,43 @@ let query = '';
 let selectedDestination = null;
 let selectedPlan = 1;
 let modalView = null;
+let suggestionIndex = -1;
+let suggestions = [];
 const $ = selector => document.querySelector(selector);
 const t = key => translations[lang][key];
 const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 const money = value => new Intl.NumberFormat(lang === 'sq' ? 'sq-AL' : 'en-IE', {style:'currency',currency:'EUR'}).format(value);
-const plansFor = destination => [
-  {gb:1,days:7,price:destination.price},
-  {gb:5,days:30,price:Math.round(destination.price * 2.7 * 100)/100},
-  {gb:10,days:30,price:Math.round(destination.price * 4.3 * 100)/100}
-];
+const plansFor = destination => destination.plans || [];
 function flag(destination) {
   return `<span class="flag" aria-hidden="true">${destination.symbol || `<img src="https://flagcdn.com/w80/${destination.id}.png" alt="" loading="lazy">`}</span>`;
+}
+function closeSuggestions() {
+  $('#search-suggestions').hidden = true;
+  $('#search').setAttribute('aria-expanded', 'false');
+  $('#search').removeAttribute('aria-activedescendant');
+  suggestionIndex = -1;
+}
+function renderSuggestions() {
+  const term = normalize(query);
+  suggestions = term ? catalog.filter(item => normalize(`${item.en} ${item.sq} ${item.aliases || ''}`).includes(term)) : [];
+  suggestionIndex = -1;
+  const list = $('#search-suggestions');
+  list.innerHTML = suggestions.length ? suggestions.map(item => `<div role="option" aria-selected="false" id="suggestion-${item.id}" data-suggestion="${item.id}" class="search-option">${flag(item)}<span><strong>${item[lang]}</strong><small>${lang === 'sq' ? 'Shiko të gjitha paketat' : 'View all plans'}</small></span><span class="suggestion-price">${t('from')} ${money(item.price)} <span aria-hidden="true">↗</span></span></div>`).join('') : `<div class="search-empty">${t('noResults')}</div>`;
+  list.hidden = !term;
+  list.setAttribute('aria-label', t('searching'));
+  $('#search').setAttribute('aria-expanded', String(!!term));
+  $('#search').removeAttribute('aria-activedescendant');
+  $('#search-announcement').textContent = term ? `${suggestions.length} ${t('results')}` : '';
+}
+function chooseDestination(item) {
+  if (!item) return;
+  selectedDestination = item;
+  selectedPlan = 0;
+  query = item[lang];
+  $('#search').value = query;
+  renderCatalog();
+  closeSuggestions();
+  openModal('plans');
 }
 function renderCatalog() {
   const term = normalize(query);
@@ -84,6 +116,7 @@ function setLanguage(value) {
   $('.city-photo img').alt = lang === 'sq' ? 'Çatitë e Parisit dhe Kulla Eifel' : 'Paris rooftops and the Eiffel Tower';
   $('#faq-list').innerHTML = t('faq').map(([question,answer]) => `<details><summary>${question}</summary><p>${answer}</p></details>`).join('');
   renderCatalog();
+  closeSuggestions();
   if (modalView) renderModal();
   try {localStorage.setItem('mobialo-language',lang);} catch {}
 }
@@ -93,12 +126,14 @@ function switchTab(type) {
   $('#search').value = '';
   expanded = false;
   renderCatalog();
+  closeSuggestions();
 }
 function scrollToCatalog() {$('#destinations').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});}
 function renderModal() {
   const content = $('#modal-content');
+  $('#modal').classList.toggle('device-dialog', modalView === 'device');
   if (modalView === 'device') {
-    content.innerHTML = `<div class="modal-eyebrow">MOBIALO · eSIM</div><h2 id="modal-title">${t('deviceTitle')}</h2><p class="modal-subtitle">${t('deviceIntro')}</p><ol class="guide-list">${t('deviceSteps').map(step => `<li>${step}</li>`).join('')}</ol><p class="modal-note">${t('deviceNote')}</p><button class="button modal-action" data-close>${t('gotIt')}</button>`;
+    content.innerHTML = `<div class="modal-eyebrow">MOBIALO · eSIM</div><h2 id="modal-title">${t('deviceTitle')}</h2><p class="modal-subtitle">${t('deviceIntro')}</p><label class="device-search-label" for="device-search">${lang === 'sq' ? 'Kërko modelin e telefonit' : 'Search your phone model'}</label><input id="device-search" class="device-search" type="search" placeholder="iPhone 15, Galaxy S24, Pixel 9..." autocomplete="off"><p class="device-updated">${lang === 'sq' ? 'Modele të përzgjedhura · Kontrolluar më 16 tetor 2026' : 'Selected models · Checked 16 October 2026'}</p><div id="device-results">${deviceListMarkup()}</div><h3 class="device-check-heading">${lang === 'sq' ? 'Para se të blesh' : 'Before you buy'}</h3><ol class="guide-list">${t('deviceSteps').map(step => `<li>${step}</li>`).join('')}</ol><p class="modal-note">${t('deviceNote')}</p><button class="button modal-action" data-close>${t('gotIt')}</button>`;
   } else if (modalView === 'plans') {
     content.innerHTML = `<div class="modal-eyebrow">${t('demoPrices')}</div><div class="modal-heading">${flag(selectedDestination)}<h2 id="modal-title">${selectedDestination[lang]} eSIM</h2></div><p class="modal-subtitle">${t('choosePlan')}</p><div class="plan-list" role="radiogroup" aria-label="${t('choosePlan')}">${plansFor(selectedDestination).map((plan,index) => `<label class="plan-option"><input type="radio" name="plan" value="${index}" ${index === selectedPlan ? 'checked' : ''}><span><strong>${plan.gb} GB</strong><small>${plan.days} ${t('days')} · ${t('dataOnly')}</small></span><b>${money(plan.price)}</b></label>`).join('')}</div><p class="modal-note">${t('planNote')}</p><button class="button modal-action" id="review-plan">${t('review')} →</button>`;
   } else {
@@ -109,9 +144,56 @@ function renderModal() {
 }
 function openModal(view) {modalView = view;renderModal();$('#modal').showModal();}
 $('#language').addEventListener('change', event => setLanguage(event.target.value));
-$('#search-form').addEventListener('submit', event => {event.preventDefault();query = $('#search').value;renderCatalog();scrollToCatalog();});
-$('#search').addEventListener('input', event => {query = event.target.value;renderCatalog();});
-document.querySelectorAll('[data-search]').forEach(button => button.addEventListener('click', () => {query = t(button.dataset.i18n);$('#search').value = query;renderCatalog();scrollToCatalog();}));
+const searchBox = document.createElement('div');
+searchBox.className = 'search-box';
+$('#search-form').before(searchBox);
+searchBox.append($('#search-form'));
+const searchList = document.createElement('div');
+searchList.id = 'search-suggestions';
+searchList.className = 'search-suggestions';
+searchList.setAttribute('role', 'listbox');
+searchList.hidden = true;
+searchBox.append(searchList);
+const searchAnnouncement = document.createElement('span');
+searchAnnouncement.id = 'search-announcement';
+searchAnnouncement.className = 'visually-hidden';
+searchAnnouncement.setAttribute('role', 'status');
+searchBox.append(searchAnnouncement);
+$('#search').setAttribute('role', 'combobox');
+$('#search').setAttribute('aria-autocomplete', 'list');
+$('#search').setAttribute('aria-controls', 'search-suggestions');
+$('#search').setAttribute('aria-expanded', 'false');
+$('#search-form').addEventListener('submit', event => {
+  event.preventDefault();
+  query = $('#search').value;
+  const chosen = suggestionIndex >= 0 ? suggestions[suggestionIndex] : suggestions.length === 1 ? suggestions[0] : null;
+  if (chosen) chooseDestination(chosen);
+  else {renderCatalog();renderSuggestions();$('#search').focus();}
+});
+$('#search').addEventListener('input', event => {query = event.target.value;renderCatalog();renderSuggestions();});
+$('#search').addEventListener('focus', () => {query = $('#search').value;renderSuggestions();});
+$('#search').addEventListener('keydown', event => {
+  if (event.key === 'Escape') {closeSuggestions();return;}
+  if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+  event.preventDefault();
+  if (searchList.hidden) renderSuggestions();
+  if (!suggestions.length) return;
+  suggestionIndex = (suggestionIndex + (event.key === 'ArrowDown' ? 1 : suggestionIndex < 0 ? 0 : -1) + suggestions.length) % suggestions.length;
+  searchList.querySelectorAll('[role=option]').forEach((option, index) => option.setAttribute('aria-selected', String(index === suggestionIndex)));
+  const option = $(`#suggestion-${suggestions[suggestionIndex].id}`);
+  $('#search').setAttribute('aria-activedescendant', option.id);
+  option.scrollIntoView({block:'nearest'});
+});
+searchList.addEventListener('mousedown', event => event.preventDefault());
+searchList.addEventListener('click', event => {
+  const option = event.target.closest('[data-suggestion]');
+  if (option) chooseDestination(catalog.find(item => item.id === option.dataset.suggestion));
+});
+document.addEventListener('pointerdown', event => {if (!searchBox.contains(event.target)) closeSuggestions();});
+searchBox.addEventListener('focusout', event => {if (!searchBox.contains(event.relatedTarget)) closeSuggestions();});
+document.querySelectorAll('[data-search]').forEach(button => button.addEventListener('click', () => {
+  chooseDestination(catalog.find(item => item.en === button.dataset.search));
+}));
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => switchTab(button.dataset.tab)));
 $('.tabs').addEventListener('keydown', event => {
   if (!['ArrowRight','ArrowLeft','Home','End'].includes(event.key)) return;
@@ -128,7 +210,7 @@ $('#destination-grid').addEventListener('click', event => {
   if (card) {selectedDestination = catalog.find(item => item.id === card.dataset.destination);selectedPlan = 1;openModal('plans');}
   if (event.target.closest('#clear-search')) {query = '';$('#search').value = '';renderCatalog();}
 });
-['#compatibility','#compatibility-footer','#footer-device'].forEach(selector => $(selector).addEventListener('click', () => openModal('device')));
+['#compatibility','#compatibility-footer','#footer-device','#how-device'].forEach(selector => $(selector).addEventListener('click', () => openModal('device')));
 $('#close-modal').addEventListener('click', () => $('#modal').close());
 $('#modal').addEventListener('close', () => {modalView = null;});
 $('#modal').addEventListener('click', event => {
@@ -139,3 +221,5 @@ $('#modal').addEventListener('click', event => {
 });
 $('#modal-content').addEventListener('change', event => {if (event.target.name === 'plan') selectedPlan = Number(event.target.value);});
 setLanguage(lang);
+
+$('#modal-content').addEventListener('input', event => {if (event.target.id === 'device-search') $('#device-results').innerHTML = deviceListMarkup(event.target.value);});

@@ -3,5 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "description": "Bilingual MOBIALO eSIM storefront preview",
-  "scripts": { "dev": "node scripts/serve.mjs", "check": "node --check dist/app.js" }
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "check": "node --check dist/app.js && node --check src/auth.js && node --test scripts/mobimatter.test.mjs scripts/paypal.test.mjs",
+    "build:auth": "node scripts/build-auth.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "engines": {
+    "node": "24.x"
+  }
 }

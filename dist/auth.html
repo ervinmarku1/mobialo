@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#ffffff"><meta name="robots" content="noindex"><meta name="referrer" content="no-referrer">
+  <title>MOBIALO — Your account</title>
+  <link rel="icon" href="/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/auth.css">
+  <script type="module" src="/auth.js?v=supabase-1"></script>
+</head>
+<body class="auth-page">
+  <header class="header wrap">
+    <a href="/" class="logo" aria-label="MOBIALO"><img class="brand-mark" src="/brand-mark.svg" width="42" height="42" alt=""><span class="brand-word">mobialo<span class="brand-domain">.eu</span></span></a>
+    <div class="header-actions"><a class="auth-back" href="/" data-text="home">← Back to exploring</a><label class="language-label"><select id="auth-language" aria-label="Language"><option value="en">EN</option><option value="sq">SQ</option></select></label></div>
+  </header>
+  <main class="auth-layout wrap">
+    <aside class="auth-story">
+      <div class="eyebrow" data-text="eyebrow">YOUR NEXT CHAPTER STARTS HERE</div>
+      <h1 data-text="headline">More adventures.<br><em>One place to begin.</em></h1>
+      <p data-text="intro">A little less planning. A little more exploring. Make MOBIALO part of your next journey.</p>
+      <div class="auth-art" aria-hidden="true"><div class="auth-orbit"></div><span class="auth-star">✳</span><div class="auth-ticket"><div class="ticket-top"><img src="/brand-mark.svg" width="30" height="30" alt=""><span>MOBIALO · eSIM</span></div><span class="ticket-caption" data-text="boarding">YOUR EVERYWHERE PASS</span><div class="ticket-route">HERE <span>↗</span> THERE</div><div class="ticket-rule"></div><div class="ticket-bottom"><span data-text="travel">Travel light. Stay connected.</span><span>◎</span></div></div><span class="auth-luggage">↗</span></div>
+      <div class="auth-story-note"><span>◎</span><span data-text="tagline">New places. Familiar connections.</span></div>
+    </aside>
+    <section class="auth-card" aria-labelledby="auth-title">
+      <div class="auth-tabs"><a href="/sign-in" data-text="signin">Sign in</a><a href="/join" data-text="join">Join MOBIALO</a></div>
+      <h2 id="auth-title"></h2><p id="auth-subtitle" class="auth-subtitle"></p>
+      <div class="auth-preview" data-text="preview">Connecting...</div>
+      <form id="auth-form" novalidate>
+        <div id="auth-fields"></div>
+        <div id="auth-error" class="auth-error" role="alert"></div>
+        <button class="button auth-submit" type="submit" id="auth-submit"></button>
+      </form>
+      <div id="auth-result" class="auth-result" role="status" tabindex="-1" hidden></div>
+      <p id="auth-switch" class="auth-switch"></p>
+      <div class="auth-contact"><span data-text="help">Need a hand?</span> <a href="mailto:support@mobialo.eu">support@mobialo.eu</a></div>
+    </section>
+  </main>
+  <footer class="auth-footer wrap"><span>© 2026 MOBIALO</span><span data-text="footer">Go places. Stay connected.</span></footer>
+</body>
+</html>

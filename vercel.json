@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "npm run build:auth",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {"source": "/join", "destination": "/auth.html"},
+    {"source": "/sign-in", "destination": "/auth.html"},
+    {"source": "/forgot-password", "destination": "/auth.html"},
+    {"source": "/update-password", "destination": "/auth.html"},
+    {"source": "/account", "destination": "/auth.html"}
+  ],
+  "headers": [{"source":"/(.*)","headers":[{"key":"X-Content-Type-Options","value":"nosniff"},{"key":"Referrer-Policy","value":"strict-origin-when-cross-origin"}]}]
+}
