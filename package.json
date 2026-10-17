@@ -5,7 +5,7 @@
   "description": "Bilingual MOBIALO eSIM storefront preview",
   "scripts": {
     "dev": "node scripts/serve.mjs",
-    "check": "node --check dist/app.js && node --check src/auth.js && node --test scripts/mobimatter.test.mjs scripts/paypal.test.mjs",
+    "check": "node --check dist/app.js && node --check src/auth.js && node --test scripts/mobimatter.test.mjs scripts/paypal.test.mjs scripts/locale.test.mjs",
     "build:auth": "node scripts/build-auth.mjs"
   },
   "dependencies": {

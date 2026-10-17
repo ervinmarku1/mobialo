@@ -1,11 +1,14 @@
+import '../dist/locale.js';
+import {authItalian} from './auth-it.js';
 import {createClient} from '@supabase/supabase-js';
 import {authCopy} from './auth-copy.js';
 
 Object.assign(authCopy.en,{preview:'Your account is managed securely with Supabase.',joinResult:'Check your inbox for the confirmation link if this address is eligible for registration. If you already have an account, sign in or reset your password.',resetResult:'If this address has an account, you will receive a password reset email.',update:'Set a new password.',updateSub:'Choose a new password for your account.',updateButton:'Save password →',updateResult:'Your password has been updated. You can now sign in.',account:'Your MOBIALO account.',accountSub:'You are signed in.',accountButton:'Sign out',connecting:'Connecting…',working:'Please wait…',unavailable:'Unable to connect. Check your connection and reload this page.',expired:'This link is invalid or expired. Request a new password reset email.',invalid:'Incorrect email or password.',confirmEmail:'Confirm your email before signing in.',rate:'Too many attempts. Please wait and try again.',weak:'Choose a stronger password with at least 8 characters.',generic:'The request could not be completed. Please try again.',emailIssue:'The confirmation email could not be sent. Check the project’s email/SMTP configuration.',browse:'Explore destinations →'});
 Object.assign(authCopy.sq,{preview:'Llogaria jote menaxhohet në mënyrë të sigurt me Supabase.',joinResult:'Kontrollo emailin për linkun e konfirmimit nëse kjo adresë mund të regjistrohet. Nëse ke llogari, hyr ose rivendos fjalëkalimin.',resetResult:'Nëse kjo adresë ka një llogari, do të marrësh emailin për rivendosjen e fjalëkalimit.',update:'Vendos fjalëkalimin e ri.',updateSub:'Zgjidh një fjalëkalim të ri për llogarinë tënde.',updateButton:'Ruaj fjalëkalimin →',updateResult:'Fjalëkalimi u ndryshua. Tani mund të hysh në llogari.',account:'Llogaria jote MOBIALO.',accountSub:'Je identifikuar në llogari.',accountButton:'Dil nga llogaria',connecting:'Duke u lidhur…',working:'Prit pak…',unavailable:'Lidhja nuk u krye. Kontrollo internetin dhe rifresko faqen.',expired:'Ky link është i pavlefshëm ose ka skaduar. Kërko një email të ri për rikuperim.',invalid:'Emaili ose fjalëkalimi nuk është i saktë.',confirmEmail:'Konfirmo emailin para se të hysh.',rate:'Shumë tentativa. Prit pak dhe provo përsëri.',weak:'Zgjidh një fjalëkalim më të fortë me të paktën 8 karaktere.',generic:'Kërkesa nuk u krye. Provo përsëri.',emailIssue:'Emaili i konfirmimit nuk u dërgua. Kontrollo konfigurimin e emailit/SMTP të projektit.',browse:'Zbulo destinacionet →'});
+authCopy.it=authItalian;
 const path=location.pathname.replace(/\/$/,'');
 const mode=({'/join':'join','/sign-in':'sign','/forgot-password':'reset','/update-password':'update','/account':'account'})[path]||'sign';
-let language='en';try{language=localStorage.getItem('mobialo-language')==='sq'?'sq':'en';}catch{}
+let language=await window.MobialoLocale.ready;
 let client,user,ready=false,busy=false,resultKey='',errorKey='';
 const $=s=>document.querySelector(s),t=k=>authCopy[language][k];
 const callbackError=new URLSearchParams(location.hash.slice(1)).has('error') || new URLSearchParams(location.search).has('error');
@@ -18,7 +21,7 @@ function status(){
   $('#auth-language').disabled=busy;
 }
 function render(){
-  document.documentElement.lang=language;$('#auth-language').value=language;
+  document.documentElement.lang=language;window.MobialoLocale.syncSelect($('#auth-language'),language);
   document.querySelectorAll('[data-text]').forEach(node=>node.innerHTML=t(node.dataset.text));
   const title=t(({sign:'welcome',join:'create',reset:'reset',update:'update',account:'account'})[mode]);
   $('#auth-title').textContent=title;document.title=`${title} · MOBIALO`;
@@ -39,7 +42,7 @@ function errorMessage(error){
   if(code.includes('expired')||code.includes('session_not_found'))return 'expired';
   return 'generic';
 }
-$('#auth-language').addEventListener('change',event=>{language=event.target.value;try{localStorage.setItem('mobialo-language',language);}catch{}render();});
+$('#auth-language').addEventListener('change',event=>{language=event.target.value;window.MobialoLocale.choose(language);render();});
 $('#auth-form').addEventListener('click',event=>{const button=event.target.closest('[data-for]');if(!button)return;const input=$(`#${button.dataset.for}`),show=input.type==='password';input.type=show?'text':'password';button.textContent=t(show?'hide':'show');button.setAttribute('aria-pressed',String(show));});
 $('#auth-form').addEventListener('submit',async event=>{
   event.preventDefault();if(!ready||busy)return;errorKey='';resultKey='';
@@ -51,7 +54,7 @@ $('#auth-form').addEventListener('submit',async event=>{
   busy=true;status();
   try{
     let response;
-    if(mode==='join')response=await client.auth.signUp({email:$('#email').value.trim(),password:$('#password').value,options:{data:{full_name:$('#name').value.trim()},emailRedirectTo:`${location.origin}/account`}});
+    if(mode==='join')response=await client.auth.signUp({email:$('#email').value.trim(),password:$('#password').value,options:{data:{full_name:$('#name').value.trim(),language},emailRedirectTo:`${location.origin}/account`}});
     if(mode==='sign')response=await client.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});
     if(mode==='reset')response=await client.auth.resetPasswordForEmail($('#email').value.trim(),{redirectTo:`${location.origin}/update-password`});
     if(mode==='update')response=await client.auth.updateUser({password:$('#password').value});

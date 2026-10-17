@@ -2,10 +2,10 @@
 const escapeText = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 let liveProducts = [];
 let catalogState = 'loading';
-const countryNames = {en:new Intl.DisplayNames(['en'],{type:'region'}),sq:{of:code=>albanianCountries[code] || code}};
-const priceFor = plan => new Intl.NumberFormat(lang==='sq'?'sq-AL':'en-US',{style:'currency',currency:plan.currency}).format(plan.price);
-const dataFor = plan => plan.dataAmount && plan.dataUnit ? `${plan.dataAmount} ${plan.dataUnit}` : (lang==='sq'?'Shiko detajet':'See details');
-const durationFor = plan => plan.validityHours ? `${plan.validityHours%24===0?plan.validityHours/24:plan.validityHours} ${plan.validityHours%24===0?t('days'):(lang==='sq'?'orë':'hours')}` : (lang==='sq'?'Shiko detajet':'See details');
+const countryNames = {it:new Intl.DisplayNames(['it'],{type:'region'}),en:new Intl.DisplayNames(['en'],{type:'region'}),sq:{of:code=>albanianCountries[code] || code}};
+const priceFor = plan => new Intl.NumberFormat((lang==='it'?"it-IT":lang==='sq'?'sq-AL':'en-US'),{style:'currency',currency:plan.currency}).format(plan.price);
+const dataFor = plan => plan.dataAmount && plan.dataUnit ? `${plan.dataAmount} ${plan.dataUnit}` : ((lang==='it'?"Vedi dettagli":lang==='sq'?'Shiko detajet':'See details'));
+const durationFor = plan => plan.validityHours ? `${plan.validityHours%24===0?plan.validityHours/24:plan.validityHours} ${plan.validityHours%24===0?t('days'):((lang==='it'?"ore":lang==='sq'?'orë':'hours'))}` : ((lang==='it'?"Vedi dettagli":lang==='sq'?'Shiko detajet':'See details'));
 const livePlansFor = destination => destination.plans;
 
 Object.assign(translations.en, {demoPrices:'MobiMatter · Live catalog · EUR',previewNote:'Live plans and prices in EUR. Checkout is not available yet.',review:'View plan details',total:'Plan price',notLive:'This is a live catalog preview. Checkout is not available; no order or eSIM will be created.',noResults:'No matching destinations. Try another country or region.'});
@@ -28,12 +28,12 @@ function buildDestinations(products) {
     }
   }
   const sorted=items=>[...items].sort((a,b)=>a.price-b.price || a.title.localeCompare(b.title));
-  const destinations=[...countries].map(([code,items])=>({id:code.toLowerCase(),en:countryNames.en.of(code),sq:countryNames.sq.of(code),aliases:code==='US'?'USA America':code==='GB'?'UK England Angli':code==='AE'?'Dubai UAE':'',type:'local',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)}));
+  const destinations=[...countries].map(([code,items])=>({id:code.toLowerCase(),en:countryNames.en.of(code),it:countryNames.it.of(code),sq:countryNames.sq.of(code),aliases:code==='US'?'USA America':code==='GB'?'UK England Angli':code==='AE'?'Dubai UAE':'',type:'local',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)}));
   const preferred=['al','tr','us','it','de','jp','gb','fr','ae'];
   destinations.sort((a,b)=>{const ai=preferred.indexOf(a.id),bi=preferred.indexOf(b.id);return (ai<0?999:ai)-(bi<0?999:bi)||a.en.localeCompare(b.en);});
   [...regions].forEach(([label,items],index)=>{
     const translations={Europe:'Evropë',Asia:'Azi',Africa:'Afrikë','North America':'Amerika e Veriut','South America':'Amerika e Jugut',Global:'Globale','Multi-country':'Disa shtete'};
-    destinations.push({id:`region-${index}`,en:escapeText(label),sq:escapeText(translations[label]||label),symbol:'◎',type:/global|world/i.test(label)?'global':'regional',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)});
+    destinations.push({id:`region-${index}`,en:escapeText(label),it:escapeText(({Europe:'Europa',Asia:'Asia',Africa:'Africa','North America':'America del Nord','South America':'America del Sud',Global:'Globale','Multi-country':'Pi? paesi'})[label]||label),sq:escapeText(translations[label]||label),symbol:'◎',type:/global|world/i.test(label)?'global':'regional',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)});
   });
   return destinations;
 }
@@ -42,8 +42,8 @@ const baseRenderCatalog=renderCatalog;
 renderCatalog=function(){
   baseRenderCatalog();
   if(catalogState==='ready') return;
-  const text=catalogState==='loading'?(lang==='sq'?'Po ngarkohen paketat…':'Loading plans…'):(lang==='sq'?'Katalogu nuk u ngarkua. Provo përsëri.':'The catalog could not be loaded. Please retry.');
-  $('#destination-grid').innerHTML=`<div class="empty-state" role="status"><p>${text}</p>${catalogState==='error'?`<button class="button" id="retry-catalog">${lang==='sq'?'Provo përsëri':'Retry'}</button>`:''}</div>`;
+  const text=catalogState==='loading'?(lang==='sq'?'Po ngarkohen paketat…':'Loading plans…'):((lang==='it'?"Impossibile caricare il catalogo. Riprova.":lang==='sq'?'Katalogu nuk u ngarkua. Provo përsëri.':'The catalog could not be loaded. Please retry.'));
+  $('#destination-grid').innerHTML=`<div class="empty-state" role="status"><p>${text}</p>${catalogState==='error'?`<button class="button" id="retry-catalog">${(lang==='it'?"Riprova":lang==='sq'?'Provo përsëri':'Retry')}</button>`:''}</div>`;
   $('#results-status').textContent='';
 };
 
@@ -55,12 +55,12 @@ renderModal=function(){
   if(!plans?.length) return;
   selectedPlan=Math.min(selectedPlan,plans.length-1);
   const plan=plans[selectedPlan];
-  const kyc=p=>p.requiresIdentityVerification?`<small class="kyc-note">${lang==='sq'?'Kërkon verifikim identiteti':'Identity verification required'}</small>`:'';
+  const kyc=p=>p.requiresIdentityVerification?`<small class="kyc-note">${(lang==='it'?"Verifica dell?identit? richiesta":lang==='sq'?'Kërkon verifikim identiteti':'Identity verification required')}</small>`:'';
   if(modalView==='plans'){
-    $('#modal-content').innerHTML=`<div class="modal-eyebrow">${t('demoPrices')}</div><div class="modal-heading">${flag(selectedDestination)}<h2 id="modal-title">${selectedDestination[lang]} eSIM</h2></div><p class="modal-subtitle">${plans.length} ${lang==='sq'?'paketa të disponueshme':'available plans'}</p><div class="plan-list live-plan-list" role="radiogroup" aria-label="${t('choosePlan')}">${plans.map((p,index)=>`<label class="plan-option"><input type="radio" name="plan" value="${index}" ${selectedPlan===index?'checked':''}><span><strong>${escapeText(p.title)}</strong><small>${escapeText(p.provider)} · ${escapeText(dataFor(p))} · ${escapeText(durationFor(p))}</small>${kyc(p)}</span><b>${escapeText(priceFor(p))}</b></label>`).join('')}</div><p class="modal-note">${t('previewNote')}</p><button class="button modal-action" id="review-plan">${t('review')} →</button>`;
+    $('#modal-content').innerHTML=`<div class="modal-eyebrow">${t('demoPrices')}</div><div class="modal-heading">${flag(selectedDestination)}<h2 id="modal-title">${selectedDestination[lang]} eSIM</h2></div><p class="modal-subtitle">${plans.length} ${(lang==='it'?"piani disponibili":lang==='sq'?'paketa të disponueshme':'available plans')}</p><div class="plan-list live-plan-list" role="radiogroup" aria-label="${t('choosePlan')}">${plans.map((p,index)=>`<label class="plan-option"><input type="radio" name="plan" value="${index}" ${selectedPlan===index?'checked':''}><span><strong>${escapeText(p.title)}</strong><small>${escapeText(p.provider)} · ${escapeText(dataFor(p))} · ${escapeText(durationFor(p))}</small>${kyc(p)}</span><b>${escapeText(priceFor(p))}</b></label>`).join('')}</div><p class="modal-note">${t('previewNote')}</p><button class="button modal-action" id="review-plan">${t('review')} →</button>`;
   }else{
     const details=plan.details;
-    $('#modal-content').innerHTML=`<div class="modal-eyebrow">${escapeText(plan.provider)}</div><h2 id="modal-title">${escapeText(plan.title)}</h2>${kyc(plan)}<div class="review-row"><span>${t('data')}</span><strong>${escapeText(dataFor(plan))}</strong></div><div class="review-row"><span>${t('duration')}</span><strong>${escapeText(durationFor(plan))}</strong></div><div class="review-row"><span>${t('total')}</span><strong>${escapeText(priceFor(plan))}</strong></div><details class="plan-coverage"><summary>${lang==='sq'?'Shtetet e mbuluara':'Covered countries'} (${plan.countries.length})</summary><p>${plan.countries.map(code=>escapeText(countryNames[lang].of(code))).join(', ')}</p></details><div class="provider-details"><h3>${escapeText(details.heading)}</h3><p>${escapeText(details.description)}</p><ul>${details.items.map(item=>`<li>${escapeText(item)}</li>`).join('')}</ul></div><p class="modal-note">${t('notLive')}</p><button class="button modal-action" id="paypal-checkout">PayPal Sandbox</button><p id="paypal-status" role="status"></p><button class="text-link" style="margin-top:18px" id="back-to-plans">${t('back')}</button>`;
+    $('#modal-content').innerHTML=`<div class="modal-eyebrow">${escapeText(plan.provider)}</div><h2 id="modal-title">${escapeText(plan.title)}</h2>${kyc(plan)}<div class="review-row"><span>${t('data')}</span><strong>${escapeText(dataFor(plan))}</strong></div><div class="review-row"><span>${t('duration')}</span><strong>${escapeText(durationFor(plan))}</strong></div><div class="review-row"><span>${t('total')}</span><strong>${escapeText(priceFor(plan))}</strong></div><details class="plan-coverage"><summary>${(lang==='it'?"Paesi coperti":lang==='sq'?'Shtetet e mbuluara':'Covered countries')} (${plan.countries.length})</summary><p>${plan.countries.map(code=>escapeText(countryNames[lang].of(code))).join(', ')}</p></details><div class="provider-details"><h3>${escapeText(details.heading)}</h3><p>${escapeText(details.description)}</p><ul>${details.items.map(item=>`<li>${escapeText(item)}</li>`).join('')}</ul></div><p class="modal-note">${t('notLive')}</p><button class="button modal-action" id="paypal-checkout">PayPal Sandbox</button><p id="paypal-status" role="status"></p><button class="text-link" style="margin-top:18px" id="back-to-plans">${t('back')}</button>`;
   }
   $('#modal').setAttribute('aria-labelledby','modal-title');
 };
@@ -72,10 +72,10 @@ async function loadLiveCatalog(){
     if(!response.ok)throw new Error('Catalog unavailable');
     const data=await response.json();
     if(!Array.isArray(data.products)||data.products.some(p=>p.currency!=='EUR'))throw new Error('Unsupported catalog');
-    if(data.source==='preview'){translations.en.demoPrices='MOBIALO ? Preview catalog ? EUR';translations.sq.demoPrices='MOBIALO ? Katalog prezantimi ? EUR';translations.en.previewNote='Preview prices. Purchases are not open yet.';translations.sq.previewNote='?mime prezantimi. Blerjet nuk jan? hapur ende.';translations.en.notLive='Online preview. Purchases will open soon.';translations.sq.notLive='Prezantim online. Blerjet do t? hapen s? shpejti.';}
+    if(data.source==='preview'){if(translations.it){translations.it.demoPrices='MOBIALO ? Catalogo di anteprima ? EUR';translations.it.previewNote='Prezzi di anteprima. Gli acquisti non sono ancora disponibili.';translations.it.notLive='Anteprima online. Gli acquisti saranno disponibili prossimamente.';}translations.en.demoPrices='MOBIALO ? Preview catalog ? EUR';translations.sq.demoPrices='MOBIALO ? Katalog prezantimi ? EUR';translations.en.previewNote='Preview prices. Purchases are not open yet.';translations.sq.previewNote='?mime prezantimi. Blerjet nuk jan? hapur ende.';translations.en.notLive='Online preview. Purchases will open soon.';translations.sq.notLive='Prezantim online. Blerjet do t? hapen s? shpejti.';}
     liveProducts=data.products;catalog=buildDestinations(liveProducts);catalogState='ready';
     document.querySelectorAll('[data-search]').forEach(button=>{button.disabled=!catalog.some(item=>item.en===button.dataset.search);});
-    renderCatalog();
+    setLanguage(lang);
     if(document.activeElement===$('#search')) renderSuggestions();
   }catch{catalogState='error';catalog=[];renderCatalog();closeSuggestions();}
 }

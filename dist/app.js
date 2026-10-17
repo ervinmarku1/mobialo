@@ -34,7 +34,7 @@ Object.assign(translations.sq, {
 // MobiMatter is integrated. Partner credentials must never be added to this file.
 let catalog = [];
 let lang = 'en';
-try { lang = localStorage.getItem('mobialo-language') === 'sq' ? 'sq' : 'en'; } catch {}
+
 let activeTab = 'local';
 let expanded = false;
 let query = '';
@@ -46,7 +46,7 @@ let suggestions = [];
 const $ = selector => document.querySelector(selector);
 const t = key => translations[lang][key];
 const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-const money = value => new Intl.NumberFormat(lang === 'sq' ? 'sq-AL' : 'en-IE', {style:'currency',currency:'EUR'}).format(value);
+const money = value => new Intl.NumberFormat((lang==='it'?"it-IT":lang === 'sq' ? 'sq-AL' : 'en-IE'), {style:'currency',currency:'EUR'}).format(value);
 const plansFor = destination => destination.plans || [];
 function flag(destination) {
   return `<span class="flag" aria-hidden="true">${destination.symbol || `<img src="https://flagcdn.com/w80/${destination.id}.png" alt="" loading="lazy">`}</span>`;
@@ -59,10 +59,10 @@ function closeSuggestions() {
 }
 function renderSuggestions() {
   const term = normalize(query);
-  suggestions = term ? catalog.filter(item => normalize(`${item.en} ${item.sq} ${item.aliases || ''}`).includes(term)) : [];
+  suggestions = term ? catalog.filter(item => normalize(`${item.en} ${item.sq} ${item.it || ''} ${item.aliases || ''}`).includes(term)) : [];
   suggestionIndex = -1;
   const list = $('#search-suggestions');
-  list.innerHTML = suggestions.length ? suggestions.map(item => `<div role="option" aria-selected="false" id="suggestion-${item.id}" data-suggestion="${item.id}" class="search-option">${flag(item)}<span><strong>${item[lang]}</strong><small>${lang === 'sq' ? 'Shiko të gjitha paketat' : 'View all plans'}</small></span><span class="suggestion-price">${t('from')} ${money(item.price)} <span aria-hidden="true">↗</span></span></div>`).join('') : `<div class="search-empty">${t('noResults')}</div>`;
+  list.innerHTML = suggestions.length ? suggestions.map(item => `<div role="option" aria-selected="false" id="suggestion-${item.id}" data-suggestion="${item.id}" class="search-option">${flag(item)}<span><strong>${item[lang]}</strong><small>${(lang==='it'?"Vedi tutti i piani":lang === 'sq' ? 'Shiko të gjitha paketat' : 'View all plans')}</small></span><span class="suggestion-price">${t('from')} ${money(item.price)} <span aria-hidden="true">↗</span></span></div>`).join('') : `<div class="search-empty">${t('noResults')}</div>`;
   list.hidden = !term;
   list.setAttribute('aria-label', t('searching'));
   $('#search').setAttribute('aria-expanded', String(!!term));
@@ -81,7 +81,7 @@ function chooseDestination(item) {
 }
 function renderCatalog() {
   const term = normalize(query);
-  const filtered = catalog.filter(item => term ? normalize(`${item.en} ${item.sq} ${item.aliases || ''}`).includes(term) : item.type === activeTab);
+  const filtered = catalog.filter(item => term ? normalize(`${item.en} ${item.sq} ${item.it || ''} ${item.aliases || ''}`).includes(term) : item.type === activeTab);
   const visible = expanded || term ? filtered : filtered.slice(0,9);
   $('#destination-grid').innerHTML = visible.length ? visible.map(item => `<button class="destination-card" data-destination="${item.id}">${flag(item)}<div><h3>${item[lang]}</h3><p>${t('from')} <b>${money(item.price)}</b></p></div><span class="card-arrow" aria-hidden="true">↗</span></button>`).join('') : `<div class="empty-state"><p>${t('noResults')}</p><button class="button outline" id="clear-search">${t('clearSearch')}</button></div>`;
   $('#results-status').textContent = term ? `${filtered.length} ${t('results')}` : '';
@@ -101,24 +101,26 @@ function renderCatalog() {
 function setLanguage(value) {
   lang = value;
   document.documentElement.lang = lang;
-  $('#language').value = lang;
-  document.title = lang === 'en' ? 'MOBIALO — Go places. Stay connected.' : 'MOBIALO — Zbulo vende. Qëndro i lidhur.';
-  document.querySelector('meta[name="description"]').content = lang === 'en' ? 'Explore MOBIALO travel eSIM plans. Find your next destination in English or Albanian. Preview storefront.' : 'Zbulo paketat eSIM të MOBIALO për udhëtime. Gjej destinacionin tënd në shqip ose anglisht. Version demonstrimi.';
+  if($('.journey-stamp'))$('.journey-stamp').innerHTML=(lang==='en'?'EUROPE':'EUROPA')+'<br><b>?</b><br>MOBIALO';
+  if($('.city-photo span'))$('.city-photo span').textContent=lang==='it'?'PARIGI, FRANCIA':lang==='sq'?'PARIS, FRANC?':'PARIS, FRANCE';
+  window.MobialoLocale.syncSelect($('#language'),lang);
+  document.title = lang==='it'?'MOBIALO ? Esplora. Resta connesso.':lang === 'en' ? 'MOBIALO — Go places. Stay connected.' : 'MOBIALO — Zbulo vende. Qëndro i lidhur.';
+  document.querySelector('meta[name="description"]').content = lang==='it'?'Scopri i piani eSIM MOBIALO per il tuo prossimo viaggio.':lang === 'en' ? 'Explore MOBIALO travel eSIM plans. Find your next destination in English or Albanian. Preview storefront.' : 'Zbulo paketat eSIM të MOBIALO për udhëtime. Gjej destinacionin tënd në shqip ose anglisht. Version demonstrimi.';
   document.querySelectorAll('[data-i18n]').forEach(element => element.innerHTML = t(element.dataset.i18n));
   document.querySelectorAll('[data-placeholder]').forEach(element => {element.placeholder = t(element.dataset.placeholder);element.setAttribute('aria-label',t(element.dataset.placeholder));});
   $('#search-form button').setAttribute('aria-label',t('search'));
   $('#close-modal').setAttribute('aria-label',t('close'));
-  $('#language').setAttribute('aria-label',lang === 'sq' ? 'Gjuha' : 'Language');
-  $('nav').setAttribute('aria-label',lang === 'sq' ? 'Navigimi kryesor' : 'Main navigation');
-  $('.tabs').setAttribute('aria-label',lang === 'sq' ? 'Lloji i paketës' : 'Plan type');
-  $('.benefit-strip').setAttribute('aria-label',lang === 'sq' ? 'Përfitimet e eSIM' : 'eSIM benefits');
-  $('.travel-photo img').alt = lang === 'sq' ? 'Ndërtesa të bardha mbi detin blu në Santorini' : 'White hillside buildings overlooking the blue sea in Santorini';
-  $('.city-photo img').alt = lang === 'sq' ? 'Çatitë e Parisit dhe Kulla Eifel' : 'Paris rooftops and the Eiffel Tower';
+  $('#language').setAttribute('aria-label',(lang==='it'?"Lingua":lang === 'sq' ? 'Gjuha' : 'Language'));
+  $('nav').setAttribute('aria-label',(lang==='it'?"Navigazione principale":lang === 'sq' ? 'Navigimi kryesor' : 'Main navigation'));
+  $('.tabs').setAttribute('aria-label',(lang==='it'?"Tipo di piano":lang === 'sq' ? 'Lloji i paketës' : 'Plan type'));
+  $('.benefit-strip').setAttribute('aria-label',(lang==='it'?"Vantaggi eSIM":lang === 'sq' ? 'Përfitimet e eSIM' : 'eSIM benefits'));
+  $('.travel-photo img').alt = (lang==='it'?"Edifici bianchi affacciati sul mare blu a Santorini":lang === 'sq' ? 'Ndërtesa të bardha mbi detin blu në Santorini' : 'White hillside buildings overlooking the blue sea in Santorini');
+  $('.city-photo img').alt = (lang==='it'?"I tetti di Parigi e la Torre Eiffel":lang === 'sq' ? 'Çatitë e Parisit dhe Kulla Eifel' : 'Paris rooftops and the Eiffel Tower');
   $('#faq-list').innerHTML = t('faq').map(([question,answer]) => `<details><summary>${question}</summary><p>${answer}</p></details>`).join('');
   renderCatalog();
   closeSuggestions();
   if (modalView) renderModal();
-  try {localStorage.setItem('mobialo-language',lang);} catch {}
+
 }
 function switchTab(type) {
   activeTab = type;
@@ -133,7 +135,7 @@ function renderModal() {
   const content = $('#modal-content');
   $('#modal').classList.toggle('device-dialog', modalView === 'device');
   if (modalView === 'device') {
-    content.innerHTML = `<div class="modal-eyebrow">MOBIALO · eSIM</div><h2 id="modal-title">${t('deviceTitle')}</h2><p class="modal-subtitle">${t('deviceIntro')}</p><label class="device-search-label" for="device-search">${lang === 'sq' ? 'Kërko modelin e telefonit' : 'Search your phone model'}</label><input id="device-search" class="device-search" type="search" placeholder="iPhone 15, Galaxy S24, Pixel 9..." autocomplete="off"><p class="device-updated">${lang === 'sq' ? 'Modele të përzgjedhura · Kontrolluar më 16 tetor 2026' : 'Selected models · Checked 16 October 2026'}</p><div id="device-results">${deviceListMarkup()}</div><h3 class="device-check-heading">${lang === 'sq' ? 'Para se të blesh' : 'Before you buy'}</h3><ol class="guide-list">${t('deviceSteps').map(step => `<li>${step}</li>`).join('')}</ol><p class="modal-note">${t('deviceNote')}</p><button class="button modal-action" data-close>${t('gotIt')}</button>`;
+    content.innerHTML = `<div class="modal-eyebrow">MOBIALO · eSIM</div><h2 id="modal-title">${t('deviceTitle')}</h2><p class="modal-subtitle">${t('deviceIntro')}</p><label class="device-search-label" for="device-search">${(lang==='it'?"Cerca il modello del telefono":lang === 'sq' ? 'Kërko modelin e telefonit' : 'Search your phone model')}</label><input id="device-search" class="device-search" type="search" placeholder="iPhone 15, Galaxy S24, Pixel 9..." autocomplete="off"><p class="device-updated">${lang === 'sq' ? 'Modele të përzgjedhura · Kontrolluar më 16 tetor 2026' : 'Selected models · Checked 16 October 2026'}</p><div id="device-results">${deviceListMarkup()}</div><h3 class="device-check-heading">${(lang==='it'?"Prima di acquistare":lang === 'sq' ? 'Para se të blesh' : 'Before you buy')}</h3><ol class="guide-list">${t('deviceSteps').map(step => `<li>${step}</li>`).join('')}</ol><p class="modal-note">${t('deviceNote')}</p><button class="button modal-action" data-close>${t('gotIt')}</button>`;
   } else if (modalView === 'plans') {
     content.innerHTML = `<div class="modal-eyebrow">${t('demoPrices')}</div><div class="modal-heading">${flag(selectedDestination)}<h2 id="modal-title">${selectedDestination[lang]} eSIM</h2></div><p class="modal-subtitle">${t('choosePlan')}</p><div class="plan-list" role="radiogroup" aria-label="${t('choosePlan')}">${plansFor(selectedDestination).map((plan,index) => `<label class="plan-option"><input type="radio" name="plan" value="${index}" ${index === selectedPlan ? 'checked' : ''}><span><strong>${plan.gb} GB</strong><small>${plan.days} ${t('days')} · ${t('dataOnly')}</small></span><b>${money(plan.price)}</b></label>`).join('')}</div><p class="modal-note">${t('planNote')}</p><button class="button modal-action" id="review-plan">${t('review')} →</button>`;
   } else {
@@ -143,7 +145,7 @@ function renderModal() {
   $('#modal').setAttribute('aria-labelledby','modal-title');
 }
 function openModal(view) {modalView = view;renderModal();$('#modal').showModal();}
-$('#language').addEventListener('change', event => setLanguage(event.target.value));
+$('#language').addEventListener('change', event => {window.MobialoLocale.choose(event.target.value);setLanguage(event.target.value);});
 const searchBox = document.createElement('div');
 searchBox.className = 'search-box';
 $('#search-form').before(searchBox);

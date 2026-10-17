@@ -89,3 +89,9 @@ Smart Buttons: plan details now load the PayPal JavaScript SDK on demand. Only t
 
 ### Vercel domain preview
 vercel.json serves dist and the api functions on Node 24. The checked-in catalog-preview.json is an allowlisted catalog snapshot, with no merchant credentials or wholesale prices. Configure MOBIMATTER_MERCHANT_ID and MOBIMATTER_API_KEY in Vercel to use live catalog data. Configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY and authorize the production callback URLs in Supabase before enabling online accounts. Without them the hosted page displays an account-preview message. Hosted checkout is intentionally unavailable: local Sandbox uses in-memory orders and is not suitable for serverless payment reconciliation. No PayPal secret is deployed.
+
+
+### Automatic language and emails
+Vercel /api/locale maps x-vercel-ip-country: IT ? Italian, AL/XK ? Albanian, other/unknown ? English. Responses are private/no-store. Localhost defaults to English; LOCAL_COUNTRY=IT can simulate Italy for local QA. No IP is stored. Menu choices remain EN/SQ; detected Italian is displayed as IT ? Auto, not an extra selectable language. Explicit choices persist under mobialo-language-choice, separately from automatic detection. Old automatically stored mobialo-language values are not treated as explicit choices.
+
+Signup writes user_metadata.language. Apply the files under supabase/email-templates in the Supabase dashboard to enable localized emails; repository deployment alone does not install email templates. Existing accounts without this metadata receive English. Recovery follows the registration language. Provider-supplied package descriptions and product names remain in the source language; storefront labels and country names are localized.

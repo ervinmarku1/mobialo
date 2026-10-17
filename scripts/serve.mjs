@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {localeForCountry} from './locale.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,7 @@ const types = {'.svg':'image/svg+xml','.html':'text/html; charset=utf-8','.css':
 http.createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
+    if(pathname==='/api/locale'){response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});response.end(JSON.stringify({language:localeForCountry(process.env.LOCAL_COUNTRY)}));return;}
     if(pathname==='/api/paypal/config'&&request.method==='GET'){
       response.setHeader('Content-Type','application/json');response.setHeader('Cache-Control','no-store');
       try{response.end(JSON.stringify(await publicPayPalConfig()));}catch{response.writeHead(503);response.end('{}');}return;
