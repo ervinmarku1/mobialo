@@ -16,13 +16,15 @@ translations.en.faq[4]=['Can I buy a plan on MOBIALO now?','Not yet. The catalog
 translations.sq.faq[4]=['A mund të blej tani në MOBIALO?','Ende jo. Katalogu shfaq paketat reale të MobiMatter, por pagesat dhe porositë e eSIM nuk janë lidhur.'];
 
 function buildDestinations(products) {
-  const countries=new Map(),regions=new Map();
+  const countries=new Map(),regions=new Map(),globalPlans=[];
   for (const product of products) {
     for (const code of product.countries) {
       if(!countries.has(code)) countries.set(code,[]);
       countries.get(code).push(product);
     }
     if(product.countries.length>1) {
+      // MobiMatter lists continents in regions, even for World/Global plans.
+      if (/\b(global|world|worldwide)\b/i.test(product.title) || product.regions.some(region=>/\b(global|world|worldwide)\b/i.test(region))) globalPlans.push(product);
       const labels=product.regions.length?product.regions:['Multi-country'];
       for(const label of labels){if(!regions.has(label))regions.set(label,[]);regions.get(label).push(product);}
     }
@@ -35,6 +37,7 @@ function buildDestinations(products) {
     const translations={Europe:'Evropë',Asia:'Azi',Africa:'Afrikë','North America':'Amerika e Veriut','South America':'Amerika e Jugut',Global:'Globale','Multi-country':'Disa shtete'};
     destinations.push({id:`region-${index}`,en:escapeText(label),it:escapeText(({Europe:'Europa',Asia:'Asia',Africa:'Africa','North America':'America del Nord','South America':'America del Sud',Global:'Globale','Multi-country':'Pi? paesi'})[label]||label),sq:escapeText(translations[label]||label),symbol:'◎',type:/global|world/i.test(label)?'global':'regional',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)});
   });
+  if(globalPlans.length) destinations.push({id:'global',en:'Global',it:'Globale',sq:'Globale',aliases:'World Worldwide',symbol:'\u25ce',type:'global',price:Math.min(...globalPlans.map(p=>p.price)),plans:sorted(globalPlans)});
   return destinations;
 }
 
