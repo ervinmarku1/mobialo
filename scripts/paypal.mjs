@@ -8,12 +8,13 @@ const orders=new Map();
 async function config(){
   const local=parseEnv(await readFile(new URL('../.env.local',import.meta.url),'utf8'));
   const env={...local,...process.env};
-  if(env.PAYPAL_ENV!=='sandbox'||!env.PAYPAL_CLIENT_ID||!env.PAYPAL_CLIENT_SECRET)throw Error('PAYPAL_SANDBOX_NOT_CONFIGURED');
+  if(!['sandbox','live'].includes(env.PAYPAL_ENV)||!env.PAYPAL_CLIENT_ID||!env.PAYPAL_CLIENT_SECRET)throw Error('PAYPAL_SANDBOX_NOT_CONFIGURED');
   return env;
 }
-export async function publicPayPalConfig(){const env=await config();return {clientId:env.PAYPAL_CLIENT_ID.trim(),currency:'EUR',environment:'sandbox'};}
+export async function publicPayPalConfig(){const env=await config();return {clientId:env.PAYPAL_CLIENT_ID.trim(),currency:'EUR',environment:env.PAYPAL_ENV};}
 async function api(route,body,requestId){
   const env=await config();
+  if(env.PAYPAL_ENV!=='sandbox')throw Error('USE_LIVE_CHECKOUT');
   const base='https://api-m.sandbox.paypal.com';
   const tokenResponse=await fetch(`${base}/v1/oauth2/token`,{method:'POST',headers:{Authorization:`Basic ${Buffer.from(`${env.PAYPAL_CLIENT_ID.trim()}:${env.PAYPAL_CLIENT_SECRET.trim()}`).toString('base64')}`,'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=client_credentials',signal:AbortSignal.timeout(20000)});
   if(!tokenResponse.ok)throw Error('PAYPAL_CREDENTIALS_FAILED');
@@ -24,7 +25,8 @@ async function api(route,body,requestId){
   return response.json();
 }
 export const checkPayPal=()=>api();
-export async function createOrder(productId,origin,smart=false){
+export async function createOrder(productId,origin,smart=false,customer={}){
+  if((await config()).PAYPAL_ENV==='live')return (await import('./live-checkout.mjs')).createLiveOrder({productId,...customer});
   const product=(await getCatalog()).products.find(p=>p.id===productId);
   if(!product||product.price<=0)throw Error('INVALID_PRODUCT');
   for(const [key,order] of orders)if(Date.now()-order.created>3600000)orders.delete(key);
@@ -41,6 +43,7 @@ export function validCapture(data,order){
   return data.id===order.id&&data.status==='COMPLETED'&&captures.length===1&&captures[0].status==='COMPLETED'&&captures[0].amount?.currency_code==='EUR'&&captures[0].amount.value===order.amount;
 }
 export async function captureOrder(state,token){
+  if((await config()).PAYPAL_ENV==='live')return (await import('./live-checkout.mjs')).captureLiveOrder(state,token);
   const order=orders.get(state);
   if(!order||order.id!==token||Date.now()-order.created>3600000)throw Error('TEST_ORDER_EXPIRED');
   if(order.result)return order.result;

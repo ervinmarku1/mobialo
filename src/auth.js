@@ -2,6 +2,8 @@ import '../dist/locale.js';
 import {authItalian} from './auth-it.js';
 import {createClient} from '@supabase/supabase-js';
 import {authCopy} from './auth-copy.js';
+import {mountAccount} from './account.js';
+let dashboard;
 
 Object.assign(authCopy.en,{preview:'Your account is managed securely with Supabase.',joinResult:'Check your inbox for the confirmation link if this address is eligible for registration. If you already have an account, sign in or reset your password.',resetResult:'If this address has an account, you will receive a password reset email.',update:'Set a new password.',updateSub:'Choose a new password for your account.',updateButton:'Save password →',updateResult:'Your password has been updated. You can now sign in.',account:'Your MOBIALO account.',accountSub:'You are signed in.',accountButton:'Sign out',connecting:'Connecting…',working:'Please wait…',unavailable:'Unable to connect. Check your connection and reload this page.',expired:'This link is invalid or expired. Request a new password reset email.',invalid:'Incorrect email or password.',confirmEmail:'Confirm your email before signing in.',rate:'Too many attempts. Please wait and try again.',weak:'Choose a stronger password with at least 8 characters.',generic:'The request could not be completed. Please try again.',emailIssue:'The confirmation email could not be sent. Check the project’s email/SMTP configuration.',browse:'Explore destinations →'});
 Object.assign(authCopy.sq,{preview:'Llogaria jote menaxhohet në mënyrë të sigurt me Supabase.',joinResult:'Kontrollo emailin për linkun e konfirmimit nëse kjo adresë mund të regjistrohet. Nëse ke llogari, hyr ose rivendos fjalëkalimin.',resetResult:'Nëse kjo adresë ka një llogari, do të marrësh emailin për rivendosjen e fjalëkalimit.',update:'Vendos fjalëkalimin e ri.',updateSub:'Zgjidh një fjalëkalim të ri për llogarinë tënde.',updateButton:'Ruaj fjalëkalimin →',updateResult:'Fjalëkalimi u ndryshua. Tani mund të hysh në llogari.',account:'Llogaria jote MOBIALO.',accountSub:'Je identifikuar në llogari.',accountButton:'Dil nga llogaria',connecting:'Duke u lidhur…',working:'Prit pak…',unavailable:'Lidhja nuk u krye. Kontrollo internetin dhe rifresko faqen.',expired:'Ky link është i pavlefshëm ose ka skaduar. Kërko një email të ri për rikuperim.',invalid:'Emaili ose fjalëkalimi nuk është i saktë.',confirmEmail:'Konfirmo emailin para se të hysh.',rate:'Shumë tentativa. Prit pak dhe provo përsëri.',weak:'Zgjidh një fjalëkalim më të fortë me të paktën 8 karaktere.',generic:'Kërkesa nuk u krye. Provo përsëri.',emailIssue:'Emaili i konfirmimit nuk u dërgua. Kontrollo konfigurimin e emailit/SMTP të projektit.',browse:'Zbulo destinacionet →'});
@@ -23,6 +25,7 @@ function status(){
 function render(){
   document.documentElement.lang=language;window.MobialoLocale.syncSelect($('#auth-language'),language);
   document.querySelectorAll('[data-text]').forEach(node=>node.innerHTML=t(node.dataset.text));
+  if(dashboard){dashboard.setLanguage(language);return;}
   const title=t(({sign:'welcome',join:'create',reset:'reset',update:'update',account:'account'})[mode]);
   $('#auth-title').textContent=title;document.title=`${title} · MOBIALO`;
   $('#auth-subtitle').textContent=t(`${mode}Sub`);
@@ -78,7 +81,7 @@ try{
   if(callbackError||error){history.replaceState(null,'',location.pathname);errorKey='expired';status();}
   else if(mode==='account'||mode==='update'){
     if(!session){if(mode==='account')location.replace('/sign-in');else{errorKey='expired';status();}}
-    else{const {data,error:verifyError}=await client.auth.getUser();if(verifyError||!data.user){errorKey='expired';status();}else{user=data.user;ready=true;render();}}
+    else{const {data,error:verifyError}=await client.auth.getUser();if(verifyError||!data.user){errorKey='expired';status();}else{user=data.user;ready=true;if(mode==='account')dashboard=mountAccount({client,user,language});else render();}}
   }else if(session&&(mode==='sign'||mode==='join'))location.replace('/account');
   else{ready=true;status();}
 }catch(error){errorKey=error.message==='HOSTED_PREVIEW'?'hostedPreview':'unavailable';status();}
