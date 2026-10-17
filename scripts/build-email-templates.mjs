@@ -3,7 +3,12 @@ import {emailLanguages} from './locale.mjs';
 const root=new URL('../supabase/email-templates/',import.meta.url);
 const translations=JSON.parse(await readFile(new URL('languages.json',root),'utf8'));
 const escape=value=>value.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
-for(const language of emailLanguages){if(!translations[language])throw Error(`Missing ${language}`);}
+for(const language of emailLanguages){
+  if(!translations[language])throw Error(`Missing ${language}`);
+  for(const value of Object.values(translations[language])){
+    if(/[?\uFFFD]/u.test(value))throw Error(`Corrupted translation: ${language}`);
+  }
+}
 for(const [file,reset] of [['confirm-signup',false],['reset-password',true]]){
   const order=[...emailLanguages.filter(language=>language!=='en'),'en'];
   const blocks=order.map((language,index)=>{

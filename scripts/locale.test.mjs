@@ -33,6 +33,9 @@ test('email language follows country and multilingual-country browser preference
 });
 test('all supported email locales have translated templates and valid confirmation links',async()=>{
  const translations=JSON.parse(await readFile(new URL('../supabase/email-templates/languages.json',import.meta.url),'utf8'));
+ for(const [language,copy] of Object.entries(translations))for(const value of Object.values(copy))assert.doesNotMatch(value,/[?\uFFFD]/u,language);
+ assert.match(translations.sq.intro,/Mir\u00eb se erdhe n\u00eb/u);
+ for(const language of ['el','bg','sr','mk','uk','ru','ar','he','hi','zh','ja','ko','th'])assert.match(translations[language].title,/[^\x00-\x7F]/u,language);
  for(const file of ['confirm-signup','reset-password']){
   const html=await readFile(new URL('../supabase/email-templates/'+file+'.html',import.meta.url),'utf8');
   for(const language of emailLanguages){assert.ok(translations[language]);assert.ok(html.includes('lang="'+language+'"'));}

@@ -3,17 +3,17 @@
     "title": "Confirm your email",
     "intro": "Welcome to MOBIALO. Use the button below to continue.",
     "button": "Confirm email",
-    "ignore": "If you did not request this, you can ignore this email.",
+    "ignore": "If you did not request this, ignore this email.",
     "resetTitle": "Reset your password",
-    "resetButton": "Reset password"
+    "resetButton": "Reset your password"
   },
   "sq": {
     "title": "Konfirmo emailin",
-    "intro": "Mir? se erdhe n? MOBIALO. P?rdor butonin m? posht? p?r t? vazhduar.",
+    "intro": "Mir\u00eb se erdhe n\u00eb MOBIALO. P\u00ebrdor butonin m\u00eb posht\u00eb p\u00ebr t\u00eb vazhduar.",
     "button": "Konfirmo emailin",
-    "ignore": "N?se nuk e ke k?rkuar k?t?, shp?rfille k?t? email.",
-    "resetTitle": "Rivendos fjal?kalimin",
-    "resetButton": "Rivendos fjal?kalimin"
+    "ignore": "N\u00ebse nuk e ke k\u00ebrkuar k\u00ebt\u00eb, shp\u00ebrfille k\u00ebt\u00eb email.",
+    "resetTitle": "Rivendos fjal\u00ebkalimin",
+    "resetButton": "Rivendos fjal\u00ebkalimin"
   },
   "it": {
     "title": "Conferma la tua email",
@@ -21,38 +21,38 @@
     "button": "Conferma email",
     "ignore": "Se non hai richiesto questa operazione, ignora questa email.",
     "resetTitle": "Reimposta la password",
-    "resetButton": "Reimposta password"
+    "resetButton": "Reimposta la password"
   },
   "fr": {
     "title": "Confirmez votre adresse e-mail",
     "intro": "Bienvenue sur MOBIALO. Utilisez le bouton ci-dessous pour continuer.",
     "button": "Confirmer mon adresse",
-    "ignore": "Si vous n?avez pas fait cette demande, ignorez cet e-mail.",
-    "resetTitle": "R?initialisez votre mot de passe",
-    "resetButton": "R?initialiser le mot de passe"
+    "ignore": "Si vous n\u2019avez pas fait cette demande, ignorez cet e-mail.",
+    "resetTitle": "R\u00e9initialiser le mot de passe",
+    "resetButton": "R\u00e9initialiser le mot de passe"
   },
   "de": {
-    "title": "Best?tige deine E-Mail-Adresse",
-    "intro": "Willkommen bei MOBIALO. Klicke auf die Schaltfl?che, um fortzufahren.",
-    "button": "E-Mail best?tigen",
+    "title": "Best\u00e4tige deine E-Mail-Adresse",
+    "intro": "Willkommen bei MOBIALO. Klicke auf die Schaltfl\u00e4che, um fortzufahren.",
+    "button": "E-Mail best\u00e4tigen",
     "ignore": "Wenn du diese Anfrage nicht gestellt hast, ignoriere diese E-Mail.",
-    "resetTitle": "Setze dein Passwort zur?ck",
-    "resetButton": "Passwort zur?cksetzen"
+    "resetTitle": "Passwort zur\u00fccksetzen",
+    "resetButton": "Passwort zur\u00fccksetzen"
   },
   "es": {
-    "title": "Confirma tu correo electr?nico",
-    "intro": "Bienvenido a MOBIALO. Usa el bot?n de abajo para continuar.",
+    "title": "Confirma tu correo electr\u00f3nico",
+    "intro": "Bienvenido a MOBIALO. Usa el bot\u00f3n de abajo para continuar.",
     "button": "Confirmar correo",
     "ignore": "Si no has solicitado esto, puedes ignorar este correo.",
-    "resetTitle": "Restablece tu contrase?a",
-    "resetButton": "Restablecer contrase?a"
+    "resetTitle": "Restablecer contrase\u00f1a",
+    "resetButton": "Restablecer contrase\u00f1a"
   },
   "pt": {
     "title": "Confirme o seu e-mail",
-    "intro": "Bem-vindo ? MOBIALO. Use o bot?o abaixo para continuar.",
+    "intro": "Bem-vindo \u00e0 MOBIALO. Use o bot\u00e3o abaixo para continuar.",
     "button": "Confirmar e-mail",
-    "ignore": "Se n?o fez este pedido, ignore este e-mail.",
-    "resetTitle": "Redefina a sua palavra-passe",
+    "ignore": "Se n\u00e3o fez este pedido, ignore este e-mail.",
+    "resetTitle": "Redefinir palavra-passe",
     "resetButton": "Redefinir palavra-passe"
   },
   "nl": {
@@ -60,200 +60,200 @@
     "intro": "Welkom bij MOBIALO. Gebruik de onderstaande knop om verder te gaan.",
     "button": "E-mail bevestigen",
     "ignore": "Als je dit niet hebt aangevraagd, kun je deze e-mail negeren.",
-    "resetTitle": "Stel je wachtwoord opnieuw in",
+    "resetTitle": "Wachtwoord opnieuw instellen",
     "resetButton": "Wachtwoord opnieuw instellen"
   },
   "pl": {
-    "title": "Potwierd? adres e-mail",
-    "intro": "Witamy w MOBIALO. U?yj przycisku poni?ej, aby kontynuowa?.",
-    "button": "Potwierd? e-mail",
-    "ignore": "Je?li nie wys?ano tej pro?by, zignoruj t? wiadomo??.",
-    "resetTitle": "Zresetuj has?o",
-    "resetButton": "Zresetuj has?o"
+    "title": "Potwierd\u017a adres e-mail",
+    "intro": "Witamy w MOBIALO. U\u017cyj przycisku poni\u017cej, aby kontynuowa\u0107.",
+    "button": "Potwierd\u017a e-mail",
+    "ignore": "Je\u015bli nie wys\u0142ano tej pro\u015bby, zignoruj t\u0119 wiadomo\u015b\u0107.",
+    "resetTitle": "Zresetuj has\u0142o",
+    "resetButton": "Zresetuj has\u0142o"
   },
   "ro": {
-    "title": "Confirm? adresa de e-mail",
-    "intro": "Bun venit la MOBIALO. Folose?te butonul de mai jos pentru a continua.",
-    "button": "Confirm? e-mailul",
-    "ignore": "Dac? nu ai f?cut aceast? solicitare, ignor? acest e-mail.",
-    "resetTitle": "Reseteaz? parola",
-    "resetButton": "Reseteaz? parola"
+    "title": "Confirm\u0103 adresa de e-mail",
+    "intro": "Bun venit la MOBIALO. Folose\u0219te butonul de mai jos pentru a continua.",
+    "button": "Confirm\u0103 e-mailul",
+    "ignore": "Dac\u0103 nu ai f\u0103cut aceast\u0103 solicitare, ignor\u0103 acest e-mail.",
+    "resetTitle": "Reseteaz\u0103 parola",
+    "resetButton": "Reseteaz\u0103 parola"
   },
   "el": {
-    "title": "??????????? ?? email ???",
-    "intro": "????? ????? ??? MOBIALO. ?????? ?? ???????? ?????? ??? ?? ??????????.",
-    "button": "??????????? email",
-    "ignore": "?? ??? ?????? ???? ?? ??????, ??????? ???? ?? email.",
-    "resetTitle": "????????? ??????? ?????????",
-    "resetButton": "????????? ???????"
+    "title": "\u0395\u03c0\u03b9\u03b2\u03b5\u03b2\u03b1\u03af\u03c9\u03c3\u03b5 \u03c4\u03bf email \u03c3\u03bf\u03c5",
+    "intro": "\u039a\u03b1\u03bb\u03ce\u03c2 \u03ae\u03c1\u03b8\u03b5\u03c2 \u03c3\u03c4\u03bf MOBIALO. \u03a0\u03ac\u03c4\u03b7\u03c3\u03b5 \u03c4\u03bf \u03c0\u03b1\u03c1\u03b1\u03ba\u03ac\u03c4\u03c9 \u03ba\u03bf\u03c5\u03bc\u03c0\u03af \u03b3\u03b9\u03b1 \u03bd\u03b1 \u03c3\u03c5\u03bd\u03b5\u03c7\u03af\u03c3\u03b5\u03b9\u03c2.",
+    "button": "\u0395\u03c0\u03b9\u03b2\u03b5\u03b2\u03b1\u03af\u03c9\u03c3\u03b7 email",
+    "ignore": "\u0391\u03bd \u03b4\u03b5\u03bd \u03ad\u03ba\u03b1\u03bd\u03b5\u03c2 \u03b1\u03c5\u03c4\u03cc \u03c4\u03bf \u03b1\u03af\u03c4\u03b7\u03bc\u03b1, \u03b1\u03b3\u03bd\u03cc\u03b7\u03c3\u03b5 \u03b1\u03c5\u03c4\u03cc \u03c4\u03bf email.",
+    "resetTitle": "\u0395\u03c0\u03b1\u03bd\u03b1\u03c6\u03bf\u03c1\u03ac \u03ba\u03c9\u03b4\u03b9\u03ba\u03bf\u03cd",
+    "resetButton": "\u0395\u03c0\u03b1\u03bd\u03b1\u03c6\u03bf\u03c1\u03ac \u03ba\u03c9\u03b4\u03b9\u03ba\u03bf\u03cd"
   },
   "tr": {
-    "title": "E-posta adresinizi do?rulay?n",
-    "intro": "MOBIALO?ya ho? geldiniz. Devam etmek i?in a?a??daki d??meyi kullan?n.",
-    "button": "E-postay? do?rula",
-    "ignore": "Bu iste?i siz yapmad?ysan?z bu e-postay? yok sayabilirsiniz.",
-    "resetTitle": "?ifrenizi s?f?rlay?n",
-    "resetButton": "?ifreyi s?f?rla"
+    "title": "E-posta adresinizi do\u011frulay\u0131n",
+    "intro": "MOBIALO\u2019ya ho\u015f geldiniz. Devam etmek i\u00e7in a\u015fa\u011f\u0131daki d\u00fc\u011fmeyi kullan\u0131n.",
+    "button": "E-postay\u0131 do\u011frula",
+    "ignore": "Bu iste\u011fi siz yapmad\u0131ysan\u0131z bu e-postay\u0131 yok sayabilirsiniz.",
+    "resetTitle": "\u015eifreyi s\u0131f\u0131rla",
+    "resetButton": "\u015eifreyi s\u0131f\u0131rla"
   },
   "bg": {
-    "title": "?????????? ?????? ??",
-    "intro": "????? ????? ? MOBIALO. ??????????? ?????? ??-????, ?? ?? ??????????.",
-    "button": "???????? ?????",
-    "ignore": "??? ?? ??? ????????? ???? ??????, ??????????? ???? ?????.",
-    "resetTitle": "????????? ???????? ??",
-    "resetButton": "??????? ????????"
+    "title": "\u041f\u043e\u0442\u0432\u044a\u0440\u0434\u0435\u0442\u0435 \u0438\u043c\u0435\u0439\u043b\u0430 \u0441\u0438",
+    "intro": "\u0414\u043e\u0431\u0440\u0435 \u0434\u043e\u0448\u043b\u0438 \u0432 MOBIALO. \u0418\u0437\u043f\u043e\u043b\u0437\u0432\u0430\u0439\u0442\u0435 \u0431\u0443\u0442\u043e\u043d\u0430 \u043f\u043e-\u0434\u043e\u043b\u0443, \u0437\u0430 \u0434\u0430 \u043f\u0440\u043e\u0434\u044a\u043b\u0436\u0438\u0442\u0435.",
+    "button": "\u041f\u043e\u0442\u0432\u044a\u0440\u0434\u0438 \u0438\u043c\u0435\u0439\u043b",
+    "ignore": "\u0410\u043a\u043e \u043d\u0435 \u0441\u0442\u0435 \u043d\u0430\u043f\u0440\u0430\u0432\u0438\u043b\u0438 \u0442\u0430\u0437\u0438 \u0437\u0430\u044f\u0432\u043a\u0430, \u0438\u0433\u043d\u043e\u0440\u0438\u0440\u0430\u0439\u0442\u0435 \u0442\u043e\u0437\u0438 \u0438\u043c\u0435\u0439\u043b.",
+    "resetTitle": "\u041d\u0443\u043b\u0438\u0440\u0430\u0439 \u043f\u0430\u0440\u043e\u043b\u0430\u0442\u0430",
+    "resetButton": "\u041d\u0443\u043b\u0438\u0440\u0430\u0439 \u043f\u0430\u0440\u043e\u043b\u0430\u0442\u0430"
   },
   "hr": {
     "title": "Potvrdite svoju e-adresu",
-    "intro": "Dobro do?li u MOBIALO. Za nastavak upotrijebite gumb u nastavku.",
+    "intro": "Dobro do\u0161li u MOBIALO. Za nastavak upotrijebite gumb u nastavku.",
     "button": "Potvrdi e-adresu",
     "ignore": "Ako niste poslali ovaj zahtjev, zanemarite ovu poruku.",
-    "resetTitle": "Ponovno postavite lozinku",
+    "resetTitle": "Ponovno postavi lozinku",
     "resetButton": "Ponovno postavi lozinku"
   },
   "sr": {
-    "title": "????????? ????? ??????",
-    "intro": "????? ????? ? MOBIALO. ???????? ?? ????? ????? ?? ?????????.",
-    "button": "??????? ?????",
-    "ignore": "??? ????? ??????? ???? ??????, ?????????? ??? ??????.",
-    "resetTitle": "????????? ???????",
-    "resetButton": "??????? ???????"
+    "title": "\u041f\u043e\u0442\u0432\u0440\u0434\u0438\u0442\u0435 \u0438\u043c\u0435\u0458\u043b \u0430\u0434\u0440\u0435\u0441\u0443",
+    "intro": "\u0414\u043e\u0431\u0440\u043e \u0434\u043e\u0448\u043b\u0438 \u0443 MOBIALO. \u041a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u043d\u0430 \u0434\u0443\u0433\u043c\u0435 \u0438\u0441\u043f\u043e\u0434 \u0434\u0430 \u043d\u0430\u0441\u0442\u0430\u0432\u0438\u0442\u0435.",
+    "button": "\u041f\u043e\u0442\u0432\u0440\u0434\u0438 \u0438\u043c\u0435\u0458\u043b",
+    "ignore": "\u0410\u043a\u043e \u043d\u0438\u0441\u0442\u0435 \u043f\u043e\u0441\u043b\u0430\u043b\u0438 \u043e\u0432\u0430\u0458 \u0437\u0430\u0445\u0442\u0435\u0432, \u0437\u0430\u043d\u0435\u043c\u0430\u0440\u0438\u0442\u0435 \u043e\u0432\u0443 \u043f\u043e\u0440\u0443\u043a\u0443.",
+    "resetTitle": "\u0420\u0435\u0441\u0435\u0442\u0443\u0458 \u043b\u043e\u0437\u0438\u043d\u043a\u0443",
+    "resetButton": "\u0420\u0435\u0441\u0435\u0442\u0443\u0458 \u043b\u043e\u0437\u0438\u043d\u043a\u0443"
   },
   "mk": {
-    "title": "????????? ?? ?????? ?-?????",
-    "intro": "????????????? ?? MOBIALO. ????????? ?? ??????? ?????? ?? ?? ??????????.",
-    "button": "??????? ?-?????",
-    "ignore": "??? ?? ?? ????????? ???, ??????????? ?? ???? ??????.",
-    "resetTitle": "??????????? ?? ?????????",
-    "resetButton": "????????? ???????"
+    "title": "\u041f\u043e\u0442\u0432\u0440\u0434\u0435\u0442\u0435 \u0458\u0430 \u0432\u0430\u0448\u0430\u0442\u0430 \u0435-\u043f\u043e\u0448\u0442\u0430",
+    "intro": "\u0414\u043e\u0431\u0440\u0435\u0434\u043e\u0458\u0434\u043e\u0432\u0442\u0435 \u0432\u043e MOBIALO. \u041a\u043e\u0440\u0438\u0441\u0442\u0435\u0442\u0435 \u0433\u043e \u043a\u043e\u043f\u0447\u0435\u0442\u043e \u043f\u043e\u0434\u043e\u043b\u0443 \u0437\u0430 \u0434\u0430 \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u0435.",
+    "button": "\u041f\u043e\u0442\u0432\u0440\u0434\u0438 \u0435-\u043f\u043e\u0448\u0442\u0430",
+    "ignore": "\u0410\u043a\u043e \u043d\u0435 \u0433\u043e \u043f\u043e\u0431\u0430\u0440\u0430\u0432\u0442\u0435 \u043e\u0432\u0430, \u0438\u0433\u043d\u043e\u0440\u0438\u0440\u0430\u0458\u0442\u0435 \u0458\u0430 \u043e\u0432\u0430\u0430 \u043f\u043e\u0440\u0430\u043a\u0430.",
+    "resetTitle": "\u0420\u0435\u0441\u0435\u0442\u0438\u0440\u0430\u0458 \u043b\u043e\u0437\u0438\u043d\u043a\u0430",
+    "resetButton": "\u0420\u0435\u0441\u0435\u0442\u0438\u0440\u0430\u0458 \u043b\u043e\u0437\u0438\u043d\u043a\u0430"
   },
   "sl": {
-    "title": "Potrdite svoj e-po?tni naslov",
-    "intro": "Dobrodo?li v MOBIALO. Za nadaljevanje uporabite spodnji gumb.",
-    "button": "Potrdi e-po?to",
-    "ignore": "?e tega niste zahtevali, prezrite to sporo?ilo.",
-    "resetTitle": "Ponastavite geslo",
+    "title": "Potrdite svoj e-po\u0161tni naslov",
+    "intro": "Dobrodo\u0161li v MOBIALO. Za nadaljevanje uporabite spodnji gumb.",
+    "button": "Potrdi e-po\u0161to",
+    "ignore": "\u010ce tega niste zahtevali, prezrite to sporo\u010dilo.",
+    "resetTitle": "Ponastavi geslo",
     "resetButton": "Ponastavi geslo"
   },
   "cs": {
-    "title": "Potvr?te sv?j e-mail",
-    "intro": "V?tejte v MOBIALO. Pokra?ujte pomoc? tla??tka n??e.",
+    "title": "Potvr\u010fte sv\u016fj e-mail",
+    "intro": "V\u00edtejte v MOBIALO. Pokra\u010dujte pomoc\u00ed tla\u010d\u00edtka n\u00ed\u017ee.",
     "button": "Potvrdit e-mail",
-    "ignore": "Pokud jste o to ne??dali, tento e-mail ignorujte.",
-    "resetTitle": "Obnovte sv? heslo",
+    "ignore": "Pokud jste o to ne\u017e\u00e1dali, tento e-mail ignorujte.",
+    "resetTitle": "Obnovit heslo",
     "resetButton": "Obnovit heslo"
   },
   "sk": {
-    "title": "Potvr?te svoj e-mail",
-    "intro": "Vitajte v MOBIALO. Pokra?ujte pomocou tla?idla ni??ie.",
-    "button": "Potvrdi? e-mail",
-    "ignore": "Ak ste o to ne?iadali, tento e-mail ignorujte.",
-    "resetTitle": "Obnovte svoje heslo",
-    "resetButton": "Obnovi? heslo"
+    "title": "Potvr\u010fte svoj e-mail",
+    "intro": "Vitajte v MOBIALO. Pokra\u010dujte pomocou tla\u010didla ni\u017e\u0161ie.",
+    "button": "Potvrdi\u0165 e-mail",
+    "ignore": "Ak ste o to ne\u017eiadali, tento e-mail ignorujte.",
+    "resetTitle": "Obnovi\u0165 heslo",
+    "resetButton": "Obnovi\u0165 heslo"
   },
   "hu": {
-    "title": "Er?s?tsd meg az e-mail-c?med",
-    "intro": "?dv?zl?nk a MOBIALO-n?l. A folytat?shoz kattints az al?bbi gombra.",
-    "button": "E-mail meger?s?t?se",
-    "ignore": "Ha nem te k?rted ezt, hagyd figyelmen k?v?l ezt az e-mailt.",
-    "resetTitle": "?ll?tsd vissza a jelszavad",
-    "resetButton": "Jelsz? vissza?ll?t?sa"
+    "title": "Er\u0151s\u00edtsd meg az e-mail-c\u00edmed",
+    "intro": "\u00dcdv\u00f6zl\u00fcnk a MOBIALO-n\u00e1l. A folytat\u00e1shoz kattints az al\u00e1bbi gombra.",
+    "button": "E-mail meger\u0151s\u00edt\u00e9se",
+    "ignore": "Ha nem te k\u00e9rted ezt, hagyd figyelmen k\u00edv\u00fcl ezt az e-mailt.",
+    "resetTitle": "Jelsz\u00f3 vissza\u00e1ll\u00edt\u00e1sa",
+    "resetButton": "Jelsz\u00f3 vissza\u00e1ll\u00edt\u00e1sa"
   },
   "sv": {
-    "title": "Bekr?fta din e-postadress",
-    "intro": "V?lkommen till MOBIALO. Anv?nd knappen nedan f?r att forts?tta.",
-    "button": "Bekr?fta e-post",
-    "ignore": "Om du inte beg?rde detta kan du ignorera mejlet.",
-    "resetTitle": "?terst?ll ditt l?senord",
-    "resetButton": "?terst?ll l?senord"
+    "title": "Bekr\u00e4fta din e-postadress",
+    "intro": "V\u00e4lkommen till MOBIALO. Anv\u00e4nd knappen nedan f\u00f6r att forts\u00e4tta.",
+    "button": "Bekr\u00e4fta e-post",
+    "ignore": "Om du inte beg\u00e4rde detta kan du ignorera mejlet.",
+    "resetTitle": "\u00c5terst\u00e4ll l\u00f6senord",
+    "resetButton": "\u00c5terst\u00e4ll l\u00f6senord"
   },
   "no": {
     "title": "Bekreft e-postadressen din",
-    "intro": "Velkommen til MOBIALO. Bruk knappen nedenfor for ? fortsette.",
+    "intro": "Velkommen til MOBIALO. Bruk knappen nedenfor for \u00e5 fortsette.",
     "button": "Bekreft e-post",
     "ignore": "Hvis du ikke ba om dette, kan du ignorere denne e-posten.",
-    "resetTitle": "Tilbakestill passordet ditt",
+    "resetTitle": "Tilbakestill passord",
     "resetButton": "Tilbakestill passord"
   },
   "da": {
-    "title": "Bekr?ft din e-mailadresse",
-    "intro": "Velkommen til MOBIALO. Brug knappen nedenfor for at forts?tte.",
-    "button": "Bekr?ft e-mail",
+    "title": "Bekr\u00e6ft din e-mailadresse",
+    "intro": "Velkommen til MOBIALO. Brug knappen nedenfor for at forts\u00e6tte.",
+    "button": "Bekr\u00e6ft e-mail",
     "ignore": "Hvis du ikke har anmodet om dette, kan du ignorere denne e-mail.",
-    "resetTitle": "Nulstil din adgangskode",
+    "resetTitle": "Nulstil adgangskode",
     "resetButton": "Nulstil adgangskode"
   },
   "fi": {
-    "title": "Vahvista s?hk?postiosoitteesi",
+    "title": "Vahvista s\u00e4hk\u00f6postiosoitteesi",
     "intro": "Tervetuloa MOBIALOon. Jatka alla olevasta painikkeesta.",
-    "button": "Vahvista s?hk?posti",
-    "ignore": "Jos et pyyt?nyt t?t?, voit j?tt?? viestin huomiotta.",
-    "resetTitle": "Palauta salasanasi",
+    "button": "Vahvista s\u00e4hk\u00f6posti",
+    "ignore": "Jos et pyyt\u00e4nyt t\u00e4t\u00e4, voit j\u00e4tt\u00e4\u00e4 viestin huomiotta.",
+    "resetTitle": "Palauta salasana",
     "resetButton": "Palauta salasana"
   },
   "uk": {
-    "title": "??????????? ?????????? ??????",
-    "intro": "??????? ??????? ?? MOBIALO. ????????? ?????? ?????, ??? ??????????.",
-    "button": "??????????? ??????",
-    "ignore": "???? ?? ?? ????????? ??? ?????, ???????????? ??? ????.",
-    "resetTitle": "??????? ??????",
-    "resetButton": "??????? ??????"
+    "title": "\u041f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u044c\u0442\u0435 \u0435\u043b\u0435\u043a\u0442\u0440\u043e\u043d\u043d\u0443 \u0430\u0434\u0440\u0435\u0441\u0443",
+    "intro": "\u041b\u0430\u0441\u043a\u0430\u0432\u043e \u043f\u0440\u043e\u0441\u0438\u043c\u043e \u0434\u043e MOBIALO. \u041d\u0430\u0442\u0438\u0441\u043d\u0456\u0442\u044c \u043a\u043d\u043e\u043f\u043a\u0443 \u043d\u0438\u0436\u0447\u0435, \u0449\u043e\u0431 \u043f\u0440\u043e\u0434\u043e\u0432\u0436\u0438\u0442\u0438.",
+    "button": "\u041f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0438 \u0430\u0434\u0440\u0435\u0441\u0443",
+    "ignore": "\u042f\u043a\u0449\u043e \u0432\u0438 \u043d\u0435 \u043d\u0430\u0434\u0441\u0438\u043b\u0430\u043b\u0438 \u0446\u0435\u0439 \u0437\u0430\u043f\u0438\u0442, \u043f\u0440\u043e\u0456\u0433\u043d\u043e\u0440\u0443\u0439\u0442\u0435 \u0446\u0435\u0439 \u043b\u0438\u0441\u0442.",
+    "resetTitle": "\u0421\u043a\u0438\u043d\u0443\u0442\u0438 \u043f\u0430\u0440\u043e\u043b\u044c",
+    "resetButton": "\u0421\u043a\u0438\u043d\u0443\u0442\u0438 \u043f\u0430\u0440\u043e\u043b\u044c"
   },
   "ru": {
-    "title": "??????????? ??????????? ?????",
-    "intro": "????? ?????????? ? MOBIALO. ??????? ?????? ????, ????? ??????????.",
-    "button": "??????????? ?????",
-    "ignore": "???? ?? ?? ?????????? ???? ??????, ?????????????? ??????.",
-    "resetTitle": "???????? ??????",
-    "resetButton": "???????? ??????"
+    "title": "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u044d\u043b\u0435\u043a\u0442\u0440\u043e\u043d\u043d\u0443\u044e \u043f\u043e\u0447\u0442\u0443",
+    "intro": "\u0414\u043e\u0431\u0440\u043e \u043f\u043e\u0436\u0430\u043b\u043e\u0432\u0430\u0442\u044c \u0432 MOBIALO. \u041d\u0430\u0436\u043c\u0438\u0442\u0435 \u043a\u043d\u043e\u043f\u043a\u0443 \u043d\u0438\u0436\u0435, \u0447\u0442\u043e\u0431\u044b \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c.",
+    "button": "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c \u043f\u043e\u0447\u0442\u0443",
+    "ignore": "\u0415\u0441\u043b\u0438 \u0432\u044b \u043d\u0435 \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u044f\u043b\u0438 \u044d\u0442\u043e\u0442 \u0437\u0430\u043f\u0440\u043e\u0441, \u043f\u0440\u043e\u0438\u0433\u043d\u043e\u0440\u0438\u0440\u0443\u0439\u0442\u0435 \u043f\u0438\u0441\u044c\u043c\u043e.",
+    "resetTitle": "\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u043f\u0430\u0440\u043e\u043b\u044c",
+    "resetButton": "\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u043f\u0430\u0440\u043e\u043b\u044c"
   },
   "ar": {
-    "title": "????? ????? ??????????",
-    "intro": "?????? ?? ?? MOBIALO. ?????? ???? ????? ????????.",
-    "button": "????? ?????? ??????????",
-    "ignore": "??? ?? ???? ???? ????? ????? ??? ???????.",
-    "resetTitle": "????? ????? ???? ??????",
-    "resetButton": "????? ????? ???? ??????"
+    "title": "\u062a\u0623\u0643\u064a\u062f \u0628\u0631\u064a\u062f\u0643 \u0627\u0644\u0625\u0644\u0643\u062a\u0631\u0648\u0646\u064a",
+    "intro": "\u0645\u0631\u062d\u0628\u064b\u0627 \u0628\u0643 \u0641\u064a MOBIALO. \u0627\u0633\u062a\u062e\u062f\u0645 \u0627\u0644\u0632\u0631 \u0623\u062f\u0646\u0627\u0647 \u0644\u0644\u0645\u062a\u0627\u0628\u0639\u0629.",
+    "button": "\u062a\u0623\u0643\u064a\u062f \u0627\u0644\u0628\u0631\u064a\u062f \u0627\u0644\u0625\u0644\u0643\u062a\u0631\u0648\u0646\u064a",
+    "ignore": "\u0625\u0630\u0627 \u0644\u0645 \u062a\u0637\u0644\u0628 \u0630\u0644\u0643\u060c \u064a\u0645\u0643\u0646\u0643 \u062a\u062c\u0627\u0647\u0644 \u0647\u0630\u0647 \u0627\u0644\u0631\u0633\u0627\u0644\u0629.",
+    "resetTitle": "\u0625\u0639\u0627\u062f\u0629 \u062a\u0639\u064a\u064a\u0646 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631",
+    "resetButton": "\u0625\u0639\u0627\u062f\u0629 \u062a\u0639\u064a\u064a\u0646 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631"
   },
   "he": {
-    "title": "????? ????? ???????",
-    "intro": "?????? ????? ?-MOBIALO. ???? ?? ?????? ???? ??? ??????.",
-    "button": "????? ???????",
-    "ignore": "?? ?? ?????? ???, ???? ?????? ?????? ??.",
-    "resetTitle": "????? ??????",
-    "resetButton": "????? ??????"
+    "title": "\u05d0\u05d9\u05de\u05d5\u05ea \u05db\u05ea\u05d5\u05d1\u05ea \u05d4\u05d0\u05d9\u05de\u05d9\u05d9\u05dc",
+    "intro": "\u05d1\u05e8\u05d5\u05db\u05d9\u05dd \u05d4\u05d1\u05d0\u05d9\u05dd \u05dc-MOBIALO. \u05dc\u05d7\u05e6\u05d5 \u05e2\u05dc \u05d4\u05db\u05e4\u05ea\u05d5\u05e8 \u05dc\u05de\u05d8\u05d4 \u05db\u05d3\u05d9 \u05dc\u05d4\u05de\u05e9\u05d9\u05da.",
+    "button": "\u05d0\u05d9\u05de\u05d5\u05ea \u05d4\u05d0\u05d9\u05de\u05d9\u05d9\u05dc",
+    "ignore": "\u05d0\u05dd \u05dc\u05d0 \u05d1\u05d9\u05e7\u05e9\u05ea\u05dd \u05d6\u05d0\u05ea, \u05e0\u05d9\u05ea\u05df \u05dc\u05d4\u05ea\u05e2\u05dc\u05dd \u05de\u05d4\u05d5\u05d3\u05e2\u05d4 \u05d6\u05d5.",
+    "resetTitle": "\u05d0\u05d9\u05e4\u05d5\u05e1 \u05d4\u05e1\u05d9\u05e1\u05de\u05d4",
+    "resetButton": "\u05d0\u05d9\u05e4\u05d5\u05e1 \u05d4\u05e1\u05d9\u05e1\u05de\u05d4"
   },
   "hi": {
-    "title": "???? ???? ???????? ????",
-    "intro": "MOBIALO ??? ???? ?????? ??? ??? ????? ?? ??? ???? ??? ??? ?? ????? ?????",
-    "button": "???? ???????? ????",
-    "ignore": "??? ???? ?? ?????? ???? ???? ??, ?? ?? ???? ?? ?????? ?????",
-    "resetTitle": "???? ??????? ????? ????",
-    "resetButton": "??????? ????? ????"
+    "title": "\u0905\u092a\u0928\u093e \u0908\u092e\u0947\u0932 \u0938\u0924\u094d\u092f\u093e\u092a\u093f\u0924 \u0915\u0930\u0947\u0902",
+    "intro": "MOBIALO \u092e\u0947\u0902 \u0906\u092a\u0915\u093e \u0938\u094d\u0935\u093e\u0917\u0924 \u0939\u0948\u0964 \u0906\u0917\u0947 \u092c\u0922\u093c\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u0928\u0940\u091a\u0947 \u0926\u093f\u090f \u092c\u091f\u0928 \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u0915\u0930\u0947\u0902\u0964",
+    "button": "\u0908\u092e\u0947\u0932 \u0938\u0924\u094d\u092f\u093e\u092a\u093f\u0924 \u0915\u0930\u0947\u0902",
+    "ignore": "\u092f\u0926\u093f \u0906\u092a\u0928\u0947 \u092f\u0939 \u0905\u0928\u0941\u0930\u094b\u0927 \u0928\u0939\u0940\u0902 \u0915\u093f\u092f\u093e \u0939\u0948, \u0924\u094b \u0907\u0938 \u0908\u092e\u0947\u0932 \u0915\u094b \u0905\u0928\u0926\u0947\u0916\u093e \u0915\u0930\u0947\u0902\u0964",
+    "resetTitle": "\u092a\u093e\u0938\u0935\u0930\u094d\u0921 \u0930\u0940\u0938\u0947\u091f \u0915\u0930\u0947\u0902",
+    "resetButton": "\u092a\u093e\u0938\u0935\u0930\u094d\u0921 \u0930\u0940\u0938\u0947\u091f \u0915\u0930\u0947\u0902"
   },
   "zh": {
-    "title": "????????",
-    "intro": "???? MOBIALO???????????",
-    "button": "????",
-    "ignore": "??????????????????",
-    "resetTitle": "??????",
-    "resetButton": "????"
+    "title": "\u786e\u8ba4\u60a8\u7684\u7535\u5b50\u90ae\u7bb1",
+    "intro": "\u6b22\u8fce\u4f7f\u7528 MOBIALO\u3002\u8bf7\u70b9\u51fb\u4e0b\u65b9\u6309\u94ae\u7ee7\u7eed\u3002",
+    "button": "\u786e\u8ba4\u90ae\u7bb1",
+    "ignore": "\u5982\u679c\u60a8\u6ca1\u6709\u63d0\u51fa\u6b64\u8bf7\u6c42\uff0c\u8bf7\u5ffd\u7565\u6b64\u90ae\u4ef6\u3002",
+    "resetTitle": "\u91cd\u7f6e\u5bc6\u7801",
+    "resetButton": "\u91cd\u7f6e\u5bc6\u7801"
   },
   "ja": {
-    "title": "??????????",
-    "intro": "MOBIALO?????????????????????",
-    "button": "??????????",
-    "ignore": "??????????????????????????????????",
-    "resetTitle": "??????????",
-    "resetButton": "??????????"
+    "title": "\u30e1\u30fc\u30eb\u30a2\u30c9\u30ec\u30b9\u3092\u78ba\u8a8d",
+    "intro": "MOBIALO\u3078\u3088\u3046\u3053\u305d\u3002\u4e0b\u306e\u30dc\u30bf\u30f3\u304b\u3089\u304a\u9032\u307f\u304f\u3060\u3055\u3044\u3002",
+    "button": "\u30e1\u30fc\u30eb\u30a2\u30c9\u30ec\u30b9\u3092\u78ba\u8a8d",
+    "ignore": "\u3053\u306e\u30ea\u30af\u30a8\u30b9\u30c8\u306b\u5fc3\u5f53\u305f\u308a\u304c\u306a\u3044\u5834\u5408\u306f\u3001\u3053\u306e\u30e1\u30fc\u30eb\u3092\u7121\u8996\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+    "resetTitle": "\u30d1\u30b9\u30ef\u30fc\u30c9\u3092\u30ea\u30bb\u30c3\u30c8",
+    "resetButton": "\u30d1\u30b9\u30ef\u30fc\u30c9\u3092\u30ea\u30bb\u30c3\u30c8"
   },
   "ko": {
-    "title": "??? ?? ??",
-    "intro": "MOBIALO? ?? ?? ?????. ?? ??? ?? ?????.",
-    "button": "??? ??",
-    "ignore": "??? ?? ??? ? ???? ?????.",
-    "resetTitle": "???? ???",
-    "resetButton": "???? ???"
+    "title": "\uc774\uba54\uc77c \uc8fc\uc18c \ud655\uc778",
+    "intro": "MOBIALO\uc5d0 \uc624\uc2e0 \uac83\uc744 \ud658\uc601\ud569\ub2c8\ub2e4. \uc544\ub798 \ubc84\ud2bc\uc744 \ub20c\ub7ec \uacc4\uc18d\ud558\uc138\uc694.",
+    "button": "\uc774\uba54\uc77c \ud655\uc778",
+    "ignore": "\uc694\uccad\ud55c \uc801\uc774 \uc5c6\ub2e4\uba74 \uc774 \uc774\uba54\uc77c\uc744 \ubb34\uc2dc\ud558\uc138\uc694.",
+    "resetTitle": "\ube44\ubc00\ubc88\ud638 \uc7ac\uc124\uc815",
+    "resetButton": "\ube44\ubc00\ubc88\ud638 \uc7ac\uc124\uc815"
   },
   "id": {
     "title": "Konfirmasi email Anda",
@@ -272,19 +272,19 @@
     "resetButton": "Tetapkan semula kata laluan"
   },
   "th": {
-    "title": "?????????????????",
-    "intro": "??????????????? MOBIALO ????????????????????????????????",
-    "button": "???????????",
-    "ignore": "?????????????????????? ??????????????????",
-    "resetTitle": "????????????????????",
-    "resetButton": "??????????????"
+    "title": "\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e2d\u0e35\u0e40\u0e21\u0e25\u0e02\u0e2d\u0e07\u0e04\u0e38\u0e13",
+    "intro": "\u0e22\u0e34\u0e19\u0e14\u0e35\u0e15\u0e49\u0e2d\u0e19\u0e23\u0e31\u0e1a\u0e2a\u0e39\u0e48 MOBIALO \u0e43\u0e0a\u0e49\u0e1b\u0e38\u0e48\u0e21\u0e14\u0e49\u0e32\u0e19\u0e25\u0e48\u0e32\u0e07\u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e14\u0e33\u0e40\u0e19\u0e34\u0e19\u0e01\u0e32\u0e23\u0e15\u0e48\u0e2d",
+    "button": "\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e2d\u0e35\u0e40\u0e21\u0e25",
+    "ignore": "\u0e2b\u0e32\u0e01\u0e04\u0e38\u0e13\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49\u0e2a\u0e48\u0e07\u0e04\u0e33\u0e02\u0e2d\u0e19\u0e35\u0e49 \u0e42\u0e1b\u0e23\u0e14\u0e25\u0e30\u0e40\u0e27\u0e49\u0e19\u0e2d\u0e35\u0e40\u0e21\u0e25\u0e19\u0e35\u0e49",
+    "resetTitle": "\u0e23\u0e35\u0e40\u0e0b\u0e47\u0e15\u0e23\u0e2b\u0e31\u0e2a\u0e1c\u0e48\u0e32\u0e19",
+    "resetButton": "\u0e23\u0e35\u0e40\u0e0b\u0e47\u0e15\u0e23\u0e2b\u0e31\u0e2a\u0e1c\u0e48\u0e32\u0e19"
   },
   "vi": {
-    "title": "X?c nh?n email c?a b?n",
-    "intro": "Ch?o m?ng ??n v?i MOBIALO. Nh?n n?t b?n d??i ?? ti?p t?c.",
-    "button": "X?c nh?n email",
-    "ignore": "N?u b?n kh?ng y?u c?u, h?y b? qua email n?y.",
-    "resetTitle": "??t l?i m?t kh?u",
-    "resetButton": "??t l?i m?t kh?u"
+    "title": "X\u00e1c nh\u1eadn email c\u1ee7a b\u1ea1n",
+    "intro": "Ch\u00e0o m\u1eebng \u0111\u1ebfn v\u1edbi MOBIALO. Nh\u1ea5n n\u00fat b\u00ean d\u01b0\u1edbi \u0111\u1ec3 ti\u1ebfp t\u1ee5c.",
+    "button": "X\u00e1c nh\u1eadn email",
+    "ignore": "N\u1ebfu b\u1ea1n kh\u00f4ng y\u00eau c\u1ea7u, h\u00e3y b\u1ecf qua email n\u00e0y.",
+    "resetTitle": "\u0110\u1eb7t l\u1ea1i m\u1eadt kh\u1ea9u",
+    "resetButton": "\u0110\u1eb7t l\u1ea1i m\u1eadt kh\u1ea9u"
   }
 }
