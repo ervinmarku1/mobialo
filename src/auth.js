@@ -54,7 +54,7 @@ $('#auth-form').addEventListener('submit',async event=>{
   busy=true;status();
   try{
     let response;
-    if(mode==='join')response=await client.auth.signUp({email:$('#email').value.trim(),password:$('#password').value,options:{data:{full_name:$('#name').value.trim(),language},emailRedirectTo:`${location.origin}/account`}});
+    if(mode==='join')response=await client.auth.signUp({email:$('#email').value.trim(),password:$('#password').value,options:{data:{full_name:$('#name').value.trim(),language:window.MobialoLocale.emailLanguage},emailRedirectTo:`${location.origin}/account`}});
     if(mode==='sign')response=await client.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});
     if(mode==='reset')response=await client.auth.resetPasswordForEmail($('#email').value.trim(),{redirectTo:`${location.origin}/update-password`});
     if(mode==='update')response=await client.auth.updateUser({password:$('#password').value});
