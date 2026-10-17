@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {adminOrders} from './admin-orders.mjs';
+const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'server-key',ADMIN_USER_IDS:'owner'};
+const req={method:'GET',headers:{authorization:'Bearer test'},url:'/api/admin/orders'};
+test('rejects missing token before fetching orders',async()=>{assert.equal((await adminOrders({...req,headers:{}},()=>assert.fail(),env)).status,401);});
+test('rejects customer account even with administrator user metadata',async()=>{let calls=0;const result=await adminOrders(req,async()=>{calls++;return Response.json({id:'customer',email_confirmed_at:'now',user_metadata:{role:'admin'}});},env);assert.equal(result.status,403);assert.equal(calls,1);});
+test('requires configured ID and confirmed email',async()=>{assert.equal((await adminOrders(req,()=>assert.fail(),{...env,ADMIN_USER_IDS:''})).status,503);assert.equal((await adminOrders(req,async()=>Response.json({id:'owner'}),env)).status,403);});
+test('authorized administrator gets paginated data using server credentials',async()=>{let calls=0;const result=await adminOrders({...req,url:req.url+'?page=2&state=sent&search=customer@example.com'},async(url,options)=>{calls++;if(calls===1)return Response.json({id:'owner',email_confirmed_at:'now'});const q=new URL(url).searchParams;assert.equal(q.get('offset'),'50');assert.equal(q.get('state'),'eq.sent');assert.equal(options.headers.Authorization,'Bearer server-key');return Response.json([{id:'order'}],{headers:{'content-range':'50-50/51'}});},env);assert.equal(result.status,200);assert.equal(result.body.total,51);assert.equal(result.body.page,2);});
+test('rejects filter injection and invalid pagination',async()=>{for(const suffix of ['?search=*,id.eq.any','?page=-1','?state=unknown'])assert.equal((await adminOrders({...req,url:req.url+suffix},async()=>Response.json({id:'owner',email_confirmed_at:'now'}),env)).status,400);});
