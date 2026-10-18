@@ -43,7 +43,8 @@ export function normalizeProducts(body) {
   if (!Array.isArray(rows)) throw new CatalogError('INVALID_CATALOG',502);
   return rows.filter(product=>['esim_realtime','esim_delayed'].includes(product?.productCategory)).map(product=>{
     if (typeof product.productId !== 'string' || !product.productId || typeof product.retailPrice !== 'number' || !Number.isFinite(product.retailPrice) || product.retailPrice<0 || !/^[A-Z]{3}$/.test(product.currencyCode || '') || !Array.isArray(product.countries)) throw new CatalogError('INVALID_CATALOG',502);
-    const details = new Map((Array.isArray(product.productDetails)?product.productDetails:[]).filter(item=>item && typeof item.name==='string').map(item=>[item.name,cleanText(item.value)]));
+    const details = new Map((Array.isArray(product.productDetails)?product.productDetails:[]).filter(item=>item && typeof item.name==='string').map(item=>[item.name.trim(),cleanText(item.value)]));
+    const supported = key => details.get(key)==='1'?true:details.get(key)==='0'?false:null;
     const validity = details.get('PLAN_VALIDITY');
     const hours = validity && Number.isFinite(Number(validity)) && Number(validity)>0 ? Number(validity) : null;
     return {
@@ -59,6 +60,7 @@ export function normalizeProducts(body) {
       dataAmount:details.get('PLAN_DATA_LIMIT') || null,
       dataUnit:details.get('PLAN_DATA_UNIT') || null,
       validityHours:hours,
+      features:{data:supported('HAS_DATA'),calls:supported('HAS_CALLS'),sms:supported('HAS_SMS'),hotspot:supported('HOTSPOT'),network:details.get('NETWORKS_SHORT')||null,speed:details.get('SPEED_LONG')||details.get('SPEED')||null,activation:details.get('ACTIVATION_POLICY')||null,phonePrefix:details.get('PHONE_NUMBER_PREFIX')||null},
       details:parseDetails(details.get('PLAN_DETAILS')),
       updated:cleanText(product.updated)
     };

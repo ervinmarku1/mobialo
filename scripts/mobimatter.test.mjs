@@ -42,3 +42,7 @@ test('upstream errors are sanitized and not treated as empty catalogs',async()=>
   }
   await assert.rejects(fetchProducts({merchantId:'test',apiKey:'secret'},async()=>{throw new Error('sensitive error');}),{code:'UPSTREAM_UNAVAILABLE'});
 });
+test('network facts use explicit flags and accept padded supplier field names',()=>{
+ const [plan]=normalizeProducts([{...product,productDetails:[{name:'PLAN_DETAILS ',value:JSON.stringify({items:['Network terms']})},{name:'NETWORKS_SHORT',value:'5G/4G/LTE'},{name:'HAS_DATA',value:'1'},{name:'HAS_CALLS',value:'0'},{name:'HOTSPOT',value:'1'}]}]);
+ assert.equal(plan.features.network,'5G/4G/LTE');assert.equal(plan.features.data,true);assert.equal(plan.features.calls,false);assert.equal(plan.features.sms,null);assert.deepEqual(plan.details.items,['Network terms']);
+});

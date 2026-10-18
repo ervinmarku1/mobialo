@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fulfillDelivery,deliveryEmail} from './esim-delivery.mjs';
+import {renderDelivery} from './delivery-template.mjs';
+test('complete email escapes credentials and uses customer price without invented taxes',()=>{
+ const fields=new Map([['SMDP_ADDRESS','demo.invalid'],['ACTIVATION_CODE','<demo>'],['PLAN_VALIDITY','360'],['PLAN_DATA_LIMIT','1'],['PLAN_DATA_UNIT','GB']]);
+ for(const language of ['sq','en','it']){
+  const email=renderDelivery({language,amount:4.19,currency:'EUR'}, {orderLineItem:{title:'Demo'}}, fields);
+  assert.match(email.html,/EUR 4.19/);assert.match(email.html,/LPA:1\$demo.invalid\$&lt;demo&gt;/);
+  assert.doesNotMatch(email.html,/<demo>|VAT|TVSH|undefined|NaN/);
+  assert.match(email.text,/15/);assert.match(email.html,/lang="/);
+ }
+ const email=renderDelivery({language:'sq'},{orderLineItem:{title:'Demo'}},new Map(),{test:true});
+ assert.match(email.html,/TEST — jo eSIM reale/);assert.doesNotMatch(email.html,/LPA:1|SM-DP\+|EUR 0/);
+});
 const details={orderId:'provider',orderState:'Completed',orderLineItem:{productId:'product',title:'<Plan>',lineItemDetails:[{name:'QR_CODE',value:'data:image/png;base64,iVBORw0KGgo='}]}};
 function fixture(){
  let row={id:'internal',paypal_order_id:'paypal',product_id:'product',amount:24,customer_email:'buyer@example.com',language:'sq',state:'awaiting_payment'};const calls=[];

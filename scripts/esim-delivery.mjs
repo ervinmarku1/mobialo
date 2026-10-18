@@ -1,18 +1,14 @@
+import {renderDelivery} from './delivery-template.mjs';
 import {readFile} from 'node:fs/promises';
 import {parseEnv} from 'node:util';
 
-const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function deliveryEmail(order,details){
   const fields=new Map((details.orderLineItem?.lineItemDetails||[]).map(v=>[v.name,v.value]));
   const qr=fields.get('QR_CODE');
   if(details.orderState!=='Completed'||details.orderLineItem?.productId!==order.product_id||!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(qr||''))throw Error('ESIM_NOT_READY');
   const content=qr.split(',')[1];
   if(content.length>4000000||Buffer.from(content,'base64').subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw Error('INVALID_QR');
-  const sq=order.language==='sq',it=order.language==='it';
-  const title=sq?'eSIM-i yt është gati':it?'La tua eSIM è pronta':'Your eSIM is ready';
-  const instruction=sq?'Skano QR-në nga cilësimet e telefonit për të instaluar eSIM-in. Ndiq udhëzimet e paketës për aktivizimin.':it?'Scansiona il codice QR dalle impostazioni del telefono per installare la eSIM. Segui le istruzioni del piano per attivarla.':'Scan the QR code from your phone settings to install your eSIM. Follow your plan instructions for activation.';
-  const manual=['SMDP_ADDRESS','ACTIVATION_CODE','ICCID'].filter(k=>fields.get(k)).map(k=>`<p>${k}: ${escape(fields.get(k))}</p>`).join('');
-  return {from:'MOBIALO <support@mobialo.eu>',to:[order.customer_email],subject:`MOBIALO · ${title}`,html:`<main style="font-family:Arial;max-width:560px;margin:auto"><h1>${title}</h1><p>${escape(details.orderLineItem.title)}</p><p>${instruction}</p><img src="cid:esim-qr" width="260" height="260" alt="eSIM QR"><p>${escape(order.paypal_order_id)}</p>${manual}<p><a href="mailto:support@mobialo.eu">support@mobialo.eu</a></p></main>`,attachments:[{filename:'mobialo-esim.png',content,content_id:'esim-qr'}]};
+  return {from:'MOBIALO <support@mobialo.eu>',to:[order.customer_email],...renderDelivery(order,details,fields),attachments:[{filename:'mobialo-esim.png',content,content_id:'esim-qr'}]};
 }
 
 // Each irreversible step is claimed durably BEFORE its network request.
@@ -56,6 +52,8 @@ export async function fulfillDelivery(id,{store,paypal,mobimatter,send}){
 export async function deliveryServices(){
   let local={};try{local=parseEnv(await readFile(new URL('../.env.local',import.meta.url),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
   const env={...local,...process.env};
+  env.PAYPAL_CLIENT_ID=env.PAYPAL_LIVE_CLIENT_ID||env.PAYPAL_CLIENT_ID;
+  env.PAYPAL_CLIENT_SECRET=env.PAYPAL_LIVE_CLIENT_SECRET||env.PAYPAL_CLIENT_SECRET;
   for(const name of ['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','RESEND_API_KEY','MOBIMATTER_MERCHANT_ID','MOBIMATTER_API_KEY','PAYPAL_CLIENT_ID','PAYPAL_CLIENT_SECRET'])if(!env[name]?.trim())throw Error('DELIVERY_NOT_CONFIGURED');
   if(env.PAYPAL_ENV!=='live')throw Error('LIVE_PAYMENT_REQUIRED');
   async function request(url,method,headers,body){

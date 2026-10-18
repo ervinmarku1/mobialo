@@ -1,0 +1,37 @@
+(async()=>{
+ const copy={
+ sq:{title:'Udhëto me më pak pikëpyetje.',intro:'Ide të thjeshta për të planifikuar lidhjen në udhëtimin tënd të radhës.',read:'Lexo udhëzimin',browse:'Zbulo destinacionet',author:'Udhëzime MOBIALO',articles:[
+ ['Para se të zgjedhësh paketën','Nis nga itinerari dhe ditët e udhëtimit.', 'Shkruaj shtetet që do të vizitosh dhe sa ditë do të qëndrosh në secilin. Kjo listë të ndihmon të krahasosh mbulimin dhe vlefshmërinë e paketave pa u mbështetur vetëm te çmimi.','Në detajet e paketës kontrollo sasinë e internetit, kohëzgjatjen dhe shtetet e përfshira. Lexo edhe kushtet e aktivizimit të asaj pakete; mos supozo se të gjitha funksionojnë njësoj.','Para blerjes kontrollo përputhshmërinë e modelit të telefonit. Nëse një kusht nuk është i qartë, pyet mbështetjen përpara se të vendosësh.'],
+ ['Një udhëtim, disa destinacione','Krahaso paketat sipas vendeve që do të vizitosh.', 'Një udhëtim mund të përfshijë qëndrime, ndalesa dhe kalime kufitare. Përgatit itinerarin e plotë, përfshirë ndalesat ku do të të duhet internet.','Krahaso një paketë rajonale me opsionet për secilin destinacion. Emri i rajonit nuk mjafton: hap listën e shteteve të mbuluara dhe krahasoje me itinerarin tënd.','Shiko çmimin për të gjithë udhëtimin, ditët e vlefshmërisë dhe sasinë e të dhënave. Zgjedhja duhet të përputhet me planet e tua, jo vetëm me ofertën më të lirë.'],
+ ['Mbaji të dhënat e udhëtimit pranë','Një listë e vogël përpara nisjes.', 'Ruaj referencën e porosisë dhe emailin që përdore gjatë blerjes. Kur kërkon ndihmë, këto të dhëna e bëjnë më të lehtë identifikimin e porosisë.','Lexo udhëzimet që shoqërojnë paketën dhe mbaji të arritshme gjatë udhëtimit. Trajto kodin QR dhe të dhënat e instalimit si private; mos i publiko në rrjete sociale.','Nëse ke pyetje, shkruaj te support@mobialo.eu me referencën e porosisë dhe një përshkrim të problemit. Mos dërgo fjalëkalimin e llogarisë ose numrin e plotë të kartës.']
+ ]},
+ en:{title:'Travel with fewer questions.',intro:'Simple ideas for planning your connection on your next journey.',read:'Read the guide',browse:'Explore destinations',author:'MOBIALO guides',articles:[
+ ['Before you choose a plan','Start with your itinerary and travel dates.','List the countries you will visit and how many days you will spend in each. Use that list to compare coverage and validity, rather than choosing on price alone.','Check the data allowance, duration and included countries in the plan details. Read the activation conditions for that specific plan; do not assume every plan works the same way.','Check your phone model’s compatibility before purchasing. If any condition is unclear, ask support before deciding.'],
+ ['One journey, several destinations','Compare plans against the places you will visit.','A journey can include stays, stopovers and border crossings. Prepare your full itinerary, including stops where you will need a connection.','Compare a regional plan with the options for each destination. A region name is not enough: open the list of covered countries and check it against your route.','Consider the price for the whole trip, validity and data allowance. Choose around your travel plans, rather than the lowest headline price.'],
+ ['Keep your travel details handy','A short checklist before departure.','Keep your order reference and the email address you used at checkout. These details make it easier to identify your order when you need assistance.','Read the instructions supplied with your plan and keep them accessible during your journey. Treat your QR code and installation credentials as private; do not publish them on social media.','For assistance, email support@mobialo.eu with your order reference and a description of the issue. Do not send your account password or full card number.']
+ ]},
+ it:{title:'Viaggia con meno domande.',intro:'Idee semplici per pianificare la connessione nel tuo prossimo viaggio.',read:'Leggi la guida',browse:'Esplora le destinazioni',author:'Guide MOBIALO',articles:[
+ ['Prima di scegliere un piano','Parti dall’itinerario e dalle date.','Elenca i paesi che visiterai e i giorni di permanenza. Usa questa lista per confrontare copertura e validità, senza basarti soltanto sul prezzo.','Controlla dati inclusi, durata e paesi coperti nei dettagli del piano. Leggi le condizioni di attivazione specifiche: non dare per scontato che tutti i piani funzionino allo stesso modo.','Verifica la compatibilità del modello del telefono prima dell’acquisto. Se una condizione non è chiara, chiedi assistenza prima di decidere.'],
+ ['Un viaggio, più destinazioni','Confronta i piani con i luoghi che visiterai.','Un viaggio può includere soggiorni, scali e passaggi di frontiera. Prepara l’itinerario completo, comprese le soste in cui ti servirà una connessione.','Confronta un piano regionale con le opzioni per ogni destinazione. Il nome della regione non basta: controlla la lista dei paesi coperti rispetto al tuo percorso.','Considera il prezzo per tutto il viaggio, la validità e i dati inclusi. Scegli in base ai tuoi programmi, non soltanto al prezzo più basso.'],
+ ['Tieni a portata di mano i dettagli','Una breve lista prima della partenza.','Conserva il riferimento dell’ordine e l’indirizzo email usato al pagamento. Aiutano a identificare l’ordine quando chiedi assistenza.','Leggi le istruzioni del piano e tienile accessibili durante il viaggio. Considera privati il codice QR e le credenziali di installazione: non pubblicarli sui social.','Per assistenza scrivi a support@mobialo.eu con il riferimento dell’ordine e una descrizione del problema. Non inviare password o il numero completo della carta.']
+ ]}};
+ let language=await window.MobialoLocale.ready;
+ const ids=['choose-a-plan','multiple-destinations','travel-checklist'];
+ function render(){
+  const t=copy[language]||copy.en;document.documentElement.lang=language;
+  window.MobialoLocale.syncSelect(document.querySelector('#blog-language'),language);
+  document.querySelector('#journal-title').textContent=t.title;document.querySelector('#journal-intro').textContent=t.intro;
+  const index=document.querySelector('#journal-index'),articles=document.querySelector('#journal-articles');index.replaceChildren();articles.replaceChildren();
+  t.articles.forEach(([title,intro,...paragraphs],i)=>{
+   const card=document.createElement('a');card.className='journal-card';card.href='#'+ids[i];
+   for(const [tag,value] of [['span','0'+(i+1)],['h2',title],['p',intro],['strong',t.read+' →']]){const el=document.createElement(tag);el.textContent=value;card.append(el);}index.append(card);
+   const article=document.createElement('article');article.className='journal-article';article.id=ids[i];
+   const byline=document.createElement('p');byline.className='journal-byline';byline.textContent=t.author;article.append(byline);
+   const heading=document.createElement('h2');heading.textContent=title;article.append(heading);
+   paragraphs.forEach(text=>{const p=document.createElement('p');p.textContent=text;article.append(p);});
+   const link=document.createElement('a');link.href='/#destinations';link.className='button outline';link.textContent=t.browse+' →';article.append(link);articles.append(article);
+  });
+ }
+ document.querySelector('#blog-language').addEventListener('change',event=>{language=event.target.value;window.MobialoLocale.choose(language);render();});render();
+ if(ids.includes(location.hash.slice(1)))document.getElementById(location.hash.slice(1)).scrollIntoView();
+})();
