@@ -8,12 +8,18 @@ import {publicAuthConfig} from './supabase-config.mjs';
 import {createOrder,captureOrder,publicPayPalConfig} from './paypal.mjs';
 import {adminOrders} from './admin-orders.mjs';
 import {customerOrders,customerIdentity} from './customer-orders.mjs';
+import {paypalWebhook} from './paypal-webhook.mjs';
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
 const port = Number(process.env.PORT || 3000);
 const types = {'.svg':'image/svg+xml','.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8'};
 http.createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
+    if(pathname==='/api/paypal/webhook'){
+      const result=await paypalWebhook(request);
+      response.writeHead(result.status,{'Content-Type':'application/json','Cache-Control':'no-store'});
+      response.end(JSON.stringify(result.body));return;
+    }
     if(pathname==='/api/account/orders'){
       response.setHeader('Content-Type','application/json');response.setHeader('Cache-Control','private, no-store');response.setHeader('Vary','Authorization');
       try{const result=await customerOrders(request);response.writeHead(result.status);response.end(JSON.stringify(result.body));}catch{response.writeHead(503);response.end(JSON.stringify({error:'ORDERS_UNAVAILABLE'}));}return;

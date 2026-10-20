@@ -1,4 +1,4 @@
--- Existing guest purchases deliberately remain unassigned.
+-- Runs after 20261017_esim_delivery.sql; existing guest purchases remain unassigned.
 alter table public.esim_deliveries
   add column if not exists user_id uuid references auth.users(id) on delete set null;
 alter table public.esim_deliveries add column if not exists product_title text;

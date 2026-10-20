@@ -1,0 +1,7 @@
+**
+!Dockerfile.worker
+!scripts/
+!scripts/delivery-worker.mjs
+!scripts/esim-delivery.mjs
+!scripts/delivery-template.mjs
+!scripts/worker-health.mjs

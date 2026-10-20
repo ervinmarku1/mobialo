@@ -3,6 +3,9 @@
   "framework": null,
   "buildCommand": "npm run build:auth",
   "outputDirectory": "dist",
+  "functions": {
+    "api/paypal/webhook.mjs": {"maxDuration": 180}
+  },
   "rewrites": [
     {"source": "/", "has": [{"type":"host","value":"admin.mobialo.eu"}], "destination": "/admin.html"},
     {"source": "/admin", "destination": "/admin.html"},

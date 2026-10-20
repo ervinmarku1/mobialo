@@ -7,7 +7,9 @@ import {getCatalog} from './mobimatter.mjs';
 // Sandbox requests are durable and never trigger real eSIM purchases.
 const orders=new Map();
 async function config(){
-  const local=parseEnv(await readFile(new URL('../.env.local',import.meta.url),'utf8'));
+  let local={};
+  try{local=parseEnv(await readFile(new URL('../.env.local',import.meta.url),'utf8'));}
+  catch(error){if(error.code!=='ENOENT')throw error;}
   const env={...local,...process.env};
   const prefix=env.PAYPAL_ENV==='sandbox'?'PAYPAL_SANDBOX_':'PAYPAL_LIVE_';
   env.PAYPAL_CLIENT_ID=env[prefix+'CLIENT_ID']||env.PAYPAL_CLIENT_ID;
@@ -41,14 +43,21 @@ export async function createOrder(productId,origin,smart=false,customer={}){
   const product=(await getCatalog()).products.find(p=>p.id===productId);
   if(!product||product.price<=0)throw Error('INVALID_PRODUCT');
   for(const [key,order] of orders)if(Date.now()-order.created>3600000)orders.delete(key);
-  if(orders.size>=100)throw Error('TOO_MANY_TEST_ORDERS');
-  const store=await testOrderStore();await store.check();
+  return createSandboxOrder(product,origin,smart,{...customer,email},{store:await testOrderStore(),paypal:api});
+}
+export async function createSandboxOrder(product,origin,smart,customer,{store,paypal}){
   const state=randomUUID(),amount=product.price.toFixed(2);
-  const data=await api('/v2/checkout/orders',{intent:'CAPTURE',purchase_units:[{description:`MOBIALO TEST: ${product.title}`.slice(0,127),amount:{currency_code:'EUR',value:amount}}],...(smart?{application_context:{shipping_preference:'NO_SHIPPING'}}:{payment_source:{paypal:{experience_context:{brand_name:'MOBIALO Sandbox',shipping_preference:'NO_SHIPPING',user_action:'PAY_NOW',return_url:`${origin}/payment.html?state=${state}`,cancel_url:`${origin}/payment.html?cancel=1`}}}})},state);
+  await store.reserve({id:state,product_id:product.id,product_title:product.title,amount,customer_email:customer.email,language:['sq','en','it'].includes(customer.language)?customer.language:'en'});
+  try{
+  const data=await paypal('/v2/checkout/orders',{intent:'CAPTURE',purchase_units:[{description:`MOBIALO TEST: ${product.title}`.slice(0,127),amount:{currency_code:'EUR',value:amount}}],...(smart?{application_context:{shipping_preference:'NO_SHIPPING'}}:{payment_source:{paypal:{experience_context:{brand_name:'MOBIALO Sandbox',shipping_preference:'NO_SHIPPING',user_action:'PAY_NOW',return_url:`${origin}/payment.html?state=${state}`,cancel_url:`${origin}/payment.html?cancel=1`}}}})},state);
   const link=data.links?.find(l=>l.rel==='payer-action'||l.rel==='approve');
   if(!data.id||(!smart&&(!link||new URL(link.href).hostname!=='www.sandbox.paypal.com')))throw Error('PAYPAL_REQUEST_FAILED');
-  await store.insert({id:state,paypal_order_id:data.id,product_id:product.id,product_title:product.title,amount,customer_email:email,language:['sq','en','it'].includes(customer.language)?customer.language:'en'});
+  if(!await store.update(state,{paypal_order_id:data.id}))throw Error('TEST_STORE_UNAVAILABLE');
   return smart?{id:data.id,state}:{approvalUrl:link.href};
+  }catch(error){
+    await store.update(state,{state:'failed',error_code:'PAYPAL_CREATE_FAILED'}).catch(()=>{});
+    throw error;
+  }
 }
 export function validCapture(data,order){
   const captures=data.purchase_units?.flatMap(p=>p.payments?.captures||[])||[];
@@ -59,7 +68,7 @@ export async function captureOrder(state,token){
   const store=await testOrderStore();
   const saved=await store.get(state);
   const order=orders.get(state)||(saved?{id:saved.paypal_order_id,amount:Number(saved.amount).toFixed(2),created:Date.parse(saved.created_at),captureId:saved.capture_request_id}:null);
-  if(!order||order.id!==token||Date.now()-order.created>3600000)throw Error('TEST_ORDER_EXPIRED');
+  if(!order||typeof token!=='string'||!token||!order.id||order.id!==token||Date.now()-order.created>3600000)throw Error('TEST_ORDER_EXPIRED');
   orders.set(state,order);
   if(order.result)return order.result;
   if(order.pending)return order.pending;
