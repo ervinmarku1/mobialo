@@ -26,10 +26,9 @@ translations.en.faq[4]=['Can I buy a plan on MOBIALO now?','Not yet. The catalog
 translations.sq.faq[4]=['A mund të blej tani në MOBIALO?','Ende jo. Katalogu shfaq paketat reale të MOBIALO, por pagesat dhe porositë e eSIM nuk janë lidhur.'];
 
 function buildDestinations(products) {
-  const countries=new Map(),regions=new Map(),globalPlans=[],addons=[],replacements=[];
+  const countries=new Map(),regions=new Map(),globalPlans=[];
   for (const product of products) {
-    if(product.category==='esim_addon'){addons.push(product);continue;}
-    if(product.category==='esim_replacement'){replacements.push(product);continue;}
+    if(!['esim_realtime','esim_delayed'].includes(product.category))continue;
     for (const code of product.countries) {
       if(!countries.has(code)) countries.set(code,[]);
       countries.get(code).push(product);
@@ -50,20 +49,12 @@ function buildDestinations(products) {
     destinations.push({id:`region-${index}`,en:escapeText(label),it:escapeText(({Europe:'Europa',Asia:'Asia',Africa:'Africa','North America':'America del Nord','South America':'America del Sud',Global:'Globale','Multi-country':'Pi? paesi'})[label]||label),sq:escapeText(translations[label]||label),symbol:'◎',type:/global|world/i.test(label)?'global':'regional',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)});
   });
   if(globalPlans.length) destinations.push({id:'global',en:'Global',it:'Globale',sq:'Globale',aliases:'World Worldwide',symbol:'\u25ce',type:'global',price:Math.min(...globalPlans.map(p=>p.price)),plans:sorted(globalPlans)});
-  for(const [id,items,en,sq,it] of [
-    ['addons',addons,'Top-ups for existing eSIMs','Rimbushje për eSIM ekzistuese','Ricariche per eSIM esistenti'],
-    ['replacements',replacements,'eSIM replacements','Zëvendësime eSIM','Sostituzioni eSIM']
-  ]){
-    if(items.length)destinations.push({id,en,sq,it,type:id,symbol:'↻',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)});
-  }
   return destinations;
 }
 
 const baseRenderCatalog=renderCatalog;
 renderCatalog=function(){
   baseRenderCatalog();
-  const labels=lang==='sq'?['Rimbushje','Zëvendësime']:lang==='it'?['Ricariche','Sostituzioni']:['Top-ups','Replacements'];
-  ['addons','replacements'].forEach((id,index)=>{const button=document.getElementById('tab-'+id);if(button)button.textContent=labels[index];});
   const summary=document.getElementById('catalog-summary');
   if(summary)summary.textContent=catalogState==='ready'?`${liveProducts.length} ${lang==='sq'?'paketa në katalog':lang==='it'?'piani nel catalogo':'plans in the catalog'}`:'';
   if(catalogState==='ready') return;
@@ -98,7 +89,7 @@ async function loadLiveCatalog(){
     const data=await response.json();
     if(!Array.isArray(data.products)||data.products.some(p=>p.currency!=='EUR'))throw new Error('Unsupported catalog');
     if(data.source==='preview'){if(translations.it){translations.it.demoPrices='MOBIALO ? Catalogo di anteprima ? EUR';translations.it.previewNote='Prezzi di anteprima. Gli acquisti non sono ancora disponibili.';translations.it.notLive='Anteprima online. Gli acquisti saranno disponibili prossimamente.';}translations.en.demoPrices='MOBIALO ? Preview catalog ? EUR';translations.sq.demoPrices='MOBIALO ? Katalog prezantimi ? EUR';translations.en.previewNote='Preview prices. Purchases are not open yet.';translations.sq.previewNote='Çmime prezantimi. Blerjet nuk janë hapur ende.';translations.en.notLive='Online preview. Purchases will open soon.';translations.sq.notLive='Prezantim online. Blerjet do të hapen së shpejti.';}
-    liveProducts=data.products;catalog=buildDestinations(liveProducts);catalogState='ready';
+    liveProducts=data.products.filter(p=>['esim_realtime','esim_delayed'].includes(p.category));catalog=buildDestinations(liveProducts);catalogState='ready';
     document.querySelectorAll('[data-search]').forEach(button=>{button.disabled=!catalog.some(item=>item.en===button.dataset.search);});
     setLanguage(lang);
     if(document.activeElement===$('#search')) renderSuggestions();
@@ -108,5 +99,5 @@ $('#destination-grid').addEventListener('click',event=>{if(event.target.closest(
 setLanguage(lang);
 loadLiveCatalog();
 
-Object.assign(translations.en,{previewNote:'Prices include processing costs. Top-ups and replacements require an existing eSIM.',notLive:'Check coverage, compatibility and activation terms before paying.'});
-Object.assign(translations.sq,{previewNote:'Çmimet përfshijnë kostot e përpunimit. Rimbushjet dhe zëvendësimet kërkojnë një eSIM ekzistuese.',notLive:'Kontrollo mbulimin, përshtatshmërinë dhe kushtet e aktivizimit para pagesës.'});
+Object.assign(translations.en,{previewNote:'Prices include processing costs.',notLive:'Check coverage, compatibility and activation terms before paying.'});
+Object.assign(translations.sq,{previewNote:'Çmimet përfshijnë kostot e përpunimit.',notLive:'Kontrollo mbulimin, përshtatshmërinë dhe kushtet e aktivizimit para pagesës.'});

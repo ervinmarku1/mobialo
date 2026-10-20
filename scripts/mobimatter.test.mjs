@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {normalizeProducts,fetchProducts,priceIncludingProcessing} from './mobimatter.mjs';
 
 const product={productId:'fixture-1',productCategory:'esim_realtime',providerName:'Test provider',retailPrice:8.99,wholesalePrice:7.6,currencyCode:'USD',countries:['AL','IT'],regions:['Europe'],productDetails:[{name:'PLAN_VALIDITY',value:'360'},{name:'PLAN_DATA_UNIT',value:'MB'},{name:'PLAN_TITLE',value:'Test plan'},{name:'PLAN_DATA_LIMIT',value:'500'},{name:'PLAN_DETAILS',value:JSON.stringify({description:'500 MB total',items:['Activation on installation']})}]};
-test('includes new eSIMs, top-ups and replacements while excluding wholesale fields',()=>{
+test('public catalog includes new eSIMs only, excluding account-specific top-ups and replacements',()=>{
   const result=normalizeProducts({result:[product,{...product,productCategory:'esim_addon'},{...product,productCategory:'esim_replacement'}]});
-  assert.equal(result.length,3);assert.equal(result[0].validityHours,360);
-  assert.deepEqual(result.map(p=>p.category),['esim_realtime','esim_addon','esim_replacement']);
+  assert.equal(result.length,1);assert.equal(result[0].validityHours,360);
+  assert.deepEqual(result.map(p=>p.category),['esim_realtime']);
   assert.equal(result[0].currency,'EUR');assert.equal(result[0].price,11.28);assert.equal(result[0].dataUnit,'MB');
   assert.equal('wholesalePrice' in result[0],false);
   assert.deepEqual(result[0].countries,['AL','IT']);
