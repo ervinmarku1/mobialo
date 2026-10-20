@@ -23,6 +23,11 @@ async function credentials() {
 }
 
 const cleanText = value => typeof value === 'string' ? value : '';
+const hiddenTestProductIds=new Set([
+  '24f5ebfc-4335-4227-9ef6-d9482502e32e',
+  '75b98dc7-c026-48c1-9fee-465681382d39'
+]);
+export const isHiddenTestProduct=id=>hiddenTestProductIds.has(id);
 // All-in customer price, covering the configured 2.5% + EUR 0.20 cost.
 // Integer cents, rounded up so the post-fee amount covers the base price.
 export function priceIncludingProcessing(basePrice){
@@ -49,7 +54,7 @@ function parseDetails(raw) {
 export function normalizeProducts(body) {
   const rows = Array.isArray(body) ? body : body?.result ?? body?.products;
   if (!Array.isArray(rows)) throw new CatalogError('INVALID_CATALOG',502);
-  return rows.filter(product=>['esim_realtime','esim_delayed'].includes(product?.productCategory)).map(product=>{
+  return rows.filter(product=>['esim_realtime','esim_delayed'].includes(product?.productCategory)&&!isHiddenTestProduct(product.productId)).map(product=>{
     if (typeof product.productId !== 'string' || !product.productId || typeof product.retailPrice !== 'number' || !Number.isFinite(product.retailPrice) || product.retailPrice<0 || !/^[A-Z]{3}$/.test(product.currencyCode || '') || !Array.isArray(product.countries)) throw new CatalogError('INVALID_CATALOG',502);
     const details = new Map((Array.isArray(product.productDetails)?product.productDetails:[]).filter(item=>item && typeof item.name==='string').map(item=>[item.name.trim(),cleanText(item.value)]));
     const supported = key => details.get(key)==='1'?true:details.get(key)==='0'?false:null;

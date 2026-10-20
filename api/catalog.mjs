@@ -1,4 +1,4 @@
-import {getCatalog,CatalogError,priceIncludingProcessing} from '../scripts/mobimatter.mjs';
+import {getCatalog,CatalogError,priceIncludingProcessing,isHiddenTestProduct} from '../scripts/mobimatter.mjs';
 import {readFile} from 'node:fs/promises';
 export default async function handler(req,res){
   res.setHeader('Cache-Control','no-store');
@@ -7,7 +7,7 @@ export default async function handler(req,res){
     if(!process.env.MOBIMATTER_MERCHANT_ID||!process.env.MOBIMATTER_API_KEY){
       const snapshot=JSON.parse(await readFile(new URL('../dist/catalog-preview.json',import.meta.url),'utf8'));
       // The checked-in snapshot stores the original marked-up prices.
-      snapshot.products=snapshot.products.map(product=>({...product,price:priceIncludingProcessing(product.price)}));
+      snapshot.products=snapshot.products.filter(product=>!isHiddenTestProduct(product.id)).map(product=>({...product,price:priceIncludingProcessing(product.price)}));
       return res.status(200).json(snapshot);
     }
     return res.status(200).json(await getCatalog());
