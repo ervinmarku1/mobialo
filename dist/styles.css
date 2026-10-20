@@ -107,3 +107,20 @@ dialog.paypal-dialog{
   padding-bottom:calc(28px + env(safe-area-inset-bottom, 0px));
 }
 .paypal-dialog-backdrop{position:fixed;inset:0;background:#271c1570;backdrop-filter:blur(4px);z-index:999}
+
+/* A distinct catalog panel, with bounded scrolling when destinations expand. */
+#destinations{box-sizing:border-box;padding:36px;margin-top:28px;margin-bottom:64px;background:linear-gradient(145deg,#fff6ed,#fffaf6);border:1px solid #edcfb8;border-top:5px solid var(--accent);border-radius:24px;box-shadow:0 16px 48px #73370d0d;scroll-margin-top:24px}
+#destinations .section-heading{gap:24px;padding-bottom:24px;margin-bottom:20px;border-bottom:1px solid #ecdccc}
+#destinations .section-heading h2{font-size:clamp(24px,3vw,34px);margin-bottom:0}
+#destinations .catalog-toolbar{margin-top:0;gap:16px;flex-wrap:wrap}
+#destinations .tabs{background:#fff;border:1px solid #edddcf;padding:5px;border-radius:14px;flex-wrap:wrap;gap:4px}
+#destinations .tabs button{border-radius:9px}
+#destinations .tabs button.active{background:var(--accent);color:#fff;box-shadow:0 3px 10px #b9481420}
+#destinations .catalog-summary{font-size:12px;font-weight:600;color:#6d5140;margin:18px 0 12px}
+#destinations .destination-grid{gap:12px;max-height:540px;max-height:min(65dvh,540px);overflow-y:auto;padding:3px 6px 8px 3px;scrollbar-gutter:stable}
+#destinations .destination-card{background:#fff;border:1px solid #e8d8cb;border-radius:14px;min-height:100px;padding:20px;box-shadow:0 3px 9px #4e260907;transition:border-color .15s,box-shadow .15s}
+#destinations .destination-card:hover,#destinations .destination-card:focus-visible{border-color:var(--accent);box-shadow:0 4px 16px #d35e1518}
+#destinations .destination-card .card-arrow{color:var(--accent)}
+#destinations .catalog-bottom{border-top:1px solid #ecdccc;padding-top:22px;margin-top:20px}
+#destinations .catalog-bottom .button{background:#fff;border-color:#d96a30}
+@media(max-width:600px){#destinations{padding:22px 14px;border-radius:18px;width:calc(100% - 24px);margin-bottom:36px}#destinations .section-heading{text-align:left;padding-bottom:18px}#destinations .section-heading .eyebrow{justify-content:flex-start}#destinations .tabs{width:100%;box-sizing:border-box}#destinations .tabs button{flex:1 1 auto;font-size:11px;padding:10px}#destinations .destination-grid{gap:10px;max-height:60dvh}#destinations .destination-card{padding:14px 12px;min-height:112px}#destinations .demo-label{font-size:10px}}

@@ -41,7 +41,7 @@ export async function createOrder(productId,origin,smart=false,customer={}){
   const email=typeof customer.email==='string'?customer.email.trim():'';
   if(email.length>254||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('EMAIL_REQUIRED');
   const product=(await getCatalog()).products.find(p=>p.id===productId);
-  if(!product||product.price<=0)throw Error('INVALID_PRODUCT');
+  if(!product||!['esim_realtime','esim_delayed'].includes(product.category)||product.price<=0)throw Error('INVALID_PRODUCT');
   for(const [key,order] of orders)if(Date.now()-order.created>3600000)orders.delete(key);
   return createSandboxOrder(product,origin,smart,{...customer,email},{store:await testOrderStore(),paypal:api});
 }

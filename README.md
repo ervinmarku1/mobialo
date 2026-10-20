@@ -43,8 +43,10 @@ to every payment method and is computed server-side; no surcharge is added at
 checkout. The fee assumption was supplied by the merchant and must be checked
 against the POK contract. Existing orders retain their stored price.
 This is not an exchange-rate conversion. Non-USD supplier input is rejected. Validity is
-returned in hours. New eSIM products are included; top-ups and replacements are
-excluded. Identity-verification products carry an explicit flag.
+returned in hours. New eSIM products, top-ups and replacements are included.
+Top-ups and replacements have separate catalog tabs and cannot use new-eSIM
+checkout; they require a future flow linked to an existing eSIM.
+Identity-verification products carry an explicit flag.
 
 The storefront loads /api/catalog and groups all new-sale plans by country coverage.
 Prices are displayed in EUR, with the markup applied once on the server. Credentials are required; request failures show a retry

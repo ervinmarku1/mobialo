@@ -26,8 +26,10 @@ translations.en.faq[4]=['Can I buy a plan on MOBIALO now?','Not yet. The catalog
 translations.sq.faq[4]=['A mund të blej tani në MOBIALO?','Ende jo. Katalogu shfaq paketat reale të MOBIALO, por pagesat dhe porositë e eSIM nuk janë lidhur.'];
 
 function buildDestinations(products) {
-  const countries=new Map(),regions=new Map(),globalPlans=[];
+  const countries=new Map(),regions=new Map(),globalPlans=[],addons=[],replacements=[];
   for (const product of products) {
+    if(product.category==='esim_addon'){addons.push(product);continue;}
+    if(product.category==='esim_replacement'){replacements.push(product);continue;}
     for (const code of product.countries) {
       if(!countries.has(code)) countries.set(code,[]);
       countries.get(code).push(product);
@@ -48,12 +50,22 @@ function buildDestinations(products) {
     destinations.push({id:`region-${index}`,en:escapeText(label),it:escapeText(({Europe:'Europa',Asia:'Asia',Africa:'Africa','North America':'America del Nord','South America':'America del Sud',Global:'Globale','Multi-country':'Pi? paesi'})[label]||label),sq:escapeText(translations[label]||label),symbol:'◎',type:/global|world/i.test(label)?'global':'regional',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)});
   });
   if(globalPlans.length) destinations.push({id:'global',en:'Global',it:'Globale',sq:'Globale',aliases:'World Worldwide',symbol:'\u25ce',type:'global',price:Math.min(...globalPlans.map(p=>p.price)),plans:sorted(globalPlans)});
+  for(const [id,items,en,sq,it] of [
+    ['addons',addons,'Top-ups for existing eSIMs','Rimbushje për eSIM ekzistuese','Ricariche per eSIM esistenti'],
+    ['replacements',replacements,'eSIM replacements','Zëvendësime eSIM','Sostituzioni eSIM']
+  ]){
+    if(items.length)destinations.push({id,en,sq,it,type:id,symbol:'↻',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)});
+  }
   return destinations;
 }
 
 const baseRenderCatalog=renderCatalog;
 renderCatalog=function(){
   baseRenderCatalog();
+  const labels=lang==='sq'?['Rimbushje','Zëvendësime']:lang==='it'?['Ricariche','Sostituzioni']:['Top-ups','Replacements'];
+  ['addons','replacements'].forEach((id,index)=>{const button=document.getElementById('tab-'+id);if(button)button.textContent=labels[index];});
+  const summary=document.getElementById('catalog-summary');
+  if(summary)summary.textContent=catalogState==='ready'?`${liveProducts.length} ${lang==='sq'?'paketa në katalog':lang==='it'?'piani nel catalogo':'plans in the catalog'}`:'';
   if(catalogState==='ready') return;
   const text=catalogState==='loading'?(lang==='sq'?'Po ngarkohen paketat…':'Loading plans…'):((lang==='it'?"Impossibile caricare il catalogo. Riprova.":lang==='sq'?'Katalogu nuk u ngarkua. Provo përsëri.':'The catalog could not be loaded. Please retry.'));
   $('#destination-grid').innerHTML=`<div class="empty-state" role="status"><p>${text}</p>${catalogState==='error'?`<button class="button" id="retry-catalog">${(lang==='it'?"Riprova":lang==='sq'?'Provo përsëri':'Retry')}</button>`:''}</div>`;
@@ -96,5 +108,5 @@ $('#destination-grid').addEventListener('click',event=>{if(event.target.closest(
 setLanguage(lang);
 loadLiveCatalog();
 
-Object.assign(translations.en,{previewNote:'Test checkout available with PayPal Sandbox. No real eSIM will be issued.',notLive:'Sandbox test only. No real money is charged and no eSIM is issued.'});
-Object.assign(translations.sq,{previewNote:'Pagesë provë me PayPal Sandbox. Nuk lëshohet eSIM reale.',notLive:'Vetëm provë Sandbox. Nuk paguhen para reale dhe nuk lëshohet eSIM.'});
+Object.assign(translations.en,{previewNote:'Prices include processing costs. Top-ups and replacements require an existing eSIM.',notLive:'Check coverage, compatibility and activation terms before paying.'});
+Object.assign(translations.sq,{previewNote:'Çmimet përfshijnë kostot e përpunimit. Rimbushjet dhe zëvendësimet kërkojnë një eSIM ekzistuese.',notLive:'Kontrollo mbulimin, përshtatshmërinë dhe kushtet e aktivizimit para pagesës.'});

@@ -56,6 +56,11 @@ async function mountPayPal(container,productId){
   const say=text=>{message.textContent=text;};
   say((it?"Caricamento dei metodi di pagamento?":sq?'Po ngarkohen mënyrat e pagesës?':'Loading payment methods?'));
   try{
+    const selectedProduct=liveProducts.find(p=>p.id===productId);
+    if(['esim_addon','esim_replacement'].includes(selectedProduct?.category)){
+      say(sq?'Kjo paketë kërkon një eSIM ekzistuese. Blerja online për këtë kategori nuk është aktivizuar ende.':it?'Questo piano richiede una eSIM esistente. L’acquisto online per questa categoria non è ancora attivo.':'This plan requires an existing eSIM. Online purchase for this category is not enabled yet.');
+      return;
+    }
     const paypal=await loadPayPalSdk();if(!container.isConnected)return;if(!paypal){say((it?"Anteprima online. Gli acquisti saranno disponibili prossimamente.":sq?'Prezantim online. Blerjet do të hapen së shpejti.':'Online preview. Purchases will open soon.'));return;}
     preparePayPalDialog(container);
     let order,creating,completed=false;
