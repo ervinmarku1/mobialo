@@ -214,7 +214,7 @@ $('#destination-grid').addEventListener('click', event => {
 });
 ['#compatibility','#compatibility-footer','#footer-device','#how-device'].forEach(selector => $(selector).addEventListener('click', () => openModal('device')));
 $('#close-modal').addEventListener('click', () => $('#modal').close());
-$('#modal').addEventListener('close', () => {modalView = null;});
+$('#modal').addEventListener('close', () => {if(!$('#modal').open)modalView = null;});
 $('#modal').addEventListener('click', event => {
   if (event.target === $('#modal')) {const bounds = $('#modal').getBoundingClientRect();if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) $('#modal').close();}
   if (event.target.closest('[data-close]')) $('#modal').close();

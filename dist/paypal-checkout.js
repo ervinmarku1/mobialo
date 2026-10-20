@@ -1,5 +1,32 @@
 let paypalSdkPromise;
 let checkoutEnvironment='sandbox';
+function preparePayPalDialog(container){
+  const dialog=container.closest('dialog');
+  if(!dialog?.open||dialog.classList.contains('paypal-dialog'))return;
+  // PayPal can mount card/verification overlays under body. A native modal
+  // makes those siblings inert regardless of their z-index.
+  const scrollTop=dialog.scrollTop;
+  dialog.close();
+  dialog.classList.add('paypal-dialog');
+  dialog.show();
+  dialog.scrollTop=scrollTop;
+  const backdrop=document.createElement('div');
+  backdrop.className='paypal-dialog-backdrop';
+  backdrop.setAttribute('aria-hidden','true');
+  document.body.append(backdrop);
+  const close=()=>dialog.close();
+  const escape=event=>{if(event.key==='Escape'&&dialog.contains(event.target)){event.preventDefault();close();}};
+  backdrop.addEventListener('click',close);
+  dialog.addEventListener('keydown',escape);
+  const cleanup=()=>{
+    if(dialog.open)return; // close event from switching to non-modal mode
+    backdrop.remove();
+    dialog.classList.remove('paypal-dialog');
+    dialog.removeEventListener('keydown',escape);
+    dialog.removeEventListener('close',cleanup);
+  };
+  dialog.addEventListener('close',cleanup);
+}
 function loadPayPalSdk(){
   if(window.paypal)return Promise.resolve(window.paypal);
   if(paypalSdkPromise)return paypalSdkPromise;
@@ -30,6 +57,7 @@ async function mountPayPal(container,productId){
   say((it?"Caricamento dei metodi di pagamento?":sq?'Po ngarkohen mënyrat e pagesës?':'Loading payment methods?'));
   try{
     const paypal=await loadPayPalSdk();if(!container.isConnected)return;if(!paypal){say((it?"Anteprima online. Gli acquisti saranno disponibili prossimamente.":sq?'Prezantim online. Blerjet do të hapen së shpejti.':'Online preview. Purchases will open soon.'));return;}
+    preparePayPalDialog(container);
     let order,creating,completed=false;
     const live=checkoutEnvironment==='live';
     let email;
@@ -52,7 +80,14 @@ async function mountPayPal(container,productId){
     let count=0,card=false;
     for(const fundingSource of [paypal.FUNDING.PAYPAL,paypal.FUNDING.CARD]){
       const slot=document.createElement('div');buttons.append(slot);
-      const instance=paypal.Buttons({fundingSource,style:{layout:'vertical',height:48},onClick:(_data,actions)=>email.reportValidity()?actions.resolve():actions.reject(),createOrder:create,
+      const instance=paypal.Buttons({fundingSource,style:{layout:'vertical',height:48},onClick:(_data,actions)=>{
+        if(!email.reportValidity()){
+          say(sq?'Plotëso një email të vlefshëm përpara pagesës.':it?'Inserisci un indirizzo email valido prima del pagamento.':'Enter a valid email before paying.');
+          email.focus();return actions.reject();
+        }
+        say(sq?'Po hapet formulari i pagesës…':it?'Apertura del modulo di pagamento…':'Opening payment form…');
+        return actions.resolve();
+      },createOrder:create,
         onApprove:async data=>{
           try{
             if(!order||order.id!==data.orderID)throw Error('Unknown order');
