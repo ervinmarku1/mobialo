@@ -124,3 +124,23 @@ dialog.paypal-dialog{
 #destinations .catalog-bottom{border-top:1px solid #ecdccc;padding-top:22px;margin-top:20px}
 #destinations .catalog-bottom .button{background:#fff;border-color:#d96a30}
 @media(max-width:600px){#destinations{padding:22px 14px;border-radius:18px;width:calc(100% - 24px);margin-bottom:36px}#destinations .section-heading{text-align:left;padding-bottom:18px}#destinations .section-heading .eyebrow{justify-content:flex-start}#destinations .tabs{width:100%;box-sizing:border-box}#destinations .tabs button{flex:1 1 auto;font-size:11px;padding:10px}#destinations .destination-grid{gap:10px;max-height:60dvh}#destinations .destination-card{padding:14px 12px;min-height:112px}#destinations .demo-label{font-size:10px}}
+
+/* Framed navigation and footer, matching the destination catalog. */
+header.header.wrap{box-sizing:border-box;height:auto;min-height:92px;margin-top:18px;margin-bottom:18px;padding:20px 24px;gap:20px;flex-wrap:wrap;background:linear-gradient(120deg,#fffaf6,#fff4e9);border:1px solid #edcfb8;border-top:3px solid var(--accent);border-radius:20px;box-shadow:0 8px 28px #73370d0a}
+header.header .logo{flex-shrink:0}
+header.header nav{gap:clamp(12px,1.5vw,24px)}
+header.header nav a{padding:9px 5px;border-radius:7px;white-space:nowrap;transition:background .15s,color .15s}
+header.header nav a:hover,header.header nav a:focus-visible{background:#fff;color:var(--accent)}
+header.header .header-actions{margin-left:auto;gap:14px}
+header.header .button{box-shadow:0 3px 10px #a93e1214}
+footer.wrap{box-sizing:border-box;margin-top:24px;margin-bottom:24px;padding:30px 28px 0;background:linear-gradient(145deg,#fff6ed,#fffaf6);border:1px solid #edcfb8;border-top:4px solid var(--accent);border-radius:24px;box-shadow:0 12px 36px #73370d0a}
+footer.wrap .footer-top{gap:16px;padding-bottom:26px;grid-template-columns:1.5fr repeat(3,minmax(0,1fr))}
+footer.wrap .footer-top>div{min-width:0;padding:20px;border:1px solid #edddcf;border-radius:14px;background:#ffffffc9;gap:12px}
+footer.wrap .footer-top>div:first-child{padding-left:0;border:0;background:transparent}
+footer.wrap .footer-top>div:last-child{display:flex}
+footer.wrap .footer-top strong{font-size:13px;color:var(--ink);padding-bottom:10px;border-bottom:2px solid #efd2bc;width:100%}
+footer.wrap .footer-top a:not(.logo),footer.wrap .footer-link{font-size:12px;line-height:1.7;overflow-wrap:anywhere;text-align:left}
+footer.wrap .footer-top a:not(.logo):hover,footer.wrap .footer-link:hover{color:var(--accent);text-decoration:underline;text-underline-offset:4px}
+footer.wrap .footer-bottom{border-color:#e8d5c5;padding:18px 0;color:#756354}
+@media(max-width:1100px){header.header nav{order:3;display:flex;justify-content:center;width:100%;border-top:1px solid #ecdccc;padding-top:12px}footer.wrap .footer-top{grid-template-columns:repeat(3,minmax(0,1fr))}footer.wrap .footer-top>div:first-child{grid-column:1/-1;padding:0 0 8px}}
+@media(max-width:600px){header.header.wrap{width:calc(100% - 24px);padding:16px 14px;gap:14px;border-radius:16px;margin-top:12px}header.header .header-actions{width:100%;justify-content:flex-end;margin-left:0;gap:16px}header.header nav{justify-content:flex-start;gap:12px;overflow-x:auto;font-size:12px;padding-top:10px}header.header nav a{flex-shrink:0}footer.wrap{width:calc(100% - 24px);padding:22px 14px 0;border-radius:18px}footer.wrap .footer-top{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}footer.wrap .footer-top>div{padding:16px 12px}footer.wrap .footer-top>div:last-child{grid-column:1/-1}footer.wrap .footer-top a:not(.logo),footer.wrap .footer-link{font-size:12px}footer.wrap .footer-bottom{line-height:1.8}}
