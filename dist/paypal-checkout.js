@@ -36,7 +36,7 @@ function loadPayPalSdk(){
     const config=await response.json();if(config.checkoutEnabled===false)return null;if(!['sandbox','live'].includes(config.environment))throw Error('Configuration');
     checkoutEnvironment=config.environment;
     const script=document.createElement('script');
-    script.src='https://www.paypal.com/sdk/js?'+new URLSearchParams({'client-id':config.clientId,currency:'EUR',intent:'capture',components:'buttons,funding-eligibility','enable-funding':'card'});
+    script.src='https://www.paypal.com/sdk/js?'+new URLSearchParams({'client-id':config.clientId,currency:'EUR',intent:'capture',components:'buttons,funding-eligibility','disable-funding':'card'});
     await new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>{script.remove();reject(Error('SDK unavailable'));};document.head.append(script);});
     return window.paypal;
   })().catch(error=>{paypalSdkPromise=null;throw error;});return paypalSdkPromise;
@@ -78,7 +78,7 @@ async function mountPayPal(container,productId){
       if(!creating){if(email)email.disabled=true;creating=paypalRequest('create',{productId,smart:true,email:email?.value.trim(),language:window.MobialoLocale?.emailLanguage||lang}).then(data=>{order=data;return data.id;}).catch(error=>{if(email)email.disabled=false;throw error;}).finally(()=>{creating=null;});}return creating;
     };
     let count=0,card=false;
-    for(const fundingSource of [paypal.FUNDING.PAYPAL,paypal.FUNDING.CARD]){
+    for(const fundingSource of [paypal.FUNDING.PAYPAL]){
       const slot=document.createElement('div');buttons.append(slot);
       const instance=paypal.Buttons({fundingSource,style:{layout:'vertical',height:48},onClick:(_data,actions)=>{
         if(!email.reportValidity()){
@@ -109,6 +109,13 @@ async function mountPayPal(container,productId){
       });
       if(instance.isEligible()){await instance.render(slot);count++;if(fundingSource===paypal.FUNDING.CARD)card=true;}else slot.remove();
       if(!container.isConnected){instance.close();return;}
+    }
+    if(live){
+      const cardPlaceholder=document.createElement('button');
+      cardPlaceholder.type='button';cardPlaceholder.disabled=true;cardPlaceholder.className='button outline';
+      cardPlaceholder.style.cssText='width:100%;margin:12px 0';
+      cardPlaceholder.textContent=sq?'Pagesa me kartë — së shpejti':it?'Pagamento con carta — prossimamente':'Card payment — coming soon';
+      buttons.append(cardPlaceholder);
     }
     if(live){say(count?(sq?'Zgjidh mënyrën e pagesës.':it?'Scegli il metodo di pagamento.':'Choose your payment method.'):(sq?'Nuk ka mënyrë pagese të disponueshme.':'No payment method is available.'));return;}
     say(!count?((it?"PayPal non ha offerto metodi di pagamento per questa prova.":sq?'PayPal nuk ofroi mënyra pagese për këtë provë.':'PayPal offered no payment methods for this test.')):card?((it?"Sandbox: usa solo dati di prova.":sq?'Sandbox: përdor vetëm të dhëna prove.':'Sandbox: use test details only.')):((it?"PayPal non offre il pagamento con carta per questa sessione di prova.":sq?'PayPal nuk e ofron kartën për këtë sesion prove.':'PayPal does not offer card payment for this test session.')));

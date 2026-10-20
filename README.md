@@ -36,7 +36,13 @@ after changing the credentials.
 a five-minute in-memory cache and returns only customer-facing fields. Prices
 use the merchant's EUR selling-price rule: the numerical MobiMatter USD retail
 price multiplied by 1.20, rounded to two decimals. For example, 20 USD becomes
-24 EUR. This is not an exchange-rate conversion. Non-USD supplier input is rejected. Validity is
+24 EUR before processing-cost coverage. The final displayed price is
+`ceil_to_cent((base_price + 0.20) / 0.975)`, covering the configured 2.5% + EUR 0.20
+fee on the final total. Thus 24 EUR becomes 24.83 EUR. The same all-in price applies
+to every payment method and is computed server-side; no surcharge is added at
+checkout. The fee assumption was supplied by the merchant and must be checked
+against the POK contract. Existing orders retain their stored price.
+This is not an exchange-rate conversion. Non-USD supplier input is rejected. Validity is
 returned in hours. New eSIM products are included; top-ups and replacements are
 excluded. Identity-verification products carry an explicit flag.
 

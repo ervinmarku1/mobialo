@@ -23,11 +23,19 @@ async function credentials() {
 }
 
 const cleanText = value => typeof value === 'string' ? value : '';
+// All-in customer price, covering the configured 2.5% + EUR 0.20 cost.
+// Integer cents, rounded up so the post-fee amount covers the base price.
+export function priceIncludingProcessing(basePrice){
+  if(!Number.isFinite(basePrice)||basePrice<0)throw new CatalogError('INVALID_CATALOG',502);
+  const cents=Math.round(basePrice*100);
+  if(cents===0)return 0;
+  return Math.ceil((cents+20)*40/39)/100;
+}
 // Merchant pricing rule: numerical USD retail price treated as EUR, plus 20%.
 // This is a selling-price policy, not a market exchange-rate conversion.
 export function sellingPrice(retailPrice, currency) {
   if (currency !== 'USD') throw new CatalogError('UNSUPPORTED_CURRENCY',502);
-  return Math.round((retailPrice * 1.2 + Number.EPSILON) * 100) / 100;
+  return priceIncludingProcessing(Math.round((retailPrice * 1.2 + Number.EPSILON) * 100) / 100);
 }
 function parseDetails(raw) {
   try {

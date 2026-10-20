@@ -1,21 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeProducts,fetchProducts} from './mobimatter.mjs';
+import {normalizeProducts,fetchProducts,priceIncludingProcessing} from './mobimatter.mjs';
 
 const product={productId:'fixture-1',productCategory:'esim_realtime',providerName:'Test provider',retailPrice:8.99,wholesalePrice:7.6,currencyCode:'USD',countries:['AL','IT'],regions:['Europe'],productDetails:[{name:'PLAN_VALIDITY',value:'360'},{name:'PLAN_DATA_UNIT',value:'MB'},{name:'PLAN_TITLE',value:'Test plan'},{name:'PLAN_DATA_LIMIT',value:'500'},{name:'PLAN_DETAILS',value:JSON.stringify({description:'500 MB total',items:['Activation on installation']})}]};
 test('applies EUR selling price, keeps hours and units; excludes wholesale and non-new sales',()=>{
   const result=normalizeProducts({result:[product,{...product,productCategory:'esim_addon'},{...product,productCategory:'esim_replacement'}]});
   assert.equal(result.length,1);assert.equal(result[0].validityHours,360);
-  assert.equal(result[0].currency,'EUR');assert.equal(result[0].price,10.79);assert.equal(result[0].dataUnit,'MB');
+  assert.equal(result[0].currency,'EUR');assert.equal(result[0].price,11.28);assert.equal(result[0].dataUnit,'MB');
   assert.equal('wholesalePrice' in result[0],false);
   assert.deepEqual(result[0].countries,['AL','IT']);
 });
-test('merchant pricing: 20 USD becomes 24 EUR, rounded once to cents',()=>{
-  for(const [base,expected] of [[20,24],[3.49,4.19],[0,0],[0.01,0.01],[37.99,45.59]]) {
+test('merchant pricing includes processing cost after the existing EUR markup',()=>{
+  for(const [base,expected] of [[20,24.83],[3.49,4.51],[0,0],[0.01,0.22],[37.99,46.97]]) {
     const [result]=normalizeProducts([{...product,retailPrice:base}]);
     assert.equal(result.price,expected);assert.equal(result.currency,'EUR');
   }
   assert.throws(()=>normalizeProducts([{...product,currencyCode:'GBP'}]),{code:'UNSUPPORTED_CURRENCY'});
+});
+test('all-in price covers percentage on final total and fixed fee without undercharging',()=>{
+  assert.equal(priceIncludingProcessing(5.99),6.35);
+  for(let cents=1;cents<=100000;cents+=17){
+    const finalCents=Math.round(priceIncludingProcessing(cents/100)*100);
+    assert.ok(finalCents*39 >= (cents+20)*40);
+    assert.ok((finalCents-1)*39 < (cents+20)*40);
+  }
 });
 test('KYC flag and absent optional details are explicit',()=>{
   const [result]=normalizeProducts([{...product,productCategory:'esim_delayed',productDetails:[]}]);
