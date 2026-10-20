@@ -65,6 +65,7 @@ export function normalizeProducts(body) {
       category:product.productCategory,
       requiresIdentityVerification:product.productCategory==='esim_delayed',
       provider:cleanText(product.providerName),
+      providerLogo: (()=>{try{const url=new URL(product.providerLogo);return url.protocol==='https:'?url.href:null;}catch{return null;}})(),
       title:details.get('PLAN_TITLE') || cleanText(product.providerName) || 'eSIM',
       price:sellingPrice(product.retailPrice, product.currencyCode),
       currency:'EUR',

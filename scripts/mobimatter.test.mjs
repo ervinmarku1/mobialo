@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import {normalizeProducts,fetchProducts,priceIncludingProcessing} from './mobimatter.mjs';
 
 const product={productId:'fixture-1',productCategory:'esim_realtime',providerName:'Test provider',retailPrice:8.99,wholesalePrice:7.6,currencyCode:'USD',countries:['AL','IT'],regions:['Europe'],productDetails:[{name:'PLAN_VALIDITY',value:'360'},{name:'PLAN_DATA_UNIT',value:'MB'},{name:'PLAN_TITLE',value:'Test plan'},{name:'PLAN_DATA_LIMIT',value:'500'},{name:'PLAN_DETAILS',value:JSON.stringify({description:'500 MB total',items:['Activation on installation']})}]};
+test('provider logos allow HTTPS only and tolerate missing or invalid URLs',()=>{
+ for(const value of [undefined,'javascript:alert(1)','http://example.com/logo.png','invalid']){
+  assert.equal(normalizeProducts([{...product,providerLogo:value}])[0].providerLogo,null);
+ }
+ assert.equal(normalizeProducts([{...product,providerLogo:'https://example.com/logo.png'}])[0].providerLogo,'https://example.com/logo.png');
+});
 test('hides the two supplier test products without removing normal plans',()=>{
   const rows=['24f5ebfc-4335-4227-9ef6-d9482502e32e','75b98dc7-c026-48c1-9fee-465681382d39','normal-1','normal-2'].map(productId=>({...product,productId}));
   assert.deepEqual(normalizeProducts(rows).map(p=>p.id),['normal-1','normal-2']);
