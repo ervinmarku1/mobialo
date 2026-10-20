@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {recoverDeliveries} from './delivery-worker.mjs';
+import {recoverDeliveries,recoveryErrorCode} from './delivery-worker.mjs';
+
+test('recovery diagnostics identify configuration failures without exposing arbitrary error details',()=>{
+  assert.equal(recoveryErrorCode(Error('DELIVERY_NOT_CONFIGURED:RESEND_API_KEY')),'DELIVERY_NOT_CONFIGURED:RESEND_API_KEY');
+  assert.equal(recoveryErrorCode(Error('DELIVERY_UPSTREAM_401')),'DELIVERY_UPSTREAM_401');
+  assert.equal(recoveryErrorCode({code:'EACCES',message:'private path'}),'EACCES');
+  assert.equal(recoveryErrorCode(Error('secret-value upstream response')),'RECOVERY_FAILED');
+  assert.equal(recoveryErrorCode(Error('DELIVERY_NOT_CONFIGURED:secret-value')),'RECOVERY_FAILED');
+});
 
 function fixture(overrides={}){
   let row={id:'order',state:'awaiting_payment',paypal_order_id:'paypal',product_id:'plan',amount:24,customer_email:'buyer@example.com',...overrides};

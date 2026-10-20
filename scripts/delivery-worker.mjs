@@ -3,6 +3,15 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {deliveryServices,fulfillDelivery} from './esim-delivery.mjs';
 import {writeWorkerHealth} from './worker-health.mjs';
 
+export function recoveryErrorCode(error){
+  const message=error?.message||'';
+  if(/^(LIVE_PAYMENT_REQUIRED|PAYPAL_AUTH_FAILED|DELIVERY_UPSTREAM_[1-5][0-9]{2}|DELIVERY_NOT_CONFIGURED:(SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|PAYPAL_CLIENT_ID|PAYPAL_CLIENT_SECRET|RESEND_API_KEY|MOBIMATTER_MERCHANT_ID|MOBIMATTER_API_KEY))$/.test(message))return message;
+  if(error?.name==='TimeoutError')return 'UPSTREAM_TIMEOUT';
+  if(['EACCES','EPERM','ENOENT','ENOSPC','ERR_INVALID_URL'].includes(error?.code))return error.code;
+  if(['ENOTFOUND','ECONNREFUSED','ECONNRESET','ETIMEDOUT'].includes(error?.cause?.code))return error.cause.code;
+  return 'RECOVERY_FAILED';
+}
+
 // The delivery rows are the durable queue. No in-memory cursor survives a sweep:
 // every restart discovers unfinished work again. State transitions arbitrate races.
 export async function recoverDeliveries(services,{signal,report=()=>{},progress=async()=>{}}={}){
@@ -49,13 +58,20 @@ async function main(){
   process.once('SIGTERM',()=>controller.abort());
   console.log('Live delivery recovery worker started.');
   do{
+    let stage='configuration';
     try{
       const services=await deliveryServices();
-      const result=await recoverDeliveries(services,{signal:controller.signal,progress:()=>writeWorkerHealth({ok:true}),report:event=>console.log(JSON.stringify(event))});
+      stage='recovery';
+      const result=await recoverDeliveries(services,{signal:controller.signal,progress:async()=>{
+        stage='health_write';
+        await writeWorkerHealth({ok:true});
+        stage='recovery';
+      },report:event=>console.log(JSON.stringify(event))});
       console.log(JSON.stringify(result));
+      stage='health_write';
       await writeWorkerHealth({ok:result.failed===0,...result});
-    }catch{
-      console.error('Recovery sweep unavailable; check service configuration and connectivity.');
+    }catch(error){
+      console.error('Recovery sweep unavailable',JSON.stringify({stage,code:recoveryErrorCode(error)}));
       await writeWorkerHealth({ok:false}).catch(()=>{});
       if(process.argv.includes('--once')){process.exitCode=1;return;}
     }
