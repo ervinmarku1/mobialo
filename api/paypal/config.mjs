@@ -1,4 +1,2 @@
-export default function handler(req,res){
-  res.setHeader('Cache-Control','no-store');
-  return res.status(200).json({environment:'preview',checkoutEnabled:false});
-}
+import {checkoutHandler} from '../../scripts/hosted-checkout.mjs';
+export default checkoutHandler('config');

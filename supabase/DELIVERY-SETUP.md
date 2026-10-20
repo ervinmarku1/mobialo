@@ -2,6 +2,22 @@
 
 Status: connected to controlled LOCAL live checkout. Public checkout remains disabled.
 
+## Controlled hosted checkout
+
+Vercel now provides `/api/paypal/create` and `/api/paypal/capture`. Set
+`CHECKOUT_MODE=admin` and `PAYPAL_ENV=live` to allow only confirmed Supabase
+users listed in `ADMIN_USER_IDS`. All other visitors continue to see preview.
+Keep `CHECKOUT_MODE=closed` (or unset) to disable the hosted flow.
+Use `https://www.mobialo.eu` and sign in with the configured admin account.
+Config, creation and capture all verify the session server-side. Capture also
+requires the order's stored user ID to match. Prices come from the catalog.
+Set MobiMatter catalog credentials on Vercel in addition to live PayPal and
+Supabase credentials. Browser-supplied ownership and prices are ignored.
+Hosted capture records the verified payment for the Render worker; provisioning
+is not performed inside the Vercel request. The webhook independently reconciles
+captures if the browser loses its response. This is a real-money admin trial,
+not sandbox. No automatic test makes a payment.
+
 ## Customer dashboard
 
 Run `migrations/20261019_customer_ownership.sql` after the delivery table migration

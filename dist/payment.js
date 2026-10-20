@@ -1,3 +1,4 @@
+import './customer-session.js';
 (async()=>{
 const params=new URLSearchParams(location.search),state=params.get('state'),token=params.get('token');
 const language=await window.MobialoLocale.ready,sq=language==='sq';
@@ -9,7 +10,9 @@ if(params.has('cancel')){status.textContent=sq?'Pagesa u anulua.':'Checkout canc
 if(!state||!token){status.textContent=sq?'Nuk ka pagesë për verifikim.':'No payment to verify.';return;}
 status.textContent=sq?'Po verifikohet pagesa...':'Verifying payment...';
 try{
-const response=await fetch('/api/paypal/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state,token})});
+const headers={'Content-Type':'application/json'};
+if(window.mobialoCustomerSession){const client=await window.mobialoCustomerSession;if(client){const {data:{session},error}=await client.auth.getSession();if(error)throw error;if(session)headers.Authorization='Bearer '+session.access_token;}}
+const response=await fetch('/api/paypal/capture',{method:'POST',headers,body:JSON.stringify({state,token})});
 const data=await response.json();if(!response.ok)throw Error(data.error||'Pending');
 if(data.environment==='live')status.textContent=(sq?'Pagesa u konfirmua. ':'Payment confirmed. ')+(data.emailAccepted?(sq?'Emaili me QR u pranua për dërgim.':'QR email accepted for sending.'):(sq?'Porosia po përpunohet. Mos paguaj përsëri. Kontakto support@mobialo.eu.':'Order processing. Do not pay again. Contact support@mobialo.eu.'))+' Reference: '+data.reference;
 else status.textContent='Sandbox payment confirmed. No real eSIM was created.';

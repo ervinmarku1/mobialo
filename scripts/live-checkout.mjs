@@ -19,7 +19,7 @@ export async function createLiveOrder(input,services,products){
   return {id:payment.id,state:id,environment:'live'};
 }
 
-export async function captureLiveOrder(state,token,services){
+export async function captureLiveOrder(state,token,services,{deferDelivery=false}={}){
   if(!/^[a-f0-9-]{36}$/.test(state||'')||typeof token!=='string')throw Error('INVALID_ORDER');
   services??=await deliveryServices();const order=await services.store.get(state);
   if(!order||order.paypal_order_id!==token)throw Error('INVALID_ORDER');
@@ -27,6 +27,19 @@ export async function captureLiveOrder(state,token,services){
   if(['CREATED','SAVED','PAYER_ACTION_REQUIRED'].includes(payment.status))throw Error('PAYMENT_APPROVAL_REQUIRED');
   if(payment.status==='APPROVED')payment=await services.paypal(token+'/capture','POST',{},'capture-'+state);
   if(!validCapture(payment,{id:token,amount:Number(order.amount).toFixed(2)}))throw Error('PAYMENT_NOT_COMPLETED');
+  if(deferDelivery){
+    const capture=payment.purchase_units.flatMap(unit=>unit.payments?.captures||[])[0];
+    if(!capture.id)throw Error('PAYMENT_NOT_COMPLETED');
+    if(order.state==='awaiting_payment'){
+      const saved=await services.store.transition(state,'awaiting_payment',{state:'paid',paypal_capture_id:capture.id});
+      if(!saved){
+        const latest=await services.store.get(state);
+        if(!latest||latest.paypal_capture_id!==capture.id)throw Error('ORDER_SAVE_FAILED');
+      }
+    }
+    const latest=await services.store.get(state);
+    return {status:'COMPLETED',environment:'live',amount:Number(order.amount).toFixed(2),currency:'EUR',deliveryState:latest?.state||'paid',emailAccepted:latest?.state==='sent',reference:token};
+  }
   let delivery;
   try{delivery=await fulfillDelivery(state,services);}catch{delivery={state:(await services.store.get(state))?.state||'review'};}
   return {status:'COMPLETED',environment:'live',amount:Number(order.amount).toFixed(2),currency:'EUR',deliveryState:delivery.state,emailAccepted:delivery.state==='sent',reference:token};

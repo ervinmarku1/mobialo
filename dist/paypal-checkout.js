@@ -4,7 +4,8 @@ function loadPayPalSdk(){
   if(window.paypal)return Promise.resolve(window.paypal);
   if(paypalSdkPromise)return paypalSdkPromise;
   paypalSdkPromise=(async()=>{
-    const response=await fetch('/api/paypal/config');if(!response.ok)throw Error('Configuration');
+    const headers=await checkoutAuthHeaders();
+    const response=await fetch('/api/paypal/config',{headers,cache:'no-store'});if(!response.ok)throw Error('Configuration');
     const config=await response.json();if(config.checkoutEnabled===false)return null;if(!['sandbox','live'].includes(config.environment))throw Error('Configuration');
     checkoutEnvironment=config.environment;
     const script=document.createElement('script');
@@ -14,10 +15,14 @@ function loadPayPalSdk(){
   })().catch(error=>{paypalSdkPromise=null;throw error;});return paypalSdkPromise;
 }
 async function paypalRequest(path,body){
-  const headers={'Content-Type':'application/json'};
-  if(path==='create'&&window.mobialoCustomerSession){const client=await window.mobialoCustomerSession;if(client){const {data:{session},error}=await client.auth.getSession();if(error)throw error;if(session)headers.Authorization='Bearer '+session.access_token;}}
+  const headers={'Content-Type':'application/json',...await checkoutAuthHeaders()};
   const response=await fetch('/api/paypal/'+path,{method:'POST',headers,body:JSON.stringify(body)});
   const result=await response.json();if(!response.ok)throw Error(result.error);return result;
+}
+async function checkoutAuthHeaders(){
+  const headers={};
+  if(window.mobialoCustomerSession){const client=await window.mobialoCustomerSession;if(client){const {data:{session},error}=await client.auth.getSession();if(error)throw error;if(session)headers.Authorization='Bearer '+session.access_token;}}
+  return headers;
 }
 async function mountPayPal(container,productId){
   const sq=lang==='sq',it=lang==='it',message=container.querySelector('[role=status]'),buttons=container.querySelector('.smart-buttons');

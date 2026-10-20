@@ -4,6 +4,8 @@
   "buildCommand": "npm run build:auth",
   "outputDirectory": "dist",
   "functions": {
+    "api/paypal/create.mjs": {"maxDuration": 180},
+    "api/paypal/capture.mjs": {"maxDuration": 180},
     "api/paypal/webhook.mjs": {"maxDuration": 180}
   },
   "rewrites": [
