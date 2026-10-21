@@ -13,7 +13,14 @@ try{
 const headers={'Content-Type':'application/json'};
 if(window.mobialoCustomerSession){const client=await window.mobialoCustomerSession;if(client){const {data:{session},error}=await client.auth.getSession();if(error)throw error;if(session)headers.Authorization='Bearer '+session.access_token;}}
 const response=await fetch('/api/paypal/capture',{method:'POST',headers,body:JSON.stringify({state,token})});
-const data=await response.json();if(!response.ok)throw Error(data.error||'Pending');
+const data=await response.json();if(!response.ok){
+ if(data.error==='INSTRUMENT_DECLINED'){
+  status.textContent=(sq?'PayPal refuzoi kartën ose mënyrën e zgjedhur të pagesës. Verifikimi i përsëritur nuk e zgjidh këtë refuzim. Përdor një mënyrë tjetër pagese në PayPal ose kontakto mbështetjen PayPal.':'PayPal declined the selected payment method. Repeating verification will not resolve this decline. Choose another payment method in PayPal or contact PayPal support.')+' Reference: '+token;
+  if(typeof data.debugId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.debugId))status.textContent+=' · Debug ID: '+data.debugId;
+  return;
+ }
+ throw Error(data.error||'Pending');
+}
 if(data.environment==='live')status.textContent=(sq?'Pagesa u konfirmua. ':'Payment confirmed. ')+(data.emailAccepted?(sq?'Emaili me QR u pranua për dërgim.':'QR email accepted for sending.'):(sq?'Porosia po përpunohet. Mos paguaj përsëri. Kontakto support@mobialo.eu.':'Order processing. Do not pay again. Contact support@mobialo.eu.'))+' Reference: '+data.reference;
 else status.textContent='Sandbox payment confirmed. No real eSIM was created.';
 }catch(error){if(error.message==='PAYMENT_APPROVAL_REQUIRED'){status.textContent=sq?'PayPal nuk e ka regjistruar miratimin e kësaj porosie. Pagesa nuk u arkëtua.':'PayPal has not recorded approval for this order. Payment was not captured.';retry.hidden=false;return;}status.textContent=sq?'Statusi nuk u verifikua. Mos paguaj përsëri; riprovo verifikimin.':'Status could not be verified. Do not pay again; retry verification.';retry.hidden=false;}

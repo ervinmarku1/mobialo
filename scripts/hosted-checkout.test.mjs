@@ -69,3 +69,10 @@ test('hosted capture durably queues paid order without provisioning',async()=>{
   assert.equal(row.state,'paid');assert.equal(row.paypal_capture_id,'capture');
   assert.equal(result.deliveryState,'paid');assert.equal(result.emailAccepted,false);
 });
+
+test('funding declines reach checkout without exposing raw provider errors',async()=>{
+ const f=fixture();f.deps.capture=async()=>{const error=new Error('secret upstream payload');error.paypalDiagnostic={issues:['INSTRUMENT_DECLINED','unsafe payload'],debugId:'7b1dc5f75f35c',raw:'secret'};throw error;};
+ const result=await hostedCheckout('capture',f.req,f.deps);
+ assert.equal(result.status,422);assert.deepEqual(result.body,{error:'INSTRUMENT_DECLINED',debugId:'7b1dc5f75f35c',issues:['INSTRUMENT_DECLINED']});
+ assert.equal(JSON.stringify(result).includes('secret'),false);
+});

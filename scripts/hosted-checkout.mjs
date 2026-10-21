@@ -40,6 +40,12 @@ export async function hostedCheckout(action,req,{
     if(!order||order.user_id!==auth.user.id)return fail(403,'ORDER_ACCESS_DENIED');
     return result(200,await capture(body.state,body.token,deps,{deferDelivery:true}));
   }catch(error){
+    if(error.paypalDiagnostic){
+      const safe=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(value)?value:undefined;
+      const issues=Array.isArray(error.paypalDiagnostic.issues)?error.paypalDiagnostic.issues.map(safe).filter(Boolean):[];
+      const code=issues.includes('INSTRUMENT_DECLINED')?'INSTRUMENT_DECLINED':issues.includes('COMPLIANCE_VIOLATION')?'PAYPAL_COMPLIANCE_VIOLATION':'PAYPAL_REQUEST_FAILED';
+      return result(code==='PAYPAL_REQUEST_FAILED'?502:422,{error:code,debugId:safe(error.paypalDiagnostic.debugId),issues});
+    }
     if(['EMAIL_REQUIRED','INVALID_PRODUCT','INVALID_ORDER','PAYMENT_APPROVAL_REQUIRED','PAYMENT_NOT_COMPLETED'].includes(error.message))return fail(400,error.message);
     return fail(503,'CHECKOUT_UNAVAILABLE');
   }

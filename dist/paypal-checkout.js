@@ -93,13 +93,17 @@ async function mountPayPal(container,productId){
         say(sq?'Po hapet formulari i pagesës…':it?'Apertura del modulo di pagamento…':'Opening payment form…');
         return actions.resolve();
       },createOrder:create,
-        onApprove:async data=>{
+        onApprove:async (data,actions)=>{
           try{
             if(!order||order.id!==data.orderID)throw Error('Unknown order');
             say((it?"Verifica del pagamento?":sq?'Po verifikohet pagesa?':'Verifying payment?'));
             let result;
             try{result=await paypalRequest('capture',{state:order.state,token:data.orderID});}
             catch(error){
+              if(error.message==='INSTRUMENT_DECLINED'){
+                say(sq?'PayPal refuzoi mënyrën e pagesës. Zgjidh një kartë ose mënyrë tjetër në PayPal.':it?'PayPal ha rifiutato il metodo di pagamento. Scegli un altro metodo in PayPal.':'PayPal declined this payment method. Choose another payment method in PayPal.');
+                return await actions.restart();
+              }
               if(error.message!=='PAYPAL_COMPLIANCE_VIOLATION')throw error;
               say((sq?'PayPal e bllokoi transaksionin me kodin COMPLIANCE_VIOLATION. Kontakto mbështetjen PayPal me referencën: ':it?'PayPal ha bloccato la transazione: COMPLIANCE_VIOLATION. Contatta il supporto PayPal con riferimento: ':'PayPal blocked the transaction: COMPLIANCE_VIOLATION. Contact PayPal support with reference: ')+order.id);
               buttons.hidden=true;return;

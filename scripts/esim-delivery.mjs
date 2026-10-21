@@ -77,7 +77,11 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
       if(new URL(url).hostname==='api-m.paypal.com'){
         const failure=await response.json().catch(()=>({}));
         const safe=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(value)?value:undefined;
-        console.warn('PayPal API request failed',{status:response.status,name:safe(failure.name),debugId:safe(failure.debug_id),issues:Array.isArray(failure.details)?failure.details.map(d=>safe(d.issue)).filter(Boolean):[]});
+        const diagnostic={status:response.status,name:safe(failure.name),debugId:safe(failure.debug_id),issues:Array.isArray(failure.details)?failure.details.map(d=>safe(d.issue)).filter(Boolean):[]};
+        console.warn('PayPal API request failed',diagnostic);
+        const error=new Error('DELIVERY_UPSTREAM_'+response.status);
+        error.paypalDiagnostic=diagnostic;
+        throw error;
       }
       throw Error('DELIVERY_UPSTREAM_'+response.status);
     }
