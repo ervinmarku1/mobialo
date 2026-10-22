@@ -43,11 +43,14 @@ export async function workerSweep(req,{env=process.env,config=workerConfig,servi
   if(!timingSafeEqual(digest(presented),digest(vault.worker_secret)))return reply(401,{error:'UNAUTHORIZED'});
   const configuration={...env,RESEND_API_KEY:env.RESEND_API_KEY?.trim()||(typeof vault.resend_api_key==='string'?vault.resend_api_key.trim():'')};
   const email=!!configuration.RESEND_API_KEY;
-  let result=null,code=null;
-  try{result=await recover(await services({configuration}),{signal:AbortSignal.timeout(budgetMs),report:event=>log.log(JSON.stringify(event))});}
+  let result=null,code=null,deliveryFailed=0;
+  // Only failures on rows past payment mean customers wait for an eSIM; a slow PayPal read of an
+  // unpaid checkout is retried next minute and must not close public checkout (ok gates it).
+  const report=event=>{log.log(JSON.stringify(event));if(event.outcome==='retry_or_review'&&event.state!=='awaiting_payment')deliveryFailed++;};
+  try{result=await recover(await services({configuration}),{signal:AbortSignal.timeout(budgetMs),report});}
   catch(error){code=recoveryErrorCode(error);log.error('Delivery sweep unavailable',JSON.stringify({code}));}
-  const counts=result?{checked:result.checked,sent:result.sent,waiting:result.waiting,review:result.review,failed:result.failed}:{};
-  try{await save(env,'worker',{at:new Date().toISOString(),ok:!code&&result.failed===0,...counts,email,source:'cron',...(code?{code}:{})},null);}
+  const counts=result?{checked:result.checked,sent:result.sent,waiting:result.waiting,review:result.review,failed:result.failed,deliveryFailed}:{};
+  try{await save(env,'worker',{at:new Date().toISOString(),ok:!code&&deliveryFailed===0,...counts,email,source:'cron',...(code?{code}:{})},null);}
   catch(error){log.warn('Worker heartbeat not saved',JSON.stringify({code:/^[A-Z_]{1,40}$/.test(error?.message||'')?error.message:'HEARTBEAT_FAILED'}));}
   return code?reply(503,{error:'SWEEP_FAILED',code}):reply(200,{...counts,email});
 }

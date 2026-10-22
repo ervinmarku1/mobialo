@@ -21,7 +21,7 @@ test('a valid cron call sweeps deliveries with the Vault email key and records a
   const f=fixture();
   const result=await workerSweep(f.req,f.deps);
   assert.equal(result.status,200);
-  assert.deepEqual(result.body,{checked:3,sent:1,waiting:2,review:0,failed:0,email:true});
+  assert.deepEqual(result.body,{checked:3,sent:1,waiting:2,review:0,failed:0,deliveryFailed:0,email:true});
   assert.equal(f.used[0].RESEND_API_KEY,'re_vault');
   const [name,beat]=f.saved[0];
   assert.equal(name,'worker');assert.equal(beat.ok,true);assert.equal(beat.email,true);assert.equal(beat.source,'cron');
@@ -70,8 +70,17 @@ test('a failed sweep is reported as unhealthy with a safe code',async()=>{
   const result=await workerSweep(f.req,f.deps);
   assert.equal(result.status,503);assert.equal(result.body.code,'DELIVERY_NOT_CONFIGURED:MOBIMATTER_API_KEY');
   assert.equal(f.saved[0][1].ok,false);assert.equal(f.saved[0][1].code,'DELIVERY_NOT_CONFIGURED:MOBIMATTER_API_KEY');
-  const g=fixture({recover:async()=>({checked:1,sent:0,waiting:0,review:0,failed:1})});
-  assert.equal((await workerSweep(g.req,g.deps)).status,200);assert.equal(g.saved[0][1].ok,false);
+  // A paid order that could not be processed means customers wait: unhealthy.
+  const g=fixture({recover:async(services,{report})=>{report({id:'a',state:'paid',outcome:'retry_or_review'});return {checked:1,sent:0,waiting:0,review:0,failed:1};}});
+  assert.equal((await workerSweep(g.req,g.deps)).status,200);
+  assert.equal(g.saved[0][1].ok,false);assert.equal(g.saved[0][1].deliveryFailed,1);
+});
+
+test('a failed read of an unpaid checkout is reported but keeps the worker healthy',async()=>{
+  const f=fixture({recover:async(services,{report})=>{report({id:'a',state:'awaiting_payment',outcome:'retry_or_review'});report({id:'b',state:'awaiting_payment',outcome:'checked'});return {checked:2,sent:0,waiting:1,review:0,failed:1};}});
+  assert.equal((await workerSweep(f.req,f.deps)).status,200);
+  const beat=f.saved[0][1];
+  assert.equal(beat.ok,true);assert.equal(beat.failed,1);assert.equal(beat.deliveryFailed,0);
 });
 
 test('a heartbeat write failure does not fail the sweep',async()=>{
