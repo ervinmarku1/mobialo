@@ -10,6 +10,8 @@ Object.assign(authCopy.sq,{preview:'Llogaria jote menaxhohet në mënyrë të si
 authCopy.it=authItalian;
 const path=location.pathname.replace(/\/$/,'');
 const mode=({'/join':'join','/sign-in':'sign','/forgot-password':'reset','/update-password':'update','/account':'account'})[path]||'sign';
+// After signing in, return to a same-origin page (e.g. the plan being bought), never elsewhere.
+const nextPath=(()=>{try{const next=new URLSearchParams(location.search).get('next');if(!next||!next.startsWith('/')||/^\/[\/\\]/.test(next))return '/account';const url=new URL(next,location.origin);return url.origin===location.origin?url.pathname+url.search+url.hash:'/account';}catch{return '/account';}})();
 let language=await window.MobialoLocale.ready;
 let client,user,ready=false,busy=false,resultKey='',errorKey='';
 const $=s=>document.querySelector(s),t=k=>authCopy[language][k];
@@ -64,14 +66,14 @@ $('#auth-form').addEventListener('submit',async event=>{
     if(mode==='account')response=await client.auth.signOut({scope:'local'});
     if(response.error)throw response.error;
     if(mode==='account'){location.replace('/sign-in');return;}
-    if(mode==='sign'||(mode==='join'&&response.data?.session)){location.replace('/account');return;}
+    if(mode==='sign'||(mode==='join'&&response.data?.session)){location.replace(nextPath);return;}
     if(mode==='update')await client.auth.signOut({scope:'local'});
     resultKey=`${mode}Result`;$('#auth-form').reset();
   }catch(error){errorKey=errorMessage(error);}
   finally{busy=false;document.querySelectorAll('input[autocomplete$="password"]').forEach(input=>{input.value='';input.type='password';});document.querySelectorAll('[data-for]').forEach(button=>{button.textContent=t('show');button.setAttribute('aria-pressed','false');});status();if(resultKey)$('#auth-result').focus();}
 });
 authCopy.en.hostedPreview='Online preview. Account registration will open soon.';
-authCopy.sq.hostedPreview='Prezantim online. Regjistrimi do t? hapet s? shpejti.';
+authCopy.sq.hostedPreview='Prezantim online. Regjistrimi do të hapet së shpejti.';
 render();
 try{
   const response=await fetch('/api/auth-config',{cache:'no-store'});if(!response.ok)throw Error('Configuration unavailable');
@@ -82,6 +84,6 @@ try{
   else if(mode==='account'||mode==='update'){
     if(!session){if(mode==='account')location.replace('/sign-in');else{errorKey='expired';status();}}
     else{const {data,error:verifyError}=await client.auth.getUser();if(verifyError||!data.user){errorKey='expired';status();}else{user=data.user;ready=true;if(mode==='account')dashboard=mountAccount({client,user,language});else render();}}
-  }else if(session&&(mode==='sign'||mode==='join'))location.replace('/account');
+  }else if(session&&(mode==='sign'||mode==='join'))location.replace(nextPath);
   else{ready=true;status();}
 }catch(error){errorKey=error.message==='HOSTED_PREVIEW'?'hostedPreview':'unavailable';status();}

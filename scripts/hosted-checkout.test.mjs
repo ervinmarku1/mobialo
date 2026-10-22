@@ -76,3 +76,94 @@ test('funding declines reach checkout without exposing raw provider errors',asyn
  assert.equal(result.status,422);assert.deepEqual(result.body,{error:'INSTRUMENT_DECLINED',debugId:'7b1dc5f75f35c',issues:['INSTRUMENT_DECLINED']});
  assert.equal(JSON.stringify(result).includes('secret'),false);
 });
+
+test('public mode lets any verified customer buy without admin access or 2FA',async()=>{
+ const f=fixture();f.deps.env={...f.deps.env,CHECKOUT_MODE:'public',ADMIN_USER_IDS:'',ADMIN_MFA_REQUIRED:'true'};
+ f.deps.identity=async()=>({status:200,user:{id:'customer',factors:[]}});
+ f.deps.services=async()=>({store:{get:async()=>({user_id:'customer'})}});
+ const config=await hostedCheckout('config',{...f.req,method:'GET'},f.deps);
+ assert.equal(config.body.checkoutEnabled,true);
+ assert.equal((await hostedCheckout('create',f.req,f.deps)).status,200);
+ assert.equal(f.calls[0].userId,'customer');
+ assert.equal((await hostedCheckout('capture',f.req,f.deps)).status,200);
+});
+test('public mode asks anonymous visitors to sign in and still refuses anonymous orders',async()=>{
+ const f=fixture();f.deps.env.CHECKOUT_MODE='public';
+ f.deps.identity=async()=>({status:401});
+ const config=await hostedCheckout('config',{...f.req,method:'GET'},f.deps);
+ assert.deepEqual(config.body,{environment:'live',checkoutEnabled:false,signInRequired:true});
+ f.deps.identity=async()=>({status:403});
+ assert.equal((await hostedCheckout('config',{...f.req,method:'GET'},f.deps)).body.reason,'EMAIL_NOT_CONFIRMED');
+ assert.equal((await hostedCheckout('create',f.req,f.deps)).status,403);
+ assert.equal(f.calls.length,0);
+});
+test('unknown checkout modes stay closed',async()=>{
+ for(const mode of ['open','PUBLIC','true',undefined]){
+  const f=fixture();f.deps.env.CHECKOUT_MODE=mode;f.deps.identity=()=>assert.fail('Unexpected authentication');
+  assert.equal((await hostedCheckout('create',f.req,f.deps)).status,403);
+ }
+});
+test('admin mode reports why checkout is hidden and requires 2FA once a factor exists',async()=>{
+ const f=fixture();f.deps.identity=async()=>({status:200,user:{id:'customer'}});
+ assert.deepEqual((await hostedCheckout('config',{...f.req,method:'GET'},f.deps)).body,{environment:'preview',checkoutEnabled:false,reason:'ADMIN_ONLY'});
+ f.deps.identity=async()=>({status:200,user:{id:'admin',factors:[{status:'verified'}]}});
+ const result=await hostedCheckout('config',{...f.req,method:'GET'},f.deps);
+ assert.equal(result.status,403);assert.equal(result.body.error,'MFA_REQUIRED');
+});
+test('broken identity configuration is not shown as signed out, and its reason is only logged',async()=>{
+ const logged=[];const f=fixture();f.deps.identity=async()=>({status:503});f.deps.log={error:(...args)=>logged.push(args.join(' '))};
+ const result=await hostedCheckout('config',{...f.req,method:'GET'},f.deps);
+ assert.equal(result.status,503);assert.deepEqual(result.body,{error:'CHECKOUT_UNAVAILABLE'});
+ assert.ok(logged[0].includes('AUTH_UNAVAILABLE'));
+});
+test('reasons are hidden from admin-mode callers who did not pass every admin gate',async()=>{
+ const f=fixture();f.deps.log={error(){}};f.deps.env.ADMIN_USER_IDS='';f.deps.env.SUPER_ADMIN_USER_IDS='owner';
+ f.deps.env.SUPABASE_URL='http://example.supabase.co';f.deps.env.SUPABASE_SERVICE_ROLE_KEY='key';
+ // The non-HTTPS URL makes hasAdminAccess throw (without a network call) before trust is established.
+ const result=await hostedCheckout('config',{...f.req,method:'GET'},{...f.deps,identity:async()=>({status:200,user:{id:'customer'}})});
+ assert.equal(result.status,503);assert.equal(result.body.reason,undefined);
+});
+test('merchant-side refusals are separated and their details hidden from customers',async()=>{
+ for(const [mode,user] of [['admin','admin'],['public','customer']]){
+  const f=fixture();f.deps.env.CHECKOUT_MODE=mode;f.deps.identity=async()=>({status:200,user:{id:user}});
+  f.deps.services=async()=>({store:{get:async()=>({user_id:user})}});
+  f.deps.capture=async()=>{const error=new Error('x');error.paypalDiagnostic={issues:['PAYEE_ACCOUNT_RESTRICTED'],debugId:'abc123'};throw error;};
+  const result=await hostedCheckout('capture',f.req,f.deps);
+  assert.equal(result.status,422);assert.equal(result.body.error,'MERCHANT_REFUSED');
+  assert.deepEqual(result.body.issues,mode==='admin'?['PAYEE_ACCOUNT_RESTRICTED']:[]);
+ }
+});
+test('pending reasons are shown to admins only',async()=>{
+ for(const [mode,user] of [['admin','admin'],['public','customer']]){
+  const f=fixture();f.deps.env.CHECKOUT_MODE=mode;f.deps.identity=async()=>({status:200,user:{id:user}});
+  f.deps.services=async()=>({store:{get:async()=>({user_id:user})}});
+  f.deps.capture=async()=>({status:'PENDING',reason:'RECEIVING_PREFERENCE_MANDATES_MANUAL_ACTION'});
+  assert.equal((await hostedCheckout('capture',f.req,f.deps)).body.reason,mode==='admin'?'RECEIVING_PREFERENCE_MANDATES_MANUAL_ACTION':null);
+ }
+});
+test('too many open orders is a 429, not an outage',async()=>{
+ const f=fixture();f.deps.create=async()=>{throw Error('TOO_MANY_OPEN_ORDERS');};
+ const result=await hostedCheckout('create',f.req,f.deps);
+ assert.equal(result.status,429);assert.equal(result.body.error,'TOO_MANY_OPEN_ORDERS');
+});
+test('unexpected failures are logged by code and only admins see the reason',async()=>{
+ const logged=[];
+ for(const [mode,user] of [['admin','admin'],['public','customer']]){
+  const f=fixture();f.deps.env.CHECKOUT_MODE=mode;f.deps.identity=async()=>({status:200,user:{id:user}});
+  f.deps.log={error:(...args)=>logged.push(args.join(' '))};
+  f.deps.create=async()=>{throw Error('PAYPAL_AUTH_FAILED');};
+  const result=await hostedCheckout('create',f.req,f.deps);
+  assert.equal(result.status,503);assert.equal(result.body.error,'CHECKOUT_UNAVAILABLE');
+  assert.equal(result.body.reason,mode==='admin'?'PAYPAL_AUTH_FAILED':undefined);
+ }
+ assert.equal(logged.length,2);assert.ok(logged.every(line=>line.includes('PAYPAL_AUTH_FAILED')));
+ const f=fixture();f.deps.log={error(){}};f.deps.create=async()=>{throw Error('raw provider text with buyer@example.com');};
+ assert.equal((await hostedCheckout('create',f.req,f.deps)).body.reason,'UNEXPECTED');
+});
+test('PayPal refusals are classified so the buyer knows no money was taken',async()=>{
+ for(const [issue,status,code] of [['REDIRECT_PAYER_FOR_ALTERNATE_FUNDING',422,'INSTRUMENT_DECLINED'],['PAYER_CANNOT_PAY',422,'PAYMENT_REFUSED'],['PAYMENT_DENIED',422,'PAYMENT_REFUSED'],['CAPTURE_DECLINED',422,'PAYMENT_REFUSED'],['TRANSACTION_BLOCKED_BY_PAYEE',422,'MERCHANT_REFUSED'],['COMPLIANCE_VIOLATION',422,'PAYPAL_COMPLIANCE_VIOLATION'],['ORDER_COMPLETION_IN_PROGRESS',502,'PAYPAL_REQUEST_FAILED'],['INTERNAL_SERVER_ERROR',502,'PAYPAL_REQUEST_FAILED']]){
+  const f=fixture();f.deps.capture=async()=>{const error=new Error('x');error.paypalDiagnostic={issues:[issue]};throw error;};
+  const result=await hostedCheckout('capture',f.req,f.deps);
+  assert.equal(result.status,status);assert.equal(result.body.error,code);
+ }
+});

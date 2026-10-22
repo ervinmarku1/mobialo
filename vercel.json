@@ -8,8 +8,10 @@
     "api/paypal/capture.mjs": {"maxDuration": 180},
     "api/paypal/webhook.mjs": {"maxDuration": 180}
   },
+  "redirects": [
+    {"source": "/(.*)", "has": [{"type":"host","value":"admin.mobialo.eu"}], "destination": "https://www.mobialo.eu/admin", "permanent": false}
+  ],
   "rewrites": [
-    {"source": "/", "has": [{"type":"host","value":"admin.mobialo.eu"}], "destination": "/admin.html"},
     {"source": "/admin", "destination": "/admin.html"},
     {"source": "/join", "destination": "/auth.html"},
     {"source": "/sign-in", "destination": "/auth.html"},

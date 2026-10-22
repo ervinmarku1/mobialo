@@ -18,7 +18,10 @@ export async function fulfillDelivery(id,{store,paypal,mobimatter,send}){
   if(!order)throw Error('ORDER_NOT_FOUND');
   if(order.state==='sent')return {state:'sent'};
   if(order.state==='awaiting_payment'){
-    const payment=await paypal(order.paypal_order_id);
+    // PayPal drops orders that were never approved; an old, uncaptured 404 is "not paid".
+    // A recent 404 or one with a recorded capture points to a credential/account mismatch.
+    const expired=!order.paypal_capture_id&&Date.now()-Date.parse(order.created_at)>6*3600000;
+    const payment=await paypal(order.paypal_order_id).catch(error=>{throw error.paypalDiagnostic?.status===404&&expired?Error('PAYMENT_NOT_VERIFIED'):error;});
     const captures=payment.purchase_units?.flatMap(p=>p.payments?.captures||[])||[];
     const capture=captures[0];
     if(payment.id!==order.paypal_order_id||payment.status!=='COMPLETED'||captures.length!==1||capture.status!=='COMPLETED'||!capture.id||capture.amount?.currency_code!=='EUR'||capture.amount.value!==Number(order.amount).toFixed(2))throw Error('PAYMENT_NOT_VERIFIED');
@@ -64,11 +67,15 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
   env.PAYPAL_CLIENT_SECRET=env.PAYPAL_LIVE_CLIENT_SECRET||env.PAYPAL_CLIENT_SECRET;
   for(const name of ['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','PAYPAL_CLIENT_ID','PAYPAL_CLIENT_SECRET',...(!paymentOnly?['RESEND_API_KEY','MOBIMATTER_MERCHANT_ID','MOBIMATTER_API_KEY']:[])])if(!env[name]?.trim())throw Error('DELIVERY_NOT_CONFIGURED:'+name);
   if(env.PAYPAL_ENV!=='live')throw Error('LIVE_PAYMENT_REQUIRED');
+  // PayPal throttles clients that fetch a new OAuth token per request; reuse it until near expiry.
+  let cachedToken=null;
   async function accessToken(){
+    if(cachedToken&&cachedToken.expires>Date.now())return cachedToken.value;
     const response=await fetcher('https://api-m.paypal.com/v1/oauth2/token',{method:'POST',redirect:'error',headers:{Authorization:'Basic '+Buffer.from(env.PAYPAL_CLIENT_ID+':'+env.PAYPAL_CLIENT_SECRET).toString('base64'),'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=client_credentials',signal:AbortSignal.timeout(20000)});
     if(!response.ok)throw Error('PAYPAL_AUTH_FAILED');
     const token=await response.json();
     if(!token.access_token)throw Error('PAYPAL_AUTH_FAILED');
+    cachedToken={value:token.access_token,expires:Date.now()+Math.max(0,Number(token.expires_in)-300||0)*1000};
     return token.access_token;
   }
   async function request(url,method,headers,body){
@@ -95,8 +102,12 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
       get:async id=>(await request(db+'?id=eq.'+encodeURIComponent(id),'GET',dbHeaders))[0],
       byPayPal:async id=>(await request(db+'?paypal_order_id=eq.'+encodeURIComponent(id),'GET',dbHeaders))[0],
       transition:async(id,state,patch)=>(await request(db+'?id=eq.'+encodeURIComponent(id)+'&state=eq.'+state,'PATCH',dbHeaders,patch))[0],
-      recoveryPage:async(after)=>{
-        const query=new URLSearchParams({select:'id,state,paypal_order_id',state:'in.(awaiting_payment,paid,reserving,reserved,completing,ready,sending,review)',order:'id.asc',limit:'100'});
+      openOrders:async(userId,since)=>(await request(db+'?'+new URLSearchParams({select:'id',user_id:'eq.'+userId,state:'eq.awaiting_payment',created_at:'gte.'+since,limit:'50'}),'GET',dbHeaders)).length,
+      recoveryPage:async(after,now=Date.now())=>{
+        // Abandoned checkouts are polled for 7 days. Rows holding a PENDING capture are polled
+        // until PayPal completes them; the webhook records late completions as well.
+        const since=new Date(now-7*86400000).toISOString();
+        const query=new URLSearchParams({select:'id,state,paypal_order_id',state:'in.(awaiting_payment,paid,reserving,reserved,completing,ready,sending,review)',or:`(state.neq.awaiting_payment,paypal_capture_id.not.is.null,created_at.gte."${since}")`,order:'id.asc',limit:'100'});
         if(after)query.set('id','gt.'+after);
         return request(db+'?'+query,'GET',dbHeaders);
       }

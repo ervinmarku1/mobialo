@@ -104,7 +104,7 @@ function setLanguage(value) {
   if($('.journey-stamp'))$('.journey-stamp').innerHTML=(lang==='en'?'EUROPE':'EUROPA')+'<br><b>?</b><br>MOBIALO';
   if($('.city-photo span'))$('.city-photo span').textContent=lang==='it'?'PARIGI, FRANCIA':lang==='sq'?'PARIS, FRANC?':'PARIS, FRANCE';
   window.MobialoLocale.syncSelect($('#language'),lang);
-  document.title = lang==='it'?'MOBIALO ? Esplora. Resta connesso.':lang === 'en' ? 'MOBIALO — Go places. Stay connected.' : 'MOBIALO — Zbulo vende. Qëndro i lidhur.';
+  document.title = lang==='it'?'MOBIALO — Esplora. Resta connesso.':lang === 'en' ? 'MOBIALO — Go places. Stay connected.' : 'MOBIALO — Zbulo vende. Qëndro i lidhur.';
   document.querySelector('meta[name="description"]').content = lang==='it'?'Scopri i piani eSIM MOBIALO per il tuo prossimo viaggio.':lang === 'en' ? 'Explore MOBIALO travel eSIM plans. Find your next destination in English or Albanian. Preview storefront.' : 'Zbulo paketat eSIM të MOBIALO për udhëtime. Gjej destinacionin tënd në shqip ose anglisht. Version demonstrimi.';
   document.querySelectorAll('[data-i18n]').forEach(element => element.innerHTML = t(element.dataset.i18n));
   document.querySelectorAll('[data-placeholder]').forEach(element => {element.placeholder = t(element.dataset.placeholder);element.setAttribute('aria-label',t(element.dataset.placeholder));});

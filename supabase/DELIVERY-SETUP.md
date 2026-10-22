@@ -1,6 +1,6 @@
 # eSIM delivery preparation
 
-Status: connected to controlled LOCAL live checkout. Public checkout remains disabled.
+Status: hosted live checkout runs in admin mode (`CHECKOUT_MODE=admin`). Public mode exists but stays off until the delivery worker is hosted.
 
 ## Controlled hosted checkout
 
@@ -17,6 +17,44 @@ Hosted capture records the verified payment for the Render worker; provisioning
 is not performed inside the Vercel request. The webhook independently reconciles
 captures if the browser loses its response. This is a real-money admin trial,
 not sandbox. No automatic test makes a payment.
+
+Admin mode requires an aal2 (2FA) session when the admin has a verified TOTP factor,
+when `ADMIN_MFA_REQUIRED=true`, or whenever `SUPER_ADMIN_USER_IDS` is set. The checkout
+asks for the Authenticator code in place; it can also be verified at
+`https://www.mobialo.eu/admin`. `admin.mobialo.eu` redirects there, because sessions
+are stored per origin and create/capture only accept `https://www.mobialo.eu`.
+
+`CHECKOUT_MODE=public` opens checkout to every signed-in customer with a confirmed
+email (no admin list, no 2FA). Anonymous visitors are asked to sign in and return to
+the plan afterwards. Each customer may open at most 10 unpaid orders per hour
+(`TOO_MANY_OPEN_ORDERS`, HTTP 429). Enable public mode only after the delivery worker
+runs continuously (nothing in the code checks this; without it customers are charged
+and receive no eSIM), a real admin purchase has succeeded end to end, and Supabase
+custom SMTP is configured for customer emails. Any other value keeps checkout closed.
+Redeploy after changing Vercel environment variables.
+
+Capture outcomes:
+- COMPLETED: the order becomes `paid`; the worker provisions it.
+- PENDING (PayPal holds the money, e.g. EUR not accepted automatically or account
+  review): returns `status: "PENDING"`, stores `paypal_capture_id` while the row stays
+  `awaiting_payment` (the admin panel shows "PayPal në pritje"). Accept the payment in
+  PayPal; the verified webhook (`PAYMENT.CAPTURE.COMPLETED`, registered on the live app
+  at https://www.mobialo.eu/api/paypal/webhook) or the worker then marks it `paid`.
+  The worker keeps polling rows with a stored capture; abandoned checkouts without one
+  are polled for 7 days only. Customers do not see PayPal's pending reason.
+- 422 `INSTRUMENT_DECLINED` (also REDIRECT_PAYER_FOR_ALTERNATE_FUNDING): the browser
+  reopens PayPal to choose another funding source.
+- 422 `PAYMENT_REFUSED` (payer/funding refusals such as PAYMENT_DENIED, or a capture
+  with status DECLINED/FAILED): no money taken; the next click creates a new order.
+- 422 `MERCHANT_REFUSED` (PAYEE_* restrictions, TRANSACTION_BLOCKED_BY_PAYEE, receiving
+  limits) and 422 `PAYPAL_COMPLIANCE_VIOLATION`: no money taken; fix the PayPal account.
+- 400 `PAYMENT_APPROVAL_REQUIRED` (also PAYER_ACTION_REQUIRED/ORDER_NOT_APPROVED on
+  capture): not captured; the buyer starts again.
+- 502 `PAYPAL_REQUEST_FAILED`: unknown outcome, "do not pay again; retry verification".
+  The PayPal issue is logged as `PayPal API request failed {status,name,debugId,issues}`.
+- 503 `CHECKOUT_UNAVAILABLE`: configuration/upstream failure, logged as
+  `Hosted checkout unavailable {"action","reason"}`; `reason` is returned only to
+  admins who passed every admin gate.
 
 ## Customer dashboard
 
@@ -74,7 +112,8 @@ local checkout server, with the same live service configuration. This command
 can provision real eSIMs and send real emails for already captured payments.
 For one sweep, use `npm run worker:delivery -- --once`.
 
-The worker scans unfinished delivery rows using ID pagination and starts again
+The worker scans unfinished delivery rows (abandoned `awaiting_payment` checkouts
+without a capture only for 7 days) using ID pagination and starts again
 from the beginning after each sweep, with a 60-second pause. The database is the
 durable queue, so process restarts do not lose pending work. Completed PayPal
 captures are checked again before provisioning; approved but uncaptured payments
@@ -91,8 +130,9 @@ not a Vercel background deployment; `npm run dev` does not launch it automatical
 
 Start a local server with `npm run dev` (or set PORT to a free port).
 PAYPAL_ENV=live selects the durable live path; sandbox keeps the isolated test path.
-The public deployment still returns checkoutEnabled:false. Before public launch, finish
-hosting and alerting for the recovery worker, PayPal webhook registration,
+Public visitors still get checkoutEnabled:false while `CHECKOUT_MODE=admin`. The live
+webhook is registered (https://www.mobialo.eu/api/paypal/webhook, PAYMENT.CAPTURE.COMPLETED).
+Before `CHECKOUT_MODE=public`, finish hosting and alerting for the recovery worker,
 refunds/support handling, and end-to-end real delivery validation.
 These deployment and real-payment validation steps remain required.
 

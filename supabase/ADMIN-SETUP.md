@@ -6,16 +6,19 @@ Server environment variables (Production in Vercel):
 - SUPABASE_URL
 - SUPABASE_SERVICE_ROLE_KEY (secret; never expose through public prefixes)
 - ADMIN_USER_IDS (comma-separated Supabase user UUIDs, not email addresses)
+- SUPER_ADMIN_USER_IDS (the owner's UUID only; enables the approval workflow and
+  always requires 2FA for that account)
 
-The authorized owner's verified UUID is already saved as ADMIN_USER_IDS in local
-.env.local. Copy that value to Vercel; do not add it to source control.
+The owner (ervinmarku1989@hotmail.com) is the superadmin. The UUID values are saved
+in local .env.local; copy them to Vercel and never add them to source control.
 The existing public authentication configuration also needs SUPABASE_PUBLISHABLE_KEY.
 
-In Vercel add admin.mobialo.eu to this project. At the DNS provider add the CNAME
-named admin using the exact target Vercel shows. The host-specific root rewrite
-serves admin.html; the normal website root remains index.html. Redeploy after env edits.
+The admin panel lives at https://www.mobialo.eu/admin. admin.mobialo.eu stays attached
+to the project but redirects every path there (vercel.json), because sessions are
+stored per origin and checkout only accepts https://www.mobialo.eu. Signing in at
+www.mobialo.eu/admin therefore also signs in the shop. Redeploy after env edits.
 
-Log in separately on the admin subdomain with the existing verified owner account.
+Sign in with the existing verified owner account and enter the Authenticator code.
 Authentication is checked with the auth server on every API request. Authorization
 uses server-configured immutable user IDs, never editable user_metadata or email input.
 RLS on the orders table stays enabled; customers have no direct table access.

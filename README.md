@@ -98,7 +98,7 @@ Smart Buttons: plan details now load the PayPal JavaScript SDK on demand. Only t
 
 
 ### Vercel domain preview
-vercel.json serves dist and the api functions on Node 24. The checked-in catalog-preview.json is an allowlisted catalog snapshot, with no merchant credentials or wholesale prices. Configure MOBIMATTER_MERCHANT_ID and MOBIMATTER_API_KEY in Vercel to use live catalog data. Configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY and authorize the production callback URLs in Supabase before enabling online accounts. Without them the hosted page displays an account-preview message. Hosted checkout is intentionally unavailable: local Sandbox uses in-memory orders and is not suitable for serverless payment reconciliation. No PayPal secret is deployed.
+vercel.json serves dist and the api functions on Node 24. The checked-in catalog-preview.json is an allowlisted catalog snapshot, with no merchant credentials or wholesale prices. Configure MOBIMATTER_MERCHANT_ID and MOBIMATTER_API_KEY in Vercel to use live catalog data. Configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY and authorize the production callback URLs in Supabase before enabling online accounts. Without them the hosted page displays an account-preview message. Hosted live checkout is controlled by `CHECKOUT_MODE` (closed, admin or public); see supabase/DELIVERY-SETUP.md. `admin.mobialo.eu` redirects to `https://www.mobialo.eu/admin`.
 
 
 ### Automatic language and emails

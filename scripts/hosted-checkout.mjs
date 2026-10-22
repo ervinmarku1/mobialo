@@ -2,25 +2,49 @@ import {customerIdentity} from './customer-orders.mjs';
 import {adminMfaError} from './admin-mfa.mjs';
 import {hasAdminAccess} from './admin-access.mjs';
 import {deliveryServices} from './esim-delivery.mjs';
-import {createLiveOrder,captureLiveOrder} from './live-checkout.mjs';
+import {createLiveOrder,captureLiveOrder,paypalFailure} from './live-checkout.mjs';
 
+// Internal error codes are safe to log and to show to administrators.
+export function checkoutErrorCode(error){
+  const message=error?.message||'';
+  if(/^[A-Z][A-Z0-9_]{0,60}(:[A-Z][A-Z0-9_]{0,40})?$/.test(message))return message;
+  if(error?.name==='TimeoutError')return 'UPSTREAM_TIMEOUT';
+  return 'UNEXPECTED';
+}
+
+// CHECKOUT_MODE: 'admin' = signed-in administrators with 2FA only (testing);
+// 'public' = any signed-in customer with a confirmed email. Anything else is closed.
 export async function hostedCheckout(action,req,{
   env=process.env,identity=customerIdentity,services=deliveryServices,
-  create=createLiveOrder,capture=captureLiveOrder
+  create=createLiveOrder,capture=captureLiveOrder,log=console
 }={}){
   const result=(status,body)=>({status,body});
   const fail=(status,error)=>result(status,{error});
   if(req.method!==(action==='config'?'GET':'POST'))return fail(405,'METHOD_NOT_ALLOWED');
-  const disabled=()=>result(200,{environment:'preview',checkoutEnabled:false});
-  if(env.CHECKOUT_MODE!=='admin'||env.PAYPAL_ENV!=='live')return action==='config'?disabled():fail(403,'CHECKOUT_CLOSED');
+  const disabled=reason=>result(200,{environment:'preview',checkoutEnabled:false,...(reason?{reason}:{})});
+  const mode=env.CHECKOUT_MODE;
+  if(!['admin','public'].includes(mode)||env.PAYPAL_ENV!=='live')return action==='config'?disabled():fail(403,'CHECKOUT_CLOSED');
+  // Diagnostic reasons are only returned to administrators who passed every admin gate.
+  let trusted=false;
+  const unavailable=reason=>{log.error('Hosted checkout unavailable',JSON.stringify({action,reason}));return result(503,{error:'CHECKOUT_UNAVAILABLE',...(trusted?{reason}:{})});};
   try{
     const auth=await identity(req.headers.authorization,undefined,env);
-    if(auth.status!==200)return action==='config'?disabled():fail(auth.status,'SIGN_IN_REQUIRED');
-    if(!await hasAdminAccess(auth.user.id,env))return action==='config'?disabled():fail(403,'ADMIN_ONLY');
-    const mfa=adminMfaError(req.headers.authorization,auth.user,env.SUPER_ADMIN_USER_IDS?{...env,ADMIN_MFA_REQUIRED:'true'}:env);if(mfa)return fail(403,mfa);
+    if(auth.status!==200){
+      if(action!=='config')return fail(auth.status,'SIGN_IN_REQUIRED');
+      // A broken Supabase configuration must not look like "signed out".
+      if(auth.status===503)return unavailable('AUTH_UNAVAILABLE');
+      const reason=auth.status===403?'EMAIL_NOT_CONFIRMED':undefined;
+      if(mode==='public')return result(200,{environment:'live',checkoutEnabled:false,signInRequired:true,...(reason?{reason}:{})});
+      return disabled(reason);
+    }
+    if(mode==='admin'){
+      if(!await hasAdminAccess(auth.user.id,env))return action==='config'?disabled('ADMIN_ONLY'):fail(403,'ADMIN_ONLY');
+      const mfa=adminMfaError(req.headers.authorization,auth.user,env.SUPER_ADMIN_USER_IDS?{...env,ADMIN_MFA_REQUIRED:'true'}:env);if(mfa)return fail(403,mfa);
+      trusted=true;
+    }
     if(action==='config'){
       const clientId=(env.PAYPAL_LIVE_CLIENT_ID||env.PAYPAL_CLIENT_ID||'').trim();
-      if(!clientId)return fail(503,'CHECKOUT_UNAVAILABLE');
+      if(!clientId)return unavailable('PAYPAL_CLIENT_ID_MISSING');
       return result(200,{environment:'live',checkoutEnabled:true,clientId,currency:'EUR'});
     }
     if(req.headers.origin!=='https://www.mobialo.eu')return fail(403,'INVALID_ORIGIN');
@@ -40,16 +64,20 @@ export async function hostedCheckout(action,req,{
     if(action!=='capture'||!/^[a-f0-9-]{36}$/i.test(body.state||'')||typeof body.token!=='string'||body.token.length>100)return fail(400,'INVALID_ORDER');
     const order=await deps.store.get(body.state);
     if(!order||order.user_id!==auth.user.id)return fail(403,'ORDER_ACCESS_DENIED');
-    return result(200,await capture(body.state,body.token,deps,{deferDelivery:true}));
+    const captured=await capture(body.state,body.token,deps,{deferDelivery:true});
+    // Customers are told the payment is held; PayPal's reason describes the merchant account.
+    if(!trusted&&captured?.status==='PENDING')captured.reason=null;
+    return result(200,captured);
   }catch(error){
     if(error.paypalDiagnostic){
-      const safe=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(value)?value:undefined;
-      const issues=Array.isArray(error.paypalDiagnostic.issues)?error.paypalDiagnostic.issues.map(safe).filter(Boolean):[];
-      const code=issues.includes('INSTRUMENT_DECLINED')?'INSTRUMENT_DECLINED':issues.includes('COMPLIANCE_VIOLATION')?'PAYPAL_COMPLIANCE_VIOLATION':'PAYPAL_REQUEST_FAILED';
-      return result(code==='PAYPAL_REQUEST_FAILED'?502:422,{error:code,debugId:safe(error.paypalDiagnostic.debugId),issues});
+      const failure=paypalFailure(error.paypalDiagnostic);
+      if(!trusted&&failure.body.error==='MERCHANT_REFUSED')failure.body.issues=[];
+      return result(failure.status,failure.body);
     }
+    if(error.message==='TOO_MANY_OPEN_ORDERS')return fail(429,error.message);
     if(['EMAIL_REQUIRED','INVALID_PRODUCT','INVALID_ORDER','PAYMENT_APPROVAL_REQUIRED','PAYMENT_NOT_COMPLETED'].includes(error.message))return fail(400,error.message);
-    return fail(503,'CHECKOUT_UNAVAILABLE');
+    // Configuration and upstream failures were previously silent; log the code for Vercel Logs.
+    return unavailable(checkoutErrorCode(error));
   }
 }
 

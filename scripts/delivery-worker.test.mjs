@@ -112,6 +112,42 @@ test('failed item does not block later pages and the next sweep starts from the 
   assert.equal(cursors[3],undefined);
 });
 
+test('PayPal orders that were never approved and expired count as waiting, not failed',async()=>{
+  const missing=status=>async()=>{const error=new Error('DELIVERY_UPSTREAM_'+status);error.paypalDiagnostic={status,issues:[]};throw error;};
+  const old=new Date(Date.now()-86400000).toISOString();
+  const f=fixture({created_at:old});
+  f.services.paypal=missing(404);
+  const result=await recoverDeliveries(f.services);
+  assert.equal(result.waiting,1);assert.equal(result.failed,0);
+  assert.equal(f.row().state,'awaiting_payment');assert.equal(f.calls.length,0);
+  f.services.paypal=missing(500);
+  assert.equal((await recoverDeliveries(f.services)).failed,1);
+  // A fresh order or a recorded capture that PayPal cannot find signals a credential mismatch.
+  for(const overrides of [{created_at:new Date().toISOString()},{created_at:old,paypal_capture_id:'capture'}]){
+    const g=fixture(overrides);g.services.paypal=missing(404);
+    assert.equal((await recoverDeliveries(g.services)).failed,1);
+  }
+});
+
+test('recovery query polls unpaid checkouts for seven days only',async()=>{
+  const {deliveryServices}=await import('./esim-delivery.mjs');
+  const urls=[];
+  const services=await deliveryServices({paymentOnly:true,configuration:{SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'key',PAYPAL_CLIENT_ID:'id',PAYPAL_CLIENT_SECRET:'secret',PAYPAL_ENV:'live'},fetcher:async url=>{urls.push(url);return {ok:true,json:async()=>[]};}});
+  await services.store.recoveryPage(undefined,Date.parse('2026-10-22T12:00:00Z'));
+  const query=new URL(urls[0]).searchParams;
+  assert.equal(query.get('or'),'(state.neq.awaiting_payment,paypal_capture_id.not.is.null,created_at.gte."2026-10-15T12:00:00.000Z")');
+  assert.match(query.get('state'),/awaiting_payment/);
+});
+
+test('the PayPal access token is reused instead of fetched for every request',async()=>{
+  const {deliveryServices}=await import('./esim-delivery.mjs');
+  const urls=[];
+  const services=await deliveryServices({paymentOnly:true,configuration:{SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'key',PAYPAL_CLIENT_ID:'id',PAYPAL_CLIENT_SECRET:'secret',PAYPAL_ENV:'live'},fetcher:async url=>{urls.push(url);return {ok:true,json:async()=>url.endsWith('/oauth2/token')?{access_token:'token',expires_in:32400}:{id:'order'}};}});
+  await services.paypal('ORDER1');await services.paypal('ORDER2');
+  assert.equal(urls.filter(url=>url.endsWith('/oauth2/token')).length,1);
+  assert.equal(urls.length,3);
+});
+
 test('aborted sweep makes no database calls',async()=>{
   const f=fixture();
   f.services.store.recoveryPage=()=>assert.fail('Unexpected read');
