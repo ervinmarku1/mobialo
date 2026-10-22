@@ -61,7 +61,7 @@ function loadPayPalSdk(config){
   if(paypalSdkPromise)return paypalSdkPromise;
   paypalSdkPromise=new Promise((resolve,reject)=>{
     const script=document.createElement('script');
-    script.src='https://www.paypal.com/sdk/js?'+new URLSearchParams({'client-id':config.clientId,currency:'EUR',intent:'capture',components:'buttons,funding-eligibility','disable-funding':'card'});
+    script.src='https://www.paypal.com/sdk/js?'+new URLSearchParams({'client-id':config.clientId,currency:'EUR',intent:'capture',components:'buttons,funding-eligibility','enable-funding':'card'});
     script.onload=()=>resolve(window.paypal);
     script.onerror=()=>{script.remove();reject(checkoutError('PAYPAL_SDK_UNAVAILABLE'));};
     document.head.append(script);
@@ -173,11 +173,20 @@ async function mountPayPal(container,productId){
     const paypal=await loadPayPalSdk(config);if(!container.isConnected)return;
     preparePayPalDialog(container);
     let order,creating,completed=false,createFailure=null;
-    const label=document.createElement('label');label.textContent=checkoutText('Emaili ku do të marrësh eSIM-in','Email to receive your eSIM','Email per ricevere la eSIM');
+    // Signed-in buyers get the eSIM at their account email; the input is only shown without one.
     const email=document.createElement('input');email.type='email';email.required=true;email.autocomplete='email';email.maxLength=254;email.value=checkoutUserEmail;
-    email.style.cssText='display:block;width:100%;padding:12px;margin:8px 0 16px;box-sizing:border-box';label.append(email);container.prepend(label);
+    let delivery;
+    if(checkoutUserEmail){
+      delivery=document.createElement('p');delivery.textContent=checkoutText('eSIM-i do të dërgohet te: ','Your eSIM will be sent to: ','La eSIM verrà inviata a: ')+checkoutUserEmail;
+    }else{
+      delivery=document.createElement('label');delivery.textContent=checkoutText('Emaili ku do të marrësh eSIM-in','Email to receive your eSIM','Email per ricevere la eSIM');
+      email.style.cssText='display:block;width:100%;padding:12px;margin:8px 0 16px;box-sizing:border-box';delivery.append(email);
+    }
+    container.prepend(delivery);
+    // Only the payment methods enabled in the admin settings are offered (local sandbox config has no methods field).
+    const methods={paypal:config.methods?.paypal!==false,card:config.methods?.card!==false};
     if(live){
-      const note=document.createElement('p');note.textContent=checkoutText('Pagesë reale. Kontrollo emailin dhe çmimin para pagesës.','Real payment. Check your email and the price before paying.','Pagamento reale. Controlla email e prezzo prima di pagare.');label.after(note);
+      const note=document.createElement('p');note.textContent=methods.paypal&&methods.card?checkoutText('Pagesë reale. Paguaj me PayPal ose fut të dhënat e kartës te "Debit or Credit Card".','Real payment. Pay with PayPal or enter your card under "Debit or Credit Card".','Pagamento reale. Paga con PayPal o inserisci la carta in "Debit or Credit Card".'):methods.card?checkoutText('Pagesë reale. Fut të dhënat e kartës te "Debit or Credit Card".','Real payment. Enter your card under "Debit or Credit Card".','Pagamento reale. Inserisci la carta in "Debit or Credit Card".'):checkoutText('Pagesë reale. Paguaj me PayPal.','Real payment. Pay with PayPal.','Pagamento reale. Paga con PayPal.');delivery.after(note);
       document.querySelectorAll('#modal-content .modal-note').forEach(n=>n.textContent=note.textContent);
     }
     // After a definite refusal the next click starts a new PayPal order.
@@ -192,8 +201,8 @@ async function mountPayPal(container,productId){
       if(!creating){createFailure=null;clearCheckoutExtras(container);email.disabled=true;creating=paypalRequest('create',{productId,smart:true,email:email.value.trim(),language:window.MobialoLocale?.emailLanguage||lang}).then(data=>{order=data;return data.id;}).catch(error=>{email.disabled=false;createFailure=error;throw error;}).finally(()=>{creating=null;});}
       return creating;
     };
-    const slot=document.createElement('div');buttons.append(slot);
-    const instance=paypal.Buttons({fundingSource:paypal.FUNDING.PAYPAL,style:{layout:'vertical',height:48},onClick:(_data,actions)=>{
+    // The same order/capture flow serves the PayPal wallet and the guest "Debit or Credit Card" form.
+    const handlers={onClick:(_data,actions)=>{
       if(lockedHere()){say(checkoutLock.text);return actions.reject();}
       if(!email.reportValidity()){say(createFailureText({code:'EMAIL_REQUIRED'}));email.focus();return actions.reject();}
       say(checkoutText('Po hapet formulari i pagesës…','Opening payment form…','Apertura del modulo di pagamento…'));
@@ -254,19 +263,16 @@ async function mountPayPal(container,productId){
         // Without an order no money can have moved; with one, keep the reference for support.
         say((order?checkoutText('PayPal nuk e përfundoi pagesën. Ruaj referencën për kontroll.','PayPal did not complete payment. Keep the reference for support.','PayPal non ha completato il pagamento. Conserva il riferimento.'):createFailureText(failure))+checkoutCodeSuffix(failure)+(order?reference(order.id):''));
       }
-    });
-    const count=instance.isEligible()?(await instance.render(slot),1):(slot.remove(),0);
-    if(!container.isConnected){instance.close();return;}
-    if(live){
-      const cardPlaceholder=document.createElement('button');
-      cardPlaceholder.type='button';cardPlaceholder.disabled=true;cardPlaceholder.className='button outline';
-      cardPlaceholder.style.cssText='width:100%;margin:12px 0';
-      cardPlaceholder.textContent=checkoutText('Pagesa me kartë — së shpejti','Card payment — coming soon','Pagamento con carta — prossimamente');
-      buttons.append(cardPlaceholder);
-      say(count?checkoutText('Zgjidh mënyrën e pagesës.','Choose your payment method.','Scegli il metodo di pagamento.'):checkoutText('Nuk ka mënyrë pagese të disponueshme.','No payment method is available.','Nessun metodo di pagamento disponibile.'));
-      return;
+    };
+    let count=0,card=false,wallet=false;
+    for(const fundingSource of [methods.paypal&&paypal.FUNDING.PAYPAL,methods.card&&paypal.FUNDING.CARD].filter(Boolean)){
+      const slot=document.createElement('div');buttons.append(slot);
+      const instance=paypal.Buttons({fundingSource,style:{layout:'vertical',height:48},...handlers});
+      if(instance.isEligible()){await instance.render(slot);count++;if(fundingSource===paypal.FUNDING.CARD)card=true;else wallet=true;}else slot.remove();
+      if(!container.isConnected){instance.close();return;}
     }
-    say(count?checkoutText('PayPal nuk e ofron kartën për këtë sesion prove.','PayPal does not offer card payment for this test session.','PayPal non offre il pagamento con carta per questa sessione di prova.'):checkoutText('PayPal nuk ofroi mënyra pagese për këtë provë.','PayPal offered no payment methods for this test.','PayPal non ha offerto metodi di pagamento per questa prova.'));
+    if(!count){say(checkoutText('Nuk ka mënyrë pagese të disponueshme.','No payment method is available.','Nessun metodo di pagamento disponibile.'));return;}
+    say(card&&wallet?checkoutText('Paguaj me PayPal, ose me kartë te "Debit or Credit Card" pa llogari PayPal.','Pay with PayPal, or by card under "Debit or Credit Card" without a PayPal account.','Paga con PayPal, oppure con carta in "Debit or Credit Card" senza account PayPal.'):card?checkoutText('Paguaj me kartë te "Debit or Credit Card", pa llogari PayPal.','Pay by card under "Debit or Credit Card", without a PayPal account.','Paga con carta in "Debit or Credit Card", senza account PayPal.'):checkoutText('Zgjidh mënyrën e pagesës.','Choose your payment method.','Scegli il metodo di pagamento.'));
   }catch(error){
     if(!container.isConnected)return;
     const code=safeCheckoutCode(error?.code||(/^[A-Z][A-Z0-9_]*$/.test(error?.message||'')?error.message:''))||'UNEXPECTED';

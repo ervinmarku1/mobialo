@@ -97,6 +97,8 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
   const dbHeaders={apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY,'Content-Type':'application/json',Prefer:'return=representation'};
   const db=env.SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/esim_deliveries';
   return {
+    // Credential check for the admin status panel: obtains an OAuth token, moves no money.
+    verifyPayPal:async()=>!!await accessToken(),
     store:{
       insert:async row=>(await request(db,'POST',dbHeaders,row))[0],
       get:async id=>(await request(db+'?id=eq.'+encodeURIComponent(id),'GET',dbHeaders))[0],

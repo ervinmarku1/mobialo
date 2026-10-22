@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import {parseEnv} from 'node:util';
+import {DEFAULT_PRICING,loadSettings,validPricing} from './app-settings.mjs';
 
 const envFile = new URL('../.env.local', import.meta.url);
 const productsUrl = 'https://api.mobimatter.com/mobimatter/api/v2/products';
@@ -19,7 +20,7 @@ async function credentials() {
   const apiKey = (process.env.MOBIMATTER_API_KEY || local.MOBIMATTER_API_KEY || '').trim();
   if (!merchantId || !apiKey) throw new CatalogError('NOT_CONFIGURED',503);
   if (/[\r\n]/.test(merchantId + apiKey)) throw new CatalogError('INVALID_CONFIG',503);
-  return {merchantId,apiKey};
+  return {config:{merchantId,apiKey},env:{...local,...process.env}};
 }
 
 const cleanText = value => typeof value === 'string' ? value : '';
@@ -28,19 +29,22 @@ const hiddenTestProductIds=new Set([
   '75b98dc7-c026-48c1-9fee-465681382d39'
 ]);
 export const isHiddenTestProduct=id=>hiddenTestProductIds.has(id);
-// All-in customer price, covering the configured 2.5% + EUR 0.20 cost.
-// Integer cents, rounded up so the post-fee amount covers the base price.
-export function priceIncludingProcessing(basePrice){
+// All-in customer price, covering the admin-configured processing cost (default 2.5% + EUR 0.20).
+// Integer cents and basis points, rounded up so the post-fee amount covers the base price.
+export function priceIncludingProcessing(basePrice,pricing=DEFAULT_PRICING){
+  if(!validPricing(pricing))throw new CatalogError('INVALID_PRICING',503);
   if(!Number.isFinite(basePrice)||basePrice<0)throw new CatalogError('INVALID_CATALOG',502);
   const cents=Math.round(basePrice*100);
   if(cents===0)return 0;
-  return Math.ceil((cents+20)*40/39)/100;
+  const feeBps=Math.round(pricing.feePercent*100),fixedCents=Math.round(pricing.feeFixed*100);
+  return Math.ceil((cents+fixedCents)*10000/(10000-feeBps))/100;
 }
-// Merchant pricing rule: numerical USD retail price treated as EUR, plus 20%.
+// Merchant pricing rule: numerical USD retail price treated as EUR, plus the markup (default 20%).
 // This is a selling-price policy, not a market exchange-rate conversion.
-export function sellingPrice(retailPrice, currency) {
+export function sellingPrice(retailPrice, currency, pricing=DEFAULT_PRICING) {
   if (currency !== 'USD') throw new CatalogError('UNSUPPORTED_CURRENCY',502);
-  return priceIncludingProcessing(Math.round((retailPrice * 1.2 + Number.EPSILON) * 100) / 100);
+  if (!validPricing(pricing)) throw new CatalogError('INVALID_PRICING',503);
+  return priceIncludingProcessing(Math.round((retailPrice * (1 + pricing.markupPercent / 100) + Number.EPSILON) * 100) / 100, pricing);
 }
 function parseDetails(raw) {
   try {
@@ -51,7 +55,7 @@ function parseDetails(raw) {
 
 // Explicit allowlist: never send merchant cost, credentials, or raw responses
 // to the browser. Product text is data and must be rendered as text, not HTML.
-export function normalizeProducts(body) {
+export function normalizeProducts(body, pricing=DEFAULT_PRICING) {
   const rows = Array.isArray(body) ? body : body?.result ?? body?.products;
   if (!Array.isArray(rows)) throw new CatalogError('INVALID_CATALOG',502);
   return rows.filter(product=>['esim_realtime','esim_delayed'].includes(product?.productCategory)&&!isHiddenTestProduct(product.productId)).map(product=>{
@@ -67,7 +71,7 @@ export function normalizeProducts(body) {
       provider:cleanText(product.providerName),
       providerLogo: (()=>{try{const url=new URL(product.providerLogo);return url.protocol==='https:'?url.href:null;}catch{return null;}})(),
       title:details.get('PLAN_TITLE') || cleanText(product.providerName) || 'eSIM',
-      price:sellingPrice(product.retailPrice, product.currencyCode),
+      price:sellingPrice(product.retailPrice, product.currencyCode, pricing),
       currency:'EUR',
       countries:[...new Set(product.countries.filter(code=>typeof code==='string' && /^[A-Z]{2}$/.test(code)))],
       regions:Array.isArray(product.regions)?product.regions.filter(region=>typeof region==='string'):[],
@@ -81,7 +85,7 @@ export function normalizeProducts(body) {
   });
 }
 
-export async function fetchProducts({merchantId,apiKey}, request=fetch) {
+export async function fetchProducts({merchantId,apiKey}, request=fetch, pricing=DEFAULT_PRICING) {
   let response;
   try {
     response = await request(productsUrl, {method:'GET',redirect:'error',headers:{'MerchantId':merchantId,'api-key':apiKey,'Accept':'application/json'},signal:AbortSignal.timeout(15000)});
@@ -91,15 +95,17 @@ export async function fetchProducts({merchantId,apiKey}, request=fetch) {
   if (!response.ok) throw new CatalogError('UPSTREAM_UNAVAILABLE',502);
   let body;
   try {body=await response.json();} catch {throw new CatalogError('INVALID_CATALOG',502);}
-  return {source:'mobimatter',fetchedAt:new Date().toISOString(),products:normalizeProducts(body)};
+  return {source:'mobimatter',fetchedAt:new Date().toISOString(),products:normalizeProducts(body,pricing)};
 }
 
-export async function getCatalog() {
-  const config=await credentials();
-  const key=JSON.stringify(config); // Memory only, never logged or persisted.
+// Pricing is part of the cache key, so an admin change applies within the settings cache window.
+export async function getCatalog({settings=loadSettings,request=fetch}={}) {
+  const {config,env}=await credentials();
+  const {pricing}=await settings(env);
+  const key=JSON.stringify(config)+JSON.stringify(pricing); // Memory only, never logged or persisted.
   if (cached && cachedFor===key && Date.now()-cached.time<300000) return cached.value;
   if (pending && pending.key===key) return pending.promise;
-  const promise=fetchProducts(config).then(value=>{cached={time:Date.now(),value};cachedFor=key;return value;});
+  const promise=fetchProducts(config,request,pricing).then(value=>{cached={time:Date.now(),value};cachedFor=key;return value;});
   const operation={key,promise};pending=operation;
   try {return await promise;} finally {if(pending===operation) pending=null;}
 }

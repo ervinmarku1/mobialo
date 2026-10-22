@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {recoverDeliveries,recoveryErrorCode} from './delivery-worker.mjs';
+import {recoverDeliveries,recoveryErrorCode,workerHeartbeat} from './delivery-worker.mjs';
+import {saveSetting,loadSettings,clearSettingsCache,workerFresh} from './app-settings.mjs';
 
 test('recovery diagnostics identify configuration failures without exposing arbitrary error details',()=>{
   assert.equal(recoveryErrorCode(Error('DELIVERY_NOT_CONFIGURED:RESEND_API_KEY')),'DELIVERY_NOT_CONFIGURED:RESEND_API_KEY');
@@ -148,6 +149,39 @@ test('the PayPal access token is reused instead of fetched for every request',as
   assert.equal(urls.length,3);
 });
 
+test('each sweep result is saved as the worker heartbeat for the admin panel',async()=>{
+  const writes=[];const env={SUPABASE_URL:'https://example.supabase.co'};
+  const beat=workerHeartbeat({env,now:()=>new Date('2026-10-22T12:00:00Z'),write:async(...args)=>{writes.push(args);},log:{warn:()=>assert.fail('Unexpected warning')}});
+  await beat({ok:true,checked:3,sent:1,waiting:2,review:0,failed:0});
+  await beat({ok:false,stage:'configuration',error:'DELIVERY_NOT_CONFIGURED:RESEND_API_KEY'});
+  assert.deepEqual(writes,[
+    [env,'worker',{at:'2026-10-22T12:00:00.000Z',ok:true,checked:3,sent:1,waiting:2,review:0,failed:0},null],
+    [env,'worker',{at:'2026-10-22T12:00:00.000Z',ok:false,stage:'configuration',error:'DELIVERY_NOT_CONFIGURED:RESEND_API_KEY'},null]
+  ]);
+});
+test('heartbeat write failures are logged once by safe code and never stop the worker',async()=>{
+  const logged=[];let failure=Error('SETTINGS_TABLE_MISSING');
+  const beat=workerHeartbeat({env:{},write:async()=>{if(failure)throw failure;},log:{warn:(...args)=>logged.push(args.join(' '))}});
+  for(let i=0;i<3;i++)await beat({ok:true});
+  assert.equal(logged.length,1);assert.match(logged[0],/SETTINGS_TABLE_MISSING/);
+  failure=Error('secret-key upstream body');await beat({ok:true});
+  assert.equal(logged.length,2);assert.match(logged[1],/HEARTBEAT_FAILED/);assert.equal(logged.join().includes('secret'),false);
+  failure=null;await beat({ok:true});
+  failure=Error('SETTINGS_UNAVAILABLE');await beat({ok:true});await beat({ok:true});
+  failure=null;await beat({ok:true});failure=Error('SETTINGS_UNAVAILABLE');await beat({ok:true});
+  assert.equal(logged.length,4);
+});
+test('the saved heartbeat is the one the admin settings read back as fresh',async()=>{
+  let stored;const env={SUPABASE_URL:'https://heartbeat-test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'key'};
+  const fetcher=async(url,options)=>{if(options.method==='POST'){stored=JSON.parse(options.body);return {ok:true,json:async()=>[stored]};}return {ok:true,json:async()=>[stored]};};
+  const now=new Date();
+  await workerHeartbeat({env,now:()=>now,write:(e,name,value,actor)=>saveSetting(e,name,value,actor,{fetcher})})({ok:true,checked:0,sent:0,waiting:0,review:0,failed:0});
+  assert.equal(stored.key,'worker');assert.equal(stored.updated_by,null);
+  clearSettingsCache();
+  const settings=await loadSettings(env,{fetcher});
+  assert.equal(workerFresh(settings.worker,now.getTime()),true);
+  clearSettingsCache();
+});
 test('aborted sweep makes no database calls',async()=>{
   const f=fixture();
   f.services.store.recoveryPage=()=>assert.fail('Unexpected read');

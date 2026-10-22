@@ -19,7 +19,7 @@ async function isolated(t,{env={},file,directory=false},code){
   const root=await mkdtemp(join(tmpdir(),'mobialo-config-'));
   t.after(()=>rm(root,{recursive:true,force:true}));
   await mkdir(join(root,'scripts'));
-  for(const name of ['paypal.mjs','test-order-store.mjs','mobimatter.mjs']){
+  for(const name of ['paypal.mjs','test-order-store.mjs','mobimatter.mjs','app-settings.mjs']){
     await copyFile(new URL(name,import.meta.url),join(root,'scripts',name));
   }
   if(file!==undefined)await writeFile(join(root,'.env.local'),file);

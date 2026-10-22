@@ -3,6 +3,7 @@ import {adminMfaError} from './admin-mfa.mjs';
 import {hasAdminAccess} from './admin-access.mjs';
 import {deliveryServices} from './esim-delivery.mjs';
 import {createLiveOrder,captureLiveOrder,paypalFailure} from './live-checkout.mjs';
+import {loadSettings} from './app-settings.mjs';
 
 // Internal error codes are safe to log and to show to administrators.
 export function checkoutErrorCode(error){
@@ -12,18 +13,27 @@ export function checkoutErrorCode(error){
   return 'UNEXPECTED';
 }
 
-// CHECKOUT_MODE: 'admin' = signed-in administrators with 2FA only (testing);
+// Checkout mode comes from the admin settings (app_settings 'checkout', else CHECKOUT_MODE):
+// 'admin' = signed-in administrators with 2FA only (testing);
 // 'public' = any signed-in customer with a confirmed email. Anything else is closed.
 export async function hostedCheckout(action,req,{
   env=process.env,identity=customerIdentity,services=deliveryServices,
-  create=createLiveOrder,capture=captureLiveOrder,log=console
+  create=createLiveOrder,capture=captureLiveOrder,settings=loadSettings,log=console
 }={}){
   const result=(status,body)=>({status,body});
   const fail=(status,error)=>result(status,{error});
   if(req.method!==(action==='config'?'GET':'POST'))return fail(405,'METHOD_NOT_ALLOWED');
   const disabled=reason=>result(200,{environment:'preview',checkoutEnabled:false,...(reason?{reason}:{})});
-  const mode=env.CHECKOUT_MODE;
-  if(!['admin','public'].includes(mode)||env.PAYPAL_ENV!=='live')return action==='config'?disabled():fail(403,'CHECKOUT_CLOSED');
+  const closed=()=>action==='config'?disabled():fail(403,'CHECKOUT_CLOSED');
+  if(env.PAYPAL_ENV!=='live')return closed();
+  // loadSettings already falls back to the last good value or the env defaults; an error never opens checkout.
+  let checkout=null;
+  try{checkout=(await settings(env))?.checkout;}catch{log.error('Checkout settings unavailable');}
+  const mode=checkout?.mode;
+  if(!['admin','public'].includes(mode))return closed();
+  const methods={paypal:checkout.paypal===true,card:checkout.card===true};
+  // An approved order can still be captured after the owner turns both methods off.
+  if(!methods.paypal&&!methods.card&&action!=='capture')return action==='config'?disabled('NO_PAYMENT_METHODS'):fail(403,'CHECKOUT_CLOSED');
   // Diagnostic reasons are only returned to administrators who passed every admin gate.
   let trusted=false;
   const unavailable=reason=>{log.error('Hosted checkout unavailable',JSON.stringify({action,reason}));return result(503,{error:'CHECKOUT_UNAVAILABLE',...(trusted?{reason}:{})});};
@@ -45,7 +55,7 @@ export async function hostedCheckout(action,req,{
     if(action==='config'){
       const clientId=(env.PAYPAL_LIVE_CLIENT_ID||env.PAYPAL_CLIENT_ID||'').trim();
       if(!clientId)return unavailable('PAYPAL_CLIENT_ID_MISSING');
-      return result(200,{environment:'live',checkoutEnabled:true,clientId,currency:'EUR'});
+      return result(200,{environment:'live',checkoutEnabled:true,clientId,currency:'EUR',methods});
     }
     if(req.headers.origin!=='https://www.mobialo.eu')return fail(403,'INVALID_ORIGIN');
     if(!/^application\/json(?:;|$)/i.test(req.headers['content-type']||''))return fail(415,'JSON_REQUIRED');
@@ -59,7 +69,9 @@ export async function hostedCheckout(action,req,{
     const deps=await services({paymentOnly:true});
     if(action==='create'){
       if(typeof body.productId!=='string'||body.productId.length>200)return fail(400,'INVALID_PRODUCT');
-      return result(200,await create({productId:body.productId,email:body.email,language:body.language,userId:auth.user.id},deps));
+      // Without a typed address the eSIM goes to the verified account email.
+      const email=typeof body.email==='string'&&body.email.trim()?body.email:auth.user.email;
+      return result(200,await create({productId:body.productId,email,language:body.language,userId:auth.user.id},deps));
     }
     if(action!=='capture'||!/^[a-f0-9-]{36}$/i.test(body.state||'')||typeof body.token!=='string'||body.token.length>100)return fail(400,'INVALID_ORDER');
     const order=await deps.store.get(body.state);

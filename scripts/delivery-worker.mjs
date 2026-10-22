@@ -1,7 +1,10 @@
 import {pathToFileURL} from 'node:url';
+import {readFile} from 'node:fs/promises';
+import {parseEnv} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
 import {deliveryServices,fulfillDelivery} from './esim-delivery.mjs';
 import {writeWorkerHealth} from './worker-health.mjs';
+import {saveSetting} from './app-settings.mjs';
 
 export function recoveryErrorCode(error){
   const message=error?.message||'';
@@ -10,6 +13,24 @@ export function recoveryErrorCode(error){
   if(['EACCES','EPERM','ENOENT','ENOSPC','ERR_INVALID_URL'].includes(error?.code))return error.code;
   if(['ENOTFOUND','ECONNREFUSED','ECONNRESET','ETIMEDOUT'].includes(error?.cause?.code))return error.cause.code;
   return 'RECOVERY_FAILED';
+}
+
+// The admin panel reads the last sweep from app_settings 'worker'. A failed write is logged once
+// per distinct safe code (again after a success) and never stops deliveries.
+export function workerHeartbeat({write=saveSetting,env,log=console,now=()=>new Date()}={}){
+  let reported=null;
+  return async state=>{
+    try{
+      let configuration=env;
+      if(!configuration){let local={};try{local=parseEnv(await readFile(new URL('../.env.local',import.meta.url),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}configuration={...local,...process.env};}
+      await write(configuration,'worker',{at:now().toISOString(),...state},null);
+      reported=null;
+    }catch(error){
+      const known=recoveryErrorCode(error);
+      const code=['INVALID_SETTING','SETTINGS_UNAVAILABLE','SETTINGS_TABLE_MISSING'].includes(error?.message)?error.message:known==='RECOVERY_FAILED'?'HEARTBEAT_FAILED':known;
+      if(code!==reported){reported=code;log.warn('Worker heartbeat not saved',JSON.stringify({code}));}
+    }
+  };
 }
 
 // The delivery rows are the durable queue. No in-memory cursor survives a sweep:
@@ -57,8 +78,9 @@ async function main(){
   process.once('SIGINT',()=>controller.abort());
   process.once('SIGTERM',()=>controller.abort());
   console.log('Live delivery recovery worker started.');
+  const heartbeat=workerHeartbeat();
   do{
-    let stage='configuration';
+    let stage='configuration',beat=null;
     try{
       const services=await deliveryServices();
       stage='recovery';
@@ -68,12 +90,18 @@ async function main(){
         stage='recovery';
       },report:event=>console.log(JSON.stringify(event))});
       console.log(JSON.stringify(result));
+      beat={ok:result.failed===0,...result};
       stage='health_write';
-      await writeWorkerHealth({ok:result.failed===0,...result});
+      await writeWorkerHealth(beat);
     }catch(error){
-      console.error('Recovery sweep unavailable',JSON.stringify({stage,code:recoveryErrorCode(error)}));
+      const code=recoveryErrorCode(error);
+      console.error('Recovery sweep unavailable',JSON.stringify({stage,code}));
+      // A failed local health file after a finished sweep keeps the sweep's own result.
+      beat??={ok:false,stage,error:code};
       await writeWorkerHealth({ok:false}).catch(()=>{});
       if(process.argv.includes('--once')){process.exitCode=1;return;}
+    }finally{
+      await heartbeat(beat);
     }
     if(process.argv.includes('--once')||controller.signal.aborted)return;
     await delay(60000,undefined,{signal:controller.signal}).catch(()=>{});

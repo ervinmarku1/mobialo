@@ -14,7 +14,9 @@ export function accessStore(env,fetcher=fetch){
   get:async id=>(await request('GET',{user_id:'eq.'+id,select}))[0]||null,
   list:async page=>request('GET',{select,order:'created_at.desc,user_id',limit:'50',offset:String((page-1)*50)}),
   submit:async user=>request('POST',{}, {user_id:user.id,email:user.email,status:'pending'}),
-  decide:async(id,status,actor)=>(await request('PATCH',{user_id:'eq.'+id,status:'eq.pending'},{status,decided_by:actor,decided_at:new Date().toISOString()}))[0]||null
+  decide:async(id,status,actor)=>(await request('PATCH',{user_id:'eq.'+id,status:'eq.pending'},{status,decided_by:actor,decided_at:new Date().toISOString()}))[0]||null,
+  // Only an approved row can be revoked; it becomes rejected with the revoking actor recorded.
+  revoke:async(id,actor)=>(await request('PATCH',{user_id:'eq.'+id,status:'eq.approved'},{status:'rejected',decided_by:actor,decided_at:new Date().toISOString()}))[0]||null
  };
 }
 export async function hasAdminAccess(id,env,fetcher=fetch){
