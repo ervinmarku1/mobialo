@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import {parseEnv} from 'node:util';
+import {adminMfaError} from './admin-mfa.mjs';
 export const states=['awaiting_payment','paid','reserving','reserved','completing','ready','sending','sent','review'];
 export async function adminOrders(request,fetcher=fetch,configuration){
  let env=configuration;
@@ -15,6 +16,7 @@ export async function adminOrders(request,fetcher=fetch,configuration){
  if(!auth.ok)return fail(auth.status===401||auth.status===403?401:503,'SIGN_IN_REQUIRED');
  const user=await auth.json();
  if(!user.email_confirmed_at||!ids.includes(user.id))return fail(403,'ADMIN_ONLY');
+ const mfa=adminMfaError(token,user,env);if(mfa)return fail(403,mfa);
  const query=new URL(request.url,'https://admin.mobialo.eu').searchParams;
  const page=Number(query.get('page')||1),state=query.get('state')||'',search=(query.get('search')||'').trim();
  const from=query.get('from')||'',to=query.get('to')||'';

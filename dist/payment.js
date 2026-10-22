@@ -14,6 +14,7 @@ const headers={'Content-Type':'application/json'};
 if(window.mobialoCustomerSession){const client=await window.mobialoCustomerSession;if(client){const {data:{session},error}=await client.auth.getSession();if(error)throw error;if(session)headers.Authorization='Bearer '+session.access_token;}}
 const response=await fetch('/api/paypal/capture',{method:'POST',headers,body:JSON.stringify({state,token})});
 const data=await response.json();if(!response.ok){
+ if(['MFA_REQUIRED','MFA_SETUP_REQUIRED'].includes(data.error)){status.textContent=sq?'Verifiko 2FA te /admin ne nje skede tjeter dhe pastaj riprovo ketu.':'Verify 2FA at /admin in another tab, then retry here.';retry.hidden=false;return;}
  if(data.error==='INSTRUMENT_DECLINED'){
   status.textContent=(sq?'PayPal refuzoi kartën ose mënyrën e zgjedhur të pagesës. Verifikimi i përsëritur nuk e zgjidh këtë refuzim. Përdor një mënyrë tjetër pagese në PayPal ose kontakto mbështetjen PayPal.':'PayPal declined the selected payment method. Repeating verification will not resolve this decline. Choose another payment method in PayPal or contact PayPal support.')+' Reference: '+token;
   if(typeof data.debugId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.debugId))status.textContent+=' · Debug ID: '+data.debugId;

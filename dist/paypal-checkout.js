@@ -32,7 +32,7 @@ function loadPayPalSdk(){
   if(paypalSdkPromise)return paypalSdkPromise;
   paypalSdkPromise=(async()=>{
     const headers=await checkoutAuthHeaders();
-    const response=await fetch('/api/paypal/config',{headers,cache:'no-store'});if(!response.ok)throw Error('Configuration');
+    const response=await fetch('/api/paypal/config',{headers,cache:'no-store'});if(!response.ok){const failure=await response.json().catch(()=>({}));throw Error(['MFA_REQUIRED','MFA_SETUP_REQUIRED'].includes(failure.error)?'MFA_REQUIRED':'Configuration');}
     const config=await response.json();if(config.checkoutEnabled===false)return null;if(!['sandbox','live'].includes(config.environment))throw Error('Configuration');
     checkoutEnvironment=config.environment;
     const script=document.createElement('script');
@@ -128,7 +128,7 @@ async function mountPayPal(container,productId){
     }
     if(live){say(count?(sq?'Zgjidh mënyrën e pagesës.':it?'Scegli il metodo di pagamento.':'Choose your payment method.'):(sq?'Nuk ka mënyrë pagese të disponueshme.':'No payment method is available.'));return;}
     say(!count?((it?"PayPal non ha offerto metodi di pagamento per questa prova.":sq?'PayPal nuk ofroi mënyra pagese për këtë provë.':'PayPal offered no payment methods for this test.')):card?((it?"Sandbox: usa solo dati di prova.":sq?'Sandbox: përdor vetëm të dhëna prove.':'Sandbox: use test details only.')):((it?"PayPal non offre il pagamento con carta per questa sessione di prova.":sq?'PayPal nuk e ofron kartën për këtë sesion prove.':'PayPal does not offer card payment for this test session.')));
-  }catch{say((it?"Impossibile caricare i pulsanti di pagamento.":sq?'Butonat nuk u ngarkuan.':'Payment buttons could not load.'));const retry=document.createElement('button');retry.className='button';retry.textContent=(it?"Riprova":sq?'Provo përsëri':'Retry');retry.onclick=()=>{retry.remove();buttons.replaceChildren();mountPayPal(container,productId);};container.append(retry);}
+  }catch(error){if(error.message==='MFA_REQUIRED'){say(sq?'Verifiko 2FA te paneli i adminit dhe kthehu ketu.':'Verify 2FA in the admin panel, then return here.');const link=document.createElement('a');link.href='/admin';link.target='_blank';link.rel='noopener';link.textContent='Verifiko 2FA';container.append(link);return;}say((it?"Impossibile caricare i pulsanti di pagamento.":sq?'Butonat nuk u ngarkuan.':'Payment buttons could not load.'));const retry=document.createElement('button');retry.className='button';retry.textContent=(it?"Riprova":sq?'Provo përsëri':'Retry');retry.onclick=()=>{retry.remove();buttons.replaceChildren();mountPayPal(container,productId);};container.append(retry);}
 }
 const renderBeforePayPal=renderModal;
 renderModal=function(){
