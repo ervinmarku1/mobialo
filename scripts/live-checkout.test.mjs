@@ -17,6 +17,21 @@ test('verified customer ownership is persisted before PayPal is called',async()=
  let row;
  const services={store:{insert:async value=>{row=value;},transition:async()=>row},paypal:async()=>{assert.equal(row.user_id,'verified-user');return {id:'remote'};}};
  await createLiveOrder({productId:'plan',email:'customer@example.com',userId:'verified-user'},services,[product]);
+ assert.equal(row.product_title,'Europe 1 GB');assert.equal(row.client_ip_hash,undefined);
+});
+test('a guest order has no owner and stores the consent and the client address hash before PayPal is called',async()=>{
+ let row,seen,via;const hash='a'.repeat(64);
+ const services={store:{insert:async value=>{row=value;via='insert';},reserveGuest:async value=>{row=value;via='reserve';return value;},transition:async()=>row},paypal:async()=>{seen={...row};return {id:'remote'};}};
+ await createLiveOrder({productId:'plan',email:'guest@example.com',clientIpHash:hash,termsVersion:'v1.0-2026-10-22'},services,[product]);
+ assert.equal('user_id' in seen,false);assert.equal(seen.client_ip_hash,hash);assert.equal(seen.terms_version,'v1.0-2026-10-22');
+ assert.ok(Math.abs(Date.parse(seen.terms_accepted_at)-Date.now())<5000);assert.equal(seen.product_title,'Europe 1 GB');
+ // Guest rows are inserted by the locking reservation, which checks the limits in the same transaction.
+ assert.equal(via,'reserve');
+ // A refused reservation never reaches PayPal.
+ await assert.rejects(createLiveOrder({productId:'plan',email:'guest@example.com',clientIpHash:hash,termsVersion:'v1'},{...services,store:{...services.store,reserveGuest:async()=>{throw Error('TOO_MANY_OPEN_ORDERS');}},paypal:()=>assert.fail('Must not call PayPal')},[product]),/TOO_MANY_OPEN_ORDERS/);
+ // The local development server records no consent it did not ask for.
+ await createLiveOrder({productId:'plan',email:'guest@example.com'},services,[product]);assert.equal(via,'insert');
+ for(const column of ['terms_accepted_at','terms_version','client_ip_hash','user_id'])assert.equal(column in seen,false);
 });
 test('capture rejects incorrect capability and never calls provider',async()=>{
  const services={store:{get:async()=>({paypal_order_id:'expected'})},paypal:()=>assert.fail('Must not contact payment provider')};

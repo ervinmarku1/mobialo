@@ -16,7 +16,7 @@ function planFeatures(plan){
  const unknown=label('Nuk specifikohet','Not specified','Non specificato');
  const yesno=value=>value===true?label('Përfshihet','Included','Incluso'):value===false?label('Nuk përfshihet','Not included','Non incluso'):unknown;
  const type=f.data===true&&f.calls===false&&f.sms===false?label('Internet · pa thirrje/SMS','Data · no calls/SMS','Dati · senza chiamate/SMS'):label('Shiko shërbimet më poshtë','See included services below','Vedi i servizi inclusi');
- const items=[[label('Tipi i eSIM','eSIM type','Tipo di eSIM'),type],[label('Rrjeti · 4G / 5G','Network · 4G / 5G','Rete · 4G / 5G'),f.network||unknown],[label('Internet','Data','Dati'),yesno(f.data)],[label('Thirrje','Calls','Chiamate'),yesno(f.calls)],['SMS',yesno(f.sms)],['Hotspot',yesno(f.hotspot)],[label('Shpejtësia','Speed','Velocità'),supplierText(f.speed)||unknown],[label('Aktivizimi','Activation','Attivazione'),supplierText(f.activation)||unknown]];
+ const items=[[label('Lloji i eSIM-it','eSIM type','Tipo di eSIM'),type],[label('Rrjeti · 4G / 5G','Network · 4G / 5G','Rete · 4G / 5G'),f.network||unknown],[label('Internet','Data','Dati'),yesno(f.data)],[label('Thirrje','Calls','Chiamate'),yesno(f.calls)],['SMS',yesno(f.sms)],['Hotspot',yesno(f.hotspot)],[label('Shpejtësia','Speed','Velocità'),supplierText(f.speed)||unknown],[label('Aktivizimi','Activation','Attivazione'),supplierText(f.activation)||unknown]];
  return `<section class="purchase-features"><h3>${label('Detajet e eSIM-it','eSIM details','Dettagli eSIM')}</h3><dl class="purchase-feature-grid">${items.map(([key,value])=>`<div><dt>${escapeText(key)}</dt><dd>${escapeText(value)}</dd></div>`).join('')}</dl><p class="modal-note">${label('4G/5G tregon teknologjinë e rrjetit, jo shpejtësi të garantuar. Disponueshmëria varet nga vendndodhja, pajisja dhe operatori.','4G/5G indicates network technology, not guaranteed speed. Availability depends on location, device and operator.','4G/5G indica la tecnologia di rete, non una velocità garantita. La disponibilità dipende da posizione, dispositivo e operatore.')}</p></section>`;
 }
 
@@ -42,7 +42,9 @@ function buildDestinations(products) {
     }
   }
   const sorted=items=>[...items].sort((a,b)=>a.price-b.price || a.title.localeCompare(b.title));
-  const destinations=[...countries].map(([code,items])=>({id:code.toLowerCase(),en:countryNames.en.of(code),it:countryNames.it.of(code),sq:countryNames.sq.of(code),aliases:code==='US'?'USA America':code==='GB'?'UK England Angli':code==='AE'?'Dubai UAE':'',type:'local',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)}));
+  // A country's 'from' price uses the plans for that country alone; without one, its cheapest regional plan, flagged.
+  const fromPrice=items=>{const own=items.filter(p=>p.countries.length===1);return {price:Math.min(...(own.length?own:items).map(p=>p.price)),regionalPrice:!own.length};};
+  const destinations=[...countries].map(([code,items])=>({id:code.toLowerCase(),en:countryNames.en.of(code),it:countryNames.it.of(code),sq:countryNames.sq.of(code),aliases:code==='US'?'USA America':code==='GB'?'UK England Angli':code==='AE'?'Dubai UAE':'',type:'local',...fromPrice(items),plans:sorted(items)}));
   const preferred=['al','tr','us','it','de','jp','gb','fr','ae'];
   destinations.sort((a,b)=>{const ai=preferred.indexOf(a.id),bi=preferred.indexOf(b.id);return (ai<0?999:ai)-(bi<0?999:bi)||a.en.localeCompare(b.en);});
   [...regions].forEach(([label,items],index)=>{
@@ -57,9 +59,12 @@ renderCatalog=function(){
   baseRenderCatalog();
   const summary=document.getElementById('catalog-summary');
   if(summary)summary.textContent=catalogState==='ready'?`${liveProducts.length} ${lang==='sq'?'paketa në katalog':lang==='it'?'piani nel catalogo':'plans in the catalog'}`:'';
-  if(catalogState==='ready') return;
+  const grid=$('#destination-grid');
+  grid.classList.toggle('is-error',catalogState==='error');
+  if(catalogState==='ready'){if(!catalog.length)grid.innerHTML=`<div class="empty-state"><p>${t('noResults')}</p></div>`;return;}
   const text=catalogState==='loading'?(lang==='sq'?'Po ngarkohen paketat…':lang==='it'?'Caricamento dei piani…':'Loading plans…'):((lang==='it'?"Impossibile caricare il catalogo. Riprova.":lang==='sq'?'Katalogu nuk u ngarkua. Provo përsëri.':'The catalog could not be loaded. Please retry.'));
-  $('#destination-grid').innerHTML=`<div class="empty-state" role="status"><p>${text}</p>${catalogState==='error'?`<button class="button" id="retry-catalog">${(lang==='it'?"Riprova":lang==='sq'?'Provo përsëri':'Retry')}</button>`:''}</div>`;
+  // Loading and error keep the nine placeholder cards, so the panel never changes height; the error sits over them.
+  grid.innerHTML=skeletonCards()+(catalogState==='loading'?`<p class="visually-hidden" role="status">${text}</p>`:`<div class="empty-state catalog-error" role="status"><p>${text}</p><button class="button" id="retry-catalog">${(lang==='it'?"Riprova":lang==='sq'?'Provo përsëri':'Retry')}</button></div>`);
   $('#results-status').textContent='';
 };
 
@@ -90,7 +95,7 @@ async function loadLiveCatalog(){
     const data=await response.json();
     if(!Array.isArray(data.products)||data.products.some(p=>p.currency!=='EUR'))throw new Error('Unsupported catalog');
     // The checked-in snapshot (served without MobiMatter credentials) cannot be bought from.
-    if(data.source==='preview'){if(translations.it){translations.it.demoPrices='MOBIALO · Catalogo salvato · EUR';translations.it.previewNote='Prezzi da un catalogo salvato. Il catalogo aggiornato non è disponibile al momento.';translations.it.notLive='Gli acquisti non sono disponibili al momento.';}translations.en.demoPrices='MOBIALO · Saved catalog · EUR';translations.sq.demoPrices='MOBIALO · Katalog i ruajtur · EUR';translations.en.previewNote='Prices from a saved catalog. The live catalog is temporarily unavailable.';translations.sq.previewNote='Çmime nga një katalog i ruajtur. Katalogu real nuk është i disponueshëm për momentin.';translations.en.notLive='Purchases are temporarily unavailable.';translations.sq.notLive='Blerjet nuk janë të disponueshme për momentin.';}
+    if(data.source==='preview'){if(translations.it){translations.it.demoPrices='Catalogo salvato · EUR';translations.it.previewNote='Prezzi da un catalogo salvato. Il catalogo aggiornato non è disponibile al momento.';translations.it.notLive='Gli acquisti sono temporaneamente non disponibili. Riprova tra qualche minuto.';}translations.en.demoPrices='Saved catalog · EUR';translations.sq.demoPrices='Katalog i ruajtur · EUR';translations.en.previewNote='Prices from a saved catalog. The live catalog is temporarily unavailable.';translations.sq.previewNote='Çmime nga një katalog i ruajtur. Katalogu i përditësuar nuk është i disponueshëm për momentin.';translations.en.notLive='Purchases are temporarily unavailable. Please try again in a few minutes.';translations.sq.notLive='Blerjet janë përkohësisht të padisponueshme. Provo përsëri pas pak minutash.';}
     liveProducts=data.products.filter(purchasable);catalog=buildDestinations(liveProducts);catalogState='ready';
     document.querySelectorAll('[data-search]').forEach(button=>{button.disabled=!catalog.some(item=>item.en===button.dataset.search);});
     setLanguage(lang);

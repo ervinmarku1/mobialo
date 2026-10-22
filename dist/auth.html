@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <script>/* Until auth.js renders (6 s at most): the card stays empty and text that may change language stays hidden. */(function(d){var l='';try{l=localStorage.getItem('mobialo-language-choice')||(sessionStorage.getItem('mobialo-detected-language')||'').split(':')[0]}catch(e){}d.classList.add('auth-pending');if(l!=='en')d.classList.add('lang-pending-text');d.setAttribute('data-auth-mode',{'/join':'join','/forgot-password':'reset','/update-password':'update','/account':'account'}[location.pathname.replace(/\/$/,'')]||'sign');setTimeout(function(){d.classList.remove('auth-pending','lang-pending-text')},6000)})(document.documentElement)</script>
   <meta name="theme-color" content="#ffffff"><meta name="robots" content="noindex"><meta name="referrer" content="no-referrer">
   <title>MOBIALO — Your account</title>
   <link rel="icon" href="/brand-mark.svg" type="image/svg+xml">
@@ -16,7 +17,7 @@
 <body class="auth-page">
   <header class="header wrap">
     <a href="/" class="logo" aria-label="MOBIALO"><img class="brand-mark" src="/brand-mark.svg" width="42" height="42" alt=""><span class="brand-word">mobialo<span class="brand-domain">.eu</span></span></a>
-    <div class="header-actions"><a class="auth-back" href="/" data-text="home">← Back to exploring</a><label class="language-label"><select id="auth-language" aria-label="Language"><option value="en">EN</option><option value="sq">SQ</option></select></label></div>
+    <div class="header-actions"><a class="auth-back" href="/" data-text="home">← Back to exploring</a><label class="language-label"><select id="auth-language" aria-label="Language"><option value="en">EN</option><option value="sq">SQ</option><option value="it">IT</option></select></label></div>
   </header>
   <main class="auth-layout wrap">
     <aside class="auth-story">

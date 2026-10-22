@@ -18,10 +18,10 @@ for(const [file,reset] of [['confirm-signup',false],['reset-password',true]]){
 <section lang="${language}" dir="${['ar','he'].includes(language)?'rtl':'ltr'}">
   <h1 style="font-size:26px;color:#111">${escape(reset?copy.resetTitle:copy.title)}</h1>
   <p>${escape(copy.intro)}</p>
-  <p style="margin:30px 0"><a href="{{ .ConfirmationURL }}" style="background:#c95413;color:#fff;padding:14px 22px;border-radius:9px;text-decoration:none;display:inline-block">${escape(reset?copy.resetButton:copy.button)}</a></p>
+  <p style="margin:30px 0"><a href="{{ .ConfirmationURL }}" style="background:#b84d11;color:#fff;padding:14px 22px;border-radius:9px;text-decoration:none;display:inline-block">${escape(reset?copy.resetButton:copy.button)}</a></p>
   <p style="color:#666;font-size:13px">${escape(copy.ignore)}</p>
 </section>`;
   });
-  await writeFile(new URL(`${file}.html`,root),'<!doctype html><html><head><meta charset="utf-8"></head><body style="background:#fff;color:#222;font-family:Arial,sans-serif;line-height:1.6"><main style="max-width:560px;margin:32px auto;padding:24px"><div style="font-size:25px;font-weight:bold">mobialo<span style="color:#c95413">.eu</span></div>\n'+blocks.join('\n')+'\n{{ end }}\n<p><a href="mailto:support@mobialo.eu">support@mobialo.eu</a></p></main></body></html>\n');
+  await writeFile(new URL(`${file}.html`,root),'<!doctype html><html><head><meta charset="utf-8"></head><body style="background:#fff;color:#222;font-family:Arial,sans-serif;line-height:1.6"><main style="max-width:560px;margin:32px auto;padding:24px"><div style="font-size:25px;font-weight:bold">mobialo<span style="color:#b84d11">.eu</span></div>\n'+blocks.join('\n')+'\n{{ end }}\n<p><a href="mailto:support@mobialo.eu">support@mobialo.eu</a></p></main></body></html>\n');
 }
 console.log(`Generated confirmation and recovery templates for ${emailLanguages.length} languages, with English fallback.`);

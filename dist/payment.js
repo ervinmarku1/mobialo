@@ -8,8 +8,11 @@ status.style.whiteSpace='pre-line';
 const safe=value=>String(value||'').replace(/[^A-Za-z0-9_:-]/g,'').slice(0,80);
 // Server codes go on their own line for support.
 const codes=data=>{const list=[safe(data.error)+(data.reason?':'+safe(data.reason):''),...(Array.isArray(data.issues)?data.issues.map(safe):[])].filter(Boolean);return list.length?'\n'+t('Kodi: ','Code: ','Codice: ')+[...new Set(list)].join(', '):'';};
-// customer-session.js may still be loading; give it up to 3 s before treating the visitor as signed out.
-async function waitForCustomerSession(){for(let waited=0;window.mobialoCustomerSession===undefined&&document.readyState!=='complete'&&waited<3000;waited+=50)await new Promise(resolve=>setTimeout(resolve,50));}
+// The import above sets window.mobialoCustomerSession before this runs. Guest orders need no session,
+// so an unavailable session is sent as none; the server asks for sign-in only for an owned order.
+async function sessionHeaders(){
+try{const client=await window.mobialoCustomerSession;const session=client&&(await client.auth.getSession()).data?.session;return session?{Authorization:'Bearer '+session.access_token}:{};}catch{return {};}
+}
 const debug=data=>typeof data.debugId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.debugId)?' · Debug ID: '+data.debugId:'';
 const reference=value=>t(' Referenca: ',' Reference: ',' Riferimento: ')+value;
 history.replaceState(null,'',location.pathname);
@@ -20,14 +23,13 @@ if(!state||!token){status.textContent=t('Nuk ka pagesë për verifikim.','No pay
 status.textContent=t('Po verifikohet pagesa…','Verifying payment…','Verifica del pagamento…');
 let data;
 try{
-const headers={'Content-Type':'application/json'};
-await waitForCustomerSession();
-if(window.mobialoCustomerSession){const client=await window.mobialoCustomerSession;if(client){const {data:{session},error}=await client.auth.getSession();if(error)throw error;if(session)headers.Authorization='Bearer '+session.access_token;}}
+const headers={'Content-Type':'application/json',...await sessionHeaders()};
 const response=await fetch('/api/paypal/capture',{method:'POST',headers,body:JSON.stringify({state,token})});
 data=await response.json().catch(()=>({error:'HTTP_'+response.status}));
 if(response.ok){
  if(data.status==='PENDING')status.textContent=t(`PayPal e pranoi pagesën ${data.amount} EUR, por e mban në pritje. Mos paguaj përsëri. Porosia përpunohet automatikisht sapo PayPal ta konfirmojë.`,`PayPal accepted the payment of ${data.amount} EUR but is holding it as pending. Do not pay again. The order is processed automatically once PayPal confirms it.`,`PayPal ha accettato il pagamento di ${data.amount} EUR ma lo tiene in sospeso. Non pagare di nuovo. L'ordine verrà elaborato automaticamente appena PayPal lo conferma.`)+(data.reason?' ['+safe(data.reason)+']':'')+reference(data.reference);
- else if(data.environment==='live')status.textContent=t('Pagesa u konfirmua. ','Payment confirmed. ','Pagamento confermato. ')+(data.emailAccepted?t('Emaili me QR u pranua për dërgim.','QR email accepted for sending.','Email con QR accettata per l’invio.'):t('Porosia po përpunohet. Mos paguaj përsëri. Kontakto support@mobialo.eu.','Order processing. Do not pay again. Contact support@mobialo.eu.','Ordine in elaborazione. Non pagare di nuovo. Contatta support@mobialo.eu.'))+reference(data.reference);
+ // Same copy as the checkout; this page does not know the address, so it names the order's email.
+ else if(data.environment==='live')status.textContent=data.emailAccepted?t(`Pagesa ${data.amount} EUR u konfirmua. Emaili me kodin QR të eSIM-it dhe hapat e instalimit u dërgua te adresa email e porosisë. Kontrollo edhe dosjen Spam. Mos paguaj përsëri.`,`Payment of ${data.amount} EUR confirmed. The email with your eSIM QR code and installation steps has been sent to the email address of your order. Check your Spam folder too. Do not pay again.`,`Pagamento di ${data.amount} EUR confermato. L’email con il codice QR della eSIM e i passaggi di installazione è stata inviata all’indirizzo email dell’ordine. Controlla anche la cartella Spam. Non pagare di nuovo.`)+reference(data.reference):t(`Pagesa ${data.amount} EUR u konfirmua. Zakonisht brenda pak minutash do të marrësh një email te adresa email e porosisë me kodin QR të eSIM-it dhe hapat e instalimit. Kontrollo edhe dosjen Spam. Mos paguaj përsëri. Nëse emaili nuk vjen, na shkruaj te support@mobialo.eu me referencën.`,`Payment of ${data.amount} EUR confirmed. You will usually receive an email at the email address of your order within a few minutes with your eSIM QR code and installation steps. Check your Spam folder too. Do not pay again. If the email does not arrive, write to support@mobialo.eu quoting the reference.`,`Pagamento di ${data.amount} EUR confermato. Di solito entro pochi minuti riceverai un’email all’indirizzo email dell’ordine con il codice QR della eSIM e i passaggi di installazione. Controlla anche la cartella Spam. Non pagare di nuovo. Se l’email non arriva, scrivi a support@mobialo.eu indicando il riferimento.`)+reference(data.reference);
  else status.textContent=t(`Pagesa provë ${data.amount} EUR u konfirmua. Nuk u krijua eSIM reale.`,`Test payment of ${data.amount} EUR confirmed. No real eSIM was created.`,`Pagamento di prova di ${data.amount} EUR confermato. Nessuna eSIM reale è stata creata.`);
  return;
 }

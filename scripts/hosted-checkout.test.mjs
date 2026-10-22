@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {hostedCheckout} from './hosted-checkout.mjs';
-import {captureLiveOrder} from './live-checkout.mjs';
+import {createHmac} from 'node:crypto';
+import {hostedCheckout,TERMS_VERSION} from './hosted-checkout.mjs';
+import {captureLiveOrder,createLiveOrder} from './live-checkout.mjs';
 import {loadSettings,clearSettingsCache,defaultSettings} from './app-settings.mjs';
 const id='12345678-1234-1234-1234-123456789abc';
 const fresh=()=>({at:new Date().toISOString(),ok:true});
@@ -14,9 +15,11 @@ function fixture(){
     identity:async()=>({status:200,user:{id:'admin'}}),
     services:async options=>{assert.equal(options.paymentOnly,true);return {store:{get:async()=>({user_id:'admin'})}};},
     create:async input=>{calls.push(input);return {id:'remote'};},
-    capture:async(state,token,services,options)=>{calls.push(options);return {status:'COMPLETED'};}
+    capture:async(state,token,services,options)=>{calls.push(options);return {status:'COMPLETED'};},
+    // Signed-in buyers keep the per-account limit inside createLiveOrder; guest limits are not consulted.
+    limits:async()=>assert.fail('Unexpected guest limit check')
   };
-  const req={method:'POST',headers:{origin:'https://www.mobialo.eu','content-type':'application/json',authorization:'Bearer token'},body:{productId:'plan',email:'buyer@example.com',userId:'attacker',state:id,token:'remote'}};
+  const req={method:'POST',headers:{origin:'https://www.mobialo.eu','content-type':'application/json',authorization:'Bearer token'},body:{productId:'plan',email:'buyer@example.com',consent:true,userId:'attacker',state:id,token:'remote'}};
   return {deps,req,calls};
 }
 test('checkout is closed unless explicitly enabled in live admin mode',async()=>{
@@ -59,7 +62,7 @@ test('capture requires ownership and delegates delivery to worker',async()=>{
 test('config exposes client ID only to admin',async()=>{
   const f=fixture();f.deps.env.PAYPAL_LIVE_CLIENT_SECRET='private-secret';
   const result=await hostedCheckout('config',{...f.req,method:'GET'},f.deps);
-  assert.deepEqual(result.body,{environment:'live',checkoutEnabled:true,clientId:'client',currency:'EUR',methods:{paypal:true,card:true}});
+  assert.deepEqual(result.body,{environment:'live',checkoutEnabled:true,clientId:'client',currency:'EUR',methods:{paypal:true,card:true},guest:false});
 });
 test('hosted capture durably queues paid order without provisioning',async()=>{
   let row={id,paypal_order_id:'remote',amount:4.19,state:'awaiting_payment'};
@@ -91,15 +94,108 @@ test('public mode lets any verified customer buy without admin access or 2FA',as
  assert.equal(f.calls[0].userId,'customer');
  assert.equal((await hostedCheckout('capture',f.req,f.deps)).status,200);
 });
-test('public mode asks anonymous visitors to sign in and still refuses anonymous orders',async()=>{
- const f=fixture();f.deps.env.CHECKOUT_MODE='public';
- f.deps.identity=async()=>({status:401});
- const config=await hostedCheckout('config',{...f.req,method:'GET'},f.deps);
- assert.deepEqual(config.body,{environment:'live',checkoutEnabled:false,signInRequired:true});
- f.deps.identity=async()=>({status:403});
- assert.equal((await hostedCheckout('config',{...f.req,method:'GET'},f.deps)).body.reason,'EMAIL_NOT_CONFIRMED');
- assert.equal((await hostedCheckout('create',f.req,f.deps)).status,403);
- assert.equal(f.calls.length,0);
+const product={id:'plan',title:'Europe 1 GB',category:'esim_realtime',price:4.19};
+const ip='203.0.113.7',key='service-role-key',ipHash=createHmac('sha256',key).update('mobialo-ip-v1:'+ip).digest('hex');
+// Public mode with a signed-out visitor; create runs the real createLiveOrder against an in-memory store.
+function guestFixture(){
+  const f=fixture(),rows=[],limited=[];
+  Object.assign(f.deps.env,{CHECKOUT_MODE:'public',SUPABASE_SERVICE_ROLE_KEY:key});
+  f.deps.identity=async()=>({status:401});
+  f.deps.limits=async(hash,env)=>{limited.push(hash);assert.equal(env,f.deps.env);};
+  const store={insert:()=>assert.fail('Guest rows go through the locking reservation'),reserveGuest:async row=>{rows.push(row);return row;},transition:async(id,state,patch)=>Object.assign(rows.at(-1),patch),get:async()=>({user_id:null,paypal_order_id:'remote'})};
+  f.deps.services=async()=>({store,paypal:async()=>({id:'remote'})});
+  f.deps.create=async(input,deps)=>{f.calls.push(input);return createLiveOrder(input,deps,[product]);};
+  f.req.headers={...f.req.headers,authorization:undefined,'x-vercel-forwarded-for':ip};
+  return {...f,rows,limited,store};
+}
+test('public mode lets signed-out and unconfirmed visitors buy as guests with a typed email',async()=>{
+ for(const status of [401,403]){
+  const f=guestFixture();f.deps.identity=async()=>({status});
+  assert.deepEqual((await hostedCheckout('config',get(f),f.deps)).body,{environment:'live',checkoutEnabled:true,clientId:'client',currency:'EUR',methods:{paypal:true,card:true},guest:true});
+  const created=await hostedCheckout('create',f.req,f.deps);
+  assert.equal(created.status,200);assert.equal(created.body.id,'remote');
+  assert.deepEqual(f.limited,[ipHash]);
+  const row=f.rows[0];
+  assert.equal(row.user_id,undefined);assert.equal(row.customer_email,'buyer@example.com');assert.equal(row.product_title,'Europe 1 GB');
+  assert.equal(row.client_ip_hash,ipHash);assert.equal(row.terms_version,TERMS_VERSION);assert.equal(TERMS_VERSION,'v1.0-2026-10-22');
+  assert.ok(Math.abs(Date.parse(row.terms_accepted_at)-Date.now())<5000);
+  // The raw address is never passed on or stored, and the browser cannot set an owner.
+  assert.equal(JSON.stringify([f.calls,f.rows]).includes(ip),false);assert.equal(f.calls[0].userId,undefined);
+ }
+ // A guest must type a valid address: there is no account email to fall back to.
+ for(const email of [undefined,'',' ','not-an-email']){
+  const f=guestFixture();
+  assert.deepEqual(await hostedCheckout('create',{...f.req,body:{...f.req.body,email}},f.deps),{status:400,body:{error:'EMAIL_REQUIRED'}});assert.equal(f.rows.length,0);
+ }
+});
+test('every order needs the checkout consent, before any limit, payment service or order is touched',async()=>{
+ for(const consent of [undefined,false,'true',1]){
+  for(const f of [fixture(),guestFixture()]){
+   f.deps.limits=()=>assert.fail('Must not check limits');f.deps.services=()=>assert.fail('Must not touch payments');
+   assert.deepEqual(await hostedCheckout('create',{...f.req,body:{...f.req.body,consent}},f.deps),{status:400,body:{error:'CONSENT_REQUIRED'}});
+   assert.equal(f.calls.length,0);
+  }
+ }
+ // Signed-in buyers record the consent too, and keep the per-account limit instead of the guest limits.
+ const f=fixture();f.deps.env.CHECKOUT_MODE='public';f.deps.identity=async()=>({status:200,user:{id:'customer',email:'owner@example.com'}});
+ assert.equal((await hostedCheckout('create',{...f.req,headers:{...f.req.headers,'x-vercel-forwarded-for':ip}},f.deps)).status,200);
+ assert.deepEqual(f.calls,[{productId:'plan',email:'buyer@example.com',language:undefined,userId:'customer',clientIpHash:undefined,termsVersion:TERMS_VERSION}]);
+});
+test('guest limits refuse with 429, and a failed limit check refuses with 503 (fail closed)',async()=>{
+ for(const [error,status,code] of [['TOO_MANY_OPEN_ORDERS',429,'TOO_MANY_OPEN_ORDERS'],['ORDER_LIMIT_UNAVAILABLE',503,'CHECKOUT_UNAVAILABLE']]){
+  const logged=[];const f=guestFixture();f.deps.log={error:(...args)=>logged.push(args.join(' '))};
+  f.deps.limits=async()=>{throw Error(error);};f.deps.services=()=>assert.fail('Must not touch payments');
+  assert.deepEqual(await hostedCheckout('create',f.req,f.deps),{status,body:{error:code}});
+  assert.equal(f.calls.length,0);assert.equal(logged.some(line=>line.includes(ip)),false);
+ }
+ // Without a usable client address or hashing key the real limit check refuses before any query.
+ for(const patch of [{headers:{'x-vercel-forwarded-for':''}},{env:{SUPABASE_SERVICE_ROLE_KEY:''}}]){
+  const f=guestFixture();f.deps.log={error(){}};delete f.deps.limits;
+  Object.assign(f.deps.env,{SUPABASE_URL:'https://limits-test.supabase.co',...patch.env});
+  const req={...f.req,headers:{...f.req.headers,...patch.headers}};
+  const result=await hostedCheckout('create',req,f.deps);
+  assert.equal(result.status,503);assert.equal(f.calls.length,0);
+ }
+});
+test('a guest order is captured with its capability alone; an owned order still needs its owner',async()=>{
+ for(const mode of ['public','admin','closed']){
+  const f=guestFixture();f.deps.settings=settingsFor({mode});f.deps.capture=async(state,token,services,options)=>{f.calls.push(options);return {status:'PENDING',reason:'RECEIVING_PREFERENCE_MANDATES_MANUAL_ACTION'};};
+  let order={user_id:null,paypal_order_id:'remote'};f.store.get=async state=>{assert.equal(state,id);return order;};
+  const captured=await hostedCheckout('capture',f.req,f.deps);
+  assert.equal(captured.status,200);assert.equal(captured.body.reason,null);assert.deepEqual(f.calls,[{deferDelivery:true}]);
+  // A wrong PayPal order ID or an unknown state never reaches PayPal.
+  for(const [token,row] of [['other',order],['remote',null],['remote',{user_id:null,paypal_order_id:'pending-'+id}]]){
+   order=row;assert.deepEqual(await hostedCheckout('capture',{...f.req,body:{...f.req.body,token}},f.deps),{status:403,body:{error:'ORDER_ACCESS_DENIED'}});
+  }
+  order={user_id:'customer',paypal_order_id:'remote'};
+  assert.deepEqual(await hostedCheckout('capture',f.req,f.deps),{status:401,body:{error:'SIGN_IN_REQUIRED'}});
+  f.deps.identity=async()=>({status:200,user:{id:'other'}});
+  assert.deepEqual(await hostedCheckout('capture',f.req,f.deps),{status:403,body:{error:'ORDER_ACCESS_DENIED'}});
+  f.deps.identity=async()=>({status:401});order={user_id:null,paypal_order_id:'remote'};
+  assert.equal((await hostedCheckout('capture',{...f.req,headers:{...f.req.headers,origin:'https://evil.invalid'}},f.deps)).body.error,'INVALID_ORIGIN');
+  assert.equal((await hostedCheckout('capture',{...f.req,headers:{...f.req.headers,'content-type':'text/plain'}},f.deps)).status,415);
+  assert.equal(f.calls.length,1);
+ }
+ // A signed-in buyer may capture an order made as a guest; administrators still pass 2FA first.
+ const f=guestFixture();f.deps.identity=async()=>({status:200,user:{id:'customer'}});
+ assert.equal((await hostedCheckout('capture',f.req,f.deps)).status,200);
+ const g=guestFixture();g.deps.settings=settingsFor({mode:'admin'});g.deps.identity=async()=>({status:200,user:{id:'admin',factors:[{status:'verified'}]}});g.deps.services=()=>assert.fail('Must not touch payments');
+ assert.deepEqual(await hostedCheckout('capture',g.req,g.deps),{status:403,body:{error:'MFA_REQUIRED'}});
+});
+test('guests cannot buy outside public mode or while Supabase Auth is broken',async()=>{
+ const worker={at:new Date(Date.now()-600000).toISOString(),ok:true};
+ for(const settings of [settingsFor({mode:'admin'}),settingsFor({mode:'public'},{worker})]){
+  for(const status of [401,403]){
+   const f=guestFixture();f.deps.settings=settings;f.deps.log={error(){}};f.deps.identity=async()=>({status});
+   f.deps.limits=()=>assert.fail('Must not check limits');f.deps.services=()=>assert.fail('Must not touch payments');
+   assert.equal((await hostedCheckout('config',get(f),f.deps)).body.checkoutEnabled,false);
+   assert.deepEqual(await hostedCheckout('create',f.req,f.deps),{status,body:{error:'SIGN_IN_REQUIRED'}});
+   assert.equal(f.calls.length,0);
+  }
+ }
+ const f=guestFixture();f.deps.log={error(){}};f.deps.identity=async()=>({status:503});f.deps.limits=()=>assert.fail('Must not check limits');
+ assert.deepEqual((await hostedCheckout('config',get(f),f.deps)).body,{error:'CHECKOUT_UNAVAILABLE'});
+ assert.deepEqual(await hostedCheckout('create',f.req,f.deps),{status:503,body:{error:'SIGN_IN_REQUIRED'}});assert.equal(f.calls.length,0);
 });
 test('unknown checkout modes stay closed',async()=>{
  for(const mode of ['open','PUBLIC','true',undefined]){
@@ -147,7 +243,7 @@ test('pending reasons are shown to admins only',async()=>{
 });
 test('without a typed email the eSIM goes to the verified account email',async()=>{
  const f=fixture();f.deps.identity=async()=>({status:200,user:{id:'admin',email:'owner@example.com'}});
- assert.equal((await hostedCheckout('create',{...f.req,body:{productId:'plan'}},f.deps)).status,200);
+ assert.equal((await hostedCheckout('create',{...f.req,body:{productId:'plan',consent:true}},f.deps)).status,200);
  assert.equal(f.calls[0].email,'owner@example.com');
  assert.equal((await hostedCheckout('create',f.req,f.deps)).status,200);
  assert.equal(f.calls[1].email,'buyer@example.com');
@@ -204,7 +300,7 @@ test('a database row is read through loadSettings and an unreadable table never 
 test('config lists the payment methods enabled in the admin settings',async()=>{
  for(const [paypal,card] of [[true,false],[false,true]]){
   const f=fixture();f.deps.settings=settingsFor({paypal,card});
-  assert.deepEqual((await hostedCheckout('config',get(f),f.deps)).body,{environment:'live',checkoutEnabled:true,clientId:'client',currency:'EUR',methods:{paypal,card}});
+  assert.deepEqual((await hostedCheckout('config',get(f),f.deps)).body,{environment:'live',checkoutEnabled:true,clientId:'client',currency:'EUR',methods:{paypal,card},guest:false});
  }
 });
 test('with both payment methods off no order can be created, but an approved one can still be captured',async()=>{

@@ -40,8 +40,8 @@ are documented in [supabase/DELIVERY-SETUP.md](supabase/DELIVERY-SETUP.md).
 | `GET /api/catalog` | New-eSIM catalog with server-side EUR prices |
 | `GET /api/auth-config` | Supabase URL and publishable key for browser sign-in |
 | `GET /api/locale` | Site and email language from the Vercel IP country |
-| `/api/paypal/config`, `create`, `capture` | Hosted checkout (session, mode and 2FA checks) |
-| `POST /api/paypal/webhook` | Verified `PAYMENT.CAPTURE.COMPLETED` reconciliation |
+| `/api/paypal/config`, `create`, `capture` | Hosted checkout (mode, 2FA, consent, guest limits, order capability) |
+| `POST /api/paypal/webhook` | Verified capture reconciliation; records refunds, reversals, denials and disputes |
 | `POST /api/worker/sweep` | Delivery sweep, called by pg_cron with `x-worker-secret` |
 | `GET /api/account/orders` | The signed-in customer's orders |
 | `/api/admin/orders`, `access`, `settings` | Admin panel: orders, access requests and approvals, Cilësimet |
@@ -81,7 +81,8 @@ are never returned as an empty catalog.
 
 `/api/locale` maps `x-vercel-ip-country`: IT → Italian, AL/XK → Albanian, anything else →
 English. A language chosen in the menu is stored under `mobialo-language-choice` and wins
-over detection. No IP address is stored. Signup saves the resolved email language (36
+over detection. Locale detection stores no IP address (guest orders keep only a keyed
+hash of it for the abuse limits). Signup saves the resolved email language (36
 languages) in `user_metadata.language`; delivery emails support SQ, EN and IT.
 
 ## Development

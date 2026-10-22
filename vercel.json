@@ -7,7 +7,7 @@
   "functions": {
     "api/paypal/create.mjs": {"maxDuration": 180},
     "api/paypal/capture.mjs": {"maxDuration": 180},
-    "api/paypal/webhook.mjs": {"maxDuration": 30},
+    "api/paypal/webhook.mjs": {"maxDuration": 60},
     "api/worker/sweep.mjs": {"maxDuration": 60}
   },
   "redirects": [

@@ -25,6 +25,13 @@ database run all of them; for an existing one, run only the files that are missi
    before running it, or that project will call the production sweep.
 8. `migrations/20261023090000_indexes_and_cron_cleanup.sql`: indexes for the admin order list and
    the sweep, and the daily job `mobialo-cron-cleanup` (keeps 7 days of `cron.job_run_details`).
+9. `migrations/20261023100000_guest_checkout.sql`: guest checkout and the consent record
+   (`client_ip_hash`, `terms_accepted_at`, `terms_version`) plus the indexes for the guest limits.
+   Apply before deploying the code: without it every checkout creation fails with 503.
+10. `migrations/20261023110000_payment_events.sql`: payment flags written by the webhook
+   (`payment_status`, `refunded_amount`, `dispute_id`, `dispute_status`, `payment_updated_at`).
+   Apply before deploying the code: without it the admin order list and the refund/dispute
+   webhook events return 503.
 
 All files except 5 are safe to run again. A null column below means that migration is missing:
 
@@ -34,7 +41,10 @@ select to_regclass('public.esim_deliveries') as m1, to_regclass('public.esim_tes
   to_regprocedure('public.reserve_esim_test_order(uuid,text,text,numeric,text,text)') as m4,
   to_regclass('public.admin_access_requests') as m5, to_regclass('public.app_settings') as m6,
   to_regprocedure('public.mobialo_worker_config()') as m7,
-  to_regclass('public.esim_deliveries_state_created_idx') as m8;
+  to_regclass('public.esim_deliveries_state_created_idx') as m8,
+  to_regclass('public.esim_deliveries_ip_open_idx') as m9,
+  (select 1 from information_schema.columns where table_schema='public'
+    and table_name='esim_deliveries' and column_name='payment_updated_at') as m10;
 select jobname, schedule, active from cron.job;
 ```
 
@@ -53,11 +63,14 @@ require `PAYPAL_ENV=live`. The effective mode is the saved Cilësimet value; bef
 save (and, capped at admin, during a Supabase outage) it falls back to the Vercel
 `CHECKOUT_MODE`. Admin mode allows only confirmed Supabase users listed in `ADMIN_USER_IDS`,
 approved administrators and the superadmin; other visitors see the preview. Closed disables
-the hosted flow, except that a capture of an order the signed-in buyer already created is
-still allowed, so closing the shop never breaks a payment approved in PayPal.
+the hosted flow, except that an existing order stays capturable, so closing the shop never
+breaks a payment approved in PayPal: an owned order by its signed-in owner, a guest order by
+whoever holds its capability (the random order state ID plus its PayPal order ID).
 Config, creation and capture all verify the session server-side, and create/capture only
-accept the origin `https://www.mobialo.eu`. Capture also requires the order's stored user ID
-to match. Prices come from the server's catalog; browser-supplied ownership and prices are
+accept the origin `https://www.mobialo.eu`. Every creation needs the consent checkbox
+(`consent:true`, else 400 `CONSENT_REQUIRED`); the order stores `terms_accepted_at` and
+`terms_version` (`TERMS_VERSION` in `scripts/hosted-checkout.mjs`; change it whenever the
+Terms or the Delivery & refund policy change). Prices come from the server's catalog; browser-supplied ownership and prices are
 ignored. Set the MobiMatter catalog credentials on Vercel in addition to the live PayPal
 and Supabase credentials. Hosted capture records the verified payment (`paid`) for the
 delivery worker; provisioning is not performed inside the Vercel request. The webhook
@@ -70,10 +83,19 @@ asks for the Authenticator code in place; it can also be verified at
 `https://www.mobialo.eu/admin`. `admin.mobialo.eu` redirects there, because sessions
 are stored per origin.
 
-Public mode opens checkout to every signed-in customer with a confirmed email (no
-admin list, no 2FA). Anonymous visitors are asked to sign in and return to the plan
-afterwards. Each customer may open at most 10 unpaid orders per hour
-(`TOO_MANY_OPEN_ORDERS`, HTTP 429). Cilësimet only allows switching to public while
+Public mode opens checkout to every visitor (no admin list, no 2FA). Customers with a
+confirmed email buy on their account (the eSIM goes to the account email unless they type
+another). Signed-out and unconfirmed visitors buy as guests: they type the email, the order
+has no `user_id` and does not appear in `/account`. Limits (`TOO_MANY_OPEN_ORDERS`, HTTP 429):
+10 unpaid orders per hour per account; for guests 10 unpaid orders per hour per client
+address (stored only as a labelled HMAC keyed with the service-role key, IPv6 by its /64,
+cleared after 7 days by the job `mobialo-guest-ip-cleanup`) and 300 unpaid guest orders per
+hour in total. Guest rows are inserted by `reserve_guest_order()`, which counts and inserts
+under one lock, so parallel requests cannot pass the limits. A failing limit query refuses
+the order (503). An attacker with many IPv6 /64 networks can still fill the global cap and
+pause guest sales for an hour (signed-in buyers are unaffected); a Vercel Firewall rate limit
+on `/api/paypal/create` and `/api/paypal/capture` is the next layer. A Supabase
+Auth outage is never treated as "signed out". Cilësimet only allows switching to public while
 the worker heartbeat is fresh (under 10 minutes) and healthy, and checkout treats public
 as admin whenever the heartbeat goes stale, so customers are never charged while nothing
 provisions their eSIM. Customer emails use Supabase custom SMTP (Resend).
@@ -106,8 +128,14 @@ Capture outcomes:
   `Hosted checkout unavailable {"action","reason"}`; `reason` is returned only to
   admins who passed every admin gate.
 
-Refunds, reversals and disputes are not handled by the code: handle them in PayPal (and
-the MobiMatter portal for the eSIM) by hand. The admin panel exposes no refund action.
+Refunds, reversals, denied captures and disputes are recorded automatically by the verified
+webhook (see below): a `paid` order whose eSIM was not bought yet moves to `review`, so the
+worker never provisions it, and support@mobialo.eu gets an alert. Refunding money and
+cancelling an already delivered eSIM stay manual (PayPal and the MobiMatter portal). The
+admin panel shows red payment badges and the "Problem me pagesën" filter; it has no refund action.
+The worker also checks the flags before completing the eSIM and before the QR email, so a refund
+recorded mid-delivery stops there. To release a stopped order after review, reset `payment_status`
+as well as `state`; otherwise the worker moves it straight back to `review`.
 
 ## Customer dashboard
 
@@ -153,7 +181,10 @@ No real order or email is created by the automated tests. Run:
 supplier or email-provider credentials.
 
 The endpoint is registered on the SAME PayPal live REST app used for checkout and
-subscribed to `PAYMENT.CAPTURE.COMPLETED`. `PAYPAL_WEBHOOK_ID` is the webhook
+subscribed to `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.PENDING`,
+`PAYMENT.CAPTURE.DENIED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`,
+`CUSTOMER.DISPUTE.CREATED`, `CUSTOMER.DISPUTE.UPDATED` and `CUSTOMER.DISPUTE.RESOLVED`.
+`PAYPAL_WEBHOOK_ID` is the webhook
 registration ID, not the client ID. The route must stay reachable without deployment
 protection/login; `vercel.json` sets each function's maximum duration.
 
@@ -162,8 +193,15 @@ verification API, then independently reads the stored PayPal order and checks
 its completed capture ID, amount and currency. It acknowledges only after the
 payment is durably marked paid (or already processed). Duplicate events cannot
 reset delivery state. Unavailable verification/storage returns 503 for retry.
-Other verified event types are acknowledged without processing; refunds,
-disputes and email bounces still need separate operational handling.
+
+Capture PENDING/DENIED/REFUNDED/REVERSED events find the order by capture ID (else by the
+PayPal order ID), re-read the capture from PayPal and write nothing on a mismatch (409).
+Dispute events use the dispute's seller transaction ID. Each write is conditional on the
+row version (`payment_updated_at`); a weaker flag never replaces a stronger one and a
+replayed event writes nothing and sends no alert. Orders already being provisioned or
+sent only get the flags. Unknown orders get 200 and a log line (except COMPLETED, which
+keeps its retry). Other verified event types and email bounces are acknowledged without
+processing.
 
 The endpoint does not provision eSIMs; the worker discovers paid rows. Test with an
 actual event from the registered app: PayPal's mock simulator does not support this

@@ -7,8 +7,17 @@ let mfa,access,settings,settingsRole='';
 let client,page=1,orders=[],sequence=0;
 let products=new Map();
 const labels={awaiting_payment:'Në pritje të pagesës',paid:'Paguar',reserving:'Duke rezervuar',reserved:'Rezervuar',completing:'Duke përfunduar',ready:'eSIM gati',sending:'Duke dërguar emailin',sent:'Email i pranuar për dërgim',review:'Për kontroll'};
-// A PENDING PayPal capture is stored on an awaiting_payment row until PayPal releases it.
-const stateLabel=o=>o.state==='awaiting_payment'&&o.paypal_capture_id?'PayPal në pritje: prano pagesën te PayPal':Object.hasOwn(labels,o.state)?labels[o.state]:o.state;
+// Flags recorded by the verified PayPal webhook (refunds, reversals, denied captures, disputes).
+const paymentLabels={refunded:'Rimbursuar',partially_refunded:'Rimbursuar pjesërisht',reversed:'Kthyer',denied:'Refuzuar',disputed:'Kontestim'};
+const disputeLabels={OPEN:'Hapur',WAITING_FOR_BUYER_RESPONSE:'Në pritje të blerësit',WAITING_FOR_SELLER_RESPONSE:'Pret përgjigjen tonë',UNDER_REVIEW:'Në shqyrtim te PayPal',RESOLVED:'Zgjidhur',RESOLVED_BUYER_FAVOUR:'Zgjidhur në favor të blerësit',RESOLVED_SELLER_FAVOUR:'Zgjidhur në favor tonë',RESOLVED_WITH_PAYOUT:'Zgjidhur, PayPal pagoi blerësin',CANCELED_BY_BUYER:'Anuluar nga blerësi',ACCEPTED:'Pranuar',DENIED:'Refuzuar',OTHER:'Tjetër'};
+const issue=o=>Object.hasOwn(paymentLabels,o.payment_status||'');
+// An open dispute gets its own badge when a refund flag is already shown.
+const paymentBadges=o=>[...(issue(o)?[paymentLabels[o.payment_status]]:[]),...(o.dispute_id&&o.payment_status!=='disputed'&&!/^(RESOLVED\w*|CANCELED_BY_BUYER|ACCEPTED|DENIED|NONE)$/.test(o.dispute_status||'')?[paymentLabels.disputed]:[])];
+const disputeLabel=o=>o.dispute_id?o.dispute_id+' · '+(Object.hasOwn(disputeLabels,o.dispute_status||'')?disputeLabels[o.dispute_status]:o.dispute_status||'—'):'';
+// Money kept: refunds and reversals are subtracted from the paid sum.
+const kept=o=>['refunded','reversed'].includes(o.payment_status)?0:Math.max(0,Number(o.amount)-(Number(o.refunded_amount)||0));
+// A PENDING PayPal capture is stored on an awaiting_payment row until PayPal releases it (or denies it).
+const stateLabel=o=>o.state==='awaiting_payment'&&o.paypal_capture_id?(issue(o)?'Pa paguar':'PayPal në pritje: prano pagesën te PayPal'):Object.hasOwn(labels,o.state)?labels[o.state]:o.state;
 const message=text=>{$('message').textContent=text;};
 // Orders reloads keep Cilësimet (it sits inside #panel, so it is only hidden meanwhile); sign-out clears it.
 function clear(){access?.clear();orders=[];$('rows').replaceChildren();$('detail-list').replaceChildren();$('details').close();$('panel').hidden=true;}
@@ -27,11 +36,13 @@ async function load(){
   if(!r.ok){message(r.status===403?'Kjo llogari nuk ka akses administratori.':r.status===503?'Paneli nuk është konfiguruar ose shërbimi nuk është i disponueshëm.':r.status===400?'Kontrollo filtrat e kërkimit.':'Hyr përsëri në llogari.');return;}
   await mfa.show();if(current!==sequence)return;
   orders=data.orders;$('panel').hidden=false;message('');$('total').textContent=data.total??'—';
-  $('paid').textContent=new Intl.NumberFormat('sq-AL',{style:'currency',currency:'EUR'}).format(orders.filter(o=>o.paypal_capture_id&&o.state!=='awaiting_payment').reduce((sum,o)=>sum+Number(o.amount),0));
+  $('paid').textContent=new Intl.NumberFormat('sq-AL',{style:'currency',currency:'EUR'}).format(orders.filter(o=>o.paypal_capture_id&&o.state!=='awaiting_payment').reduce((sum,o)=>sum+kept(o),0));
   $('attention').textContent=orders.filter(o=>['review','reserving','completing','sending'].includes(o.state)).length;
   for(const o of orders){const tr=document.createElement('tr');
    for(const text of [new Date(o.created_at).toLocaleString('sq-AL'),o.customer_email,products.get(o.product_id)?.title||o.product_id,Number(o.amount).toFixed(2)+' '+o.currency]){const td=document.createElement('td');td.textContent=text;tr.append(td);}
-   const status=document.createElement('td'),badge=document.createElement('span');badge.className='badge '+(o.state==='sent'?'sent':o.state==='review'?'review':'');badge.textContent=stateLabel(o);status.append(badge);tr.append(status);
+   const status=document.createElement('td'),badge=document.createElement('span');badge.className='badge '+(o.state==='sent'?'sent':o.state==='review'?'review':'');badge.textContent=stateLabel(o);status.append(badge);
+   for(const text of paymentBadges(o)){const flag=document.createElement('span');flag.className='badge bad';flag.textContent=text;status.append(' ',flag);}
+   tr.append(status);
    const reference=document.createElement('td');reference.textContent=o.paypal_order_id;tr.append(reference);
    const action=document.createElement('td'),button=document.createElement('button');button.textContent='Shiko';button.onclick=()=>details(o);action.append(button);tr.append(action);$('rows').append(tr);
   }
@@ -42,12 +53,13 @@ async function load(){
   $('empty').hidden=orders.length!==0;$('page').textContent='Faqja '+page;$('previous').disabled=page===1;$('next').disabled=data.total!==null?page*50>=data.total:orders.length<50;
  }catch{if(current===sequence)message('Lidhja nuk u krye. Provo përsëri.');}
 }
-function details(o){$('detail-list').replaceChildren();const product=products.get(o.product_id);if(product){const heading=document.createElement('h3'),description=document.createElement('p');heading.textContent=product.title;description.textContent=[product.dataAmount,product.dataUnit,product.validityHours?product.validityHours/24+' days':''].filter(Boolean).join(' / ');$('detail-list').append(heading,description);}for(const [name,value] of [['ID MOBIALO',o.id],['Email',o.customer_email],['Statusi',stateLabel(o)],['Shuma',o.amount+' '+o.currency],['ID e paketës',o.product_id],['Porosia PayPal',o.paypal_order_id],['Pagesa PayPal',o.paypal_capture_id],['Referenca e eSIM-it',o.provider_order_id],['ID e emailit',o.email_id],['Gjuha',o.language],['Data',new Date(o.created_at).toLocaleString('sq-AL')]]){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=name;dd.textContent=value||'—';$('detail-list').append(dt,dd);}$('details').showModal();}
+function details(o){$('detail-list').replaceChildren();const product=products.get(o.product_id);if(product){const heading=document.createElement('h3'),description=document.createElement('p');heading.textContent=product.title;description.textContent=[product.dataAmount,product.dataUnit,product.validityHours?product.validityHours/24+' days':''].filter(Boolean).join(' / ');$('detail-list').append(heading,description);}for(const [name,value] of [['ID MOBIALO',o.id],['Email',o.customer_email],['Statusi',stateLabel(o)],['Shuma',o.amount+' '+o.currency],['ID e paketës',o.product_id],['Porosia PayPal',o.paypal_order_id],['Pagesa PayPal',o.paypal_capture_id],['Statusi i pagesës',paymentBadges(o).join(', ')],['Shuma e rimbursuar',o.refunded_amount==null?'':Number(o.refunded_amount).toFixed(2)+' '+o.currency],['Kontestimi',disputeLabel(o)],['Përditësimi i pagesës',o.payment_updated_at?new Date(o.payment_updated_at).toLocaleString('sq-AL'):''],['Referenca e eSIM-it',o.provider_order_id],['ID e emailit',o.email_id],['Gjuha',o.language],['Data',new Date(o.created_at).toLocaleString('sq-AL')]]){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=name;dd.textContent=value||'—';$('detail-list').append(dt,dd);}$('details').showModal();}
 $('close').onclick=()=>$('details').close();
+if(![...$('state').options].some(option=>option.value==='payment_issue'))$('state').append(new Option('Problem me pagesën','payment_issue'));
 $('reset').onclick=()=>{$('filters').reset();page=1;load();};
 $('export').onclick=()=>{
  const cell=value=>'"'+String(value??'').replace(/^[=+@\-\t\r]/,"'$&").replaceAll('"','""')+'"';
- const rows=[['Data','Email','Paketa','Shuma EUR','Statusi','PayPal'],...orders.map(o=>[o.created_at,o.customer_email,products.get(o.product_id)?.title||o.product_id,o.amount,stateLabel(o),o.paypal_order_id])];
+ const rows=[['Data','Email','Paketa','Shuma EUR','Statusi','Pagesa','Rimbursuar EUR','PayPal'],...orders.map(o=>[o.created_at,o.customer_email,products.get(o.product_id)?.title||o.product_id,o.amount,stateLabel(o),paymentBadges(o).join(', '),o.refunded_amount??'',o.paypal_order_id])];
  const url=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='mobialo-porosi-faqja-'+page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 $('filters').onsubmit=e=>{e.preventDefault();page=1;load();};$('refresh').onclick=()=>load();$('previous').onclick=()=>{page--;load();};$('next').onclick=()=>{page++;load();};

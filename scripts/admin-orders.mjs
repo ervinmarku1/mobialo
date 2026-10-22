@@ -3,6 +3,8 @@ import {parseEnv} from 'node:util';
 import {adminMfaError} from './admin-mfa.mjs';
 import {hasAdminAccess} from './admin-access.mjs';
 export const states=['awaiting_payment','paid','reserving','reserved','completing','ready','sending','sent','review'];
+// 'payment_issue' lists orders with a refund, reversal, denied capture or dispute recorded by the webhook.
+const ISSUE_FILTER='(payment_status.in.(refunded,partially_refunded,reversed,denied,disputed),dispute_id.not.is.null)';
 export async function adminOrders(request,fetcher=fetch,configuration){
  let env=configuration;
  if(!env){let local={};try{local=parseEnv(await readFile(new URL('../.env.local',import.meta.url),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}env={...local,...process.env};}
@@ -23,9 +25,9 @@ export async function adminOrders(request,fetcher=fetch,configuration){
  const from=query.get('from')||'',to=query.get('to')||'';
  const validDate=value=>!value||/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
  if(!validDate(from)||!validDate(to)||from&&to&&from>to)return fail(400,'INVALID_FILTER');
- if(!Number.isInteger(page)||page<1||page>100000||state&&!states.includes(state)||search.length>150||search&&!/^[\p{L}\p{N}@._+ -]+$/u.test(search))return fail(400,'INVALID_FILTER');
- const params=new URLSearchParams({select:'id,paypal_order_id,paypal_capture_id,product_id,amount,currency,customer_email,language,state,provider_order_id,email_id,created_at',order:'created_at.desc,id.desc',limit:'50',offset:String((page-1)*50)});
- if(state)params.set('state','eq.'+state);
+ if(!Number.isInteger(page)||page<1||page>100000||state&&state!=='payment_issue'&&!states.includes(state)||search.length>150||search&&!/^[\p{L}\p{N}@._+ -]+$/u.test(search))return fail(400,'INVALID_FILTER');
+ const params=new URLSearchParams({select:'id,paypal_order_id,paypal_capture_id,product_id,amount,currency,customer_email,language,state,provider_order_id,email_id,created_at,payment_status,refunded_amount,dispute_id,dispute_status,payment_updated_at',order:'created_at.desc,id.desc',limit:'50',offset:String((page-1)*50)});
+ if(state==='payment_issue')params.set('or',ISSUE_FILTER);else if(state)params.set('state','eq.'+state);
  if(from)params.append('created_at','gte.'+from+'T00:00:00Z');
  if(to)params.append('created_at','lt.'+new Date(Date.parse(to)+86400000).toISOString());
  if(search)params.set('customer_email','ilike.*'+search.replaceAll('_','\\_')+'*');

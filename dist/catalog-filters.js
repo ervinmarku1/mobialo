@@ -1,5 +1,7 @@
 /* Shared, deterministic catalog selection. Missing data never matches a minimum. */
-globalThis.MobialoCatalogFilter = (plans, filters = {}) => {
+/* For a country page (home = its code), the default price order lists that country's own plans first,
+   so the first plan matches the card's 'from' price. */
+globalThis.MobialoCatalogFilter = (plans, filters = {}, home = null) => {
   const gb = p => {
     const amount = Number(p.dataAmount);
     if (!Number.isFinite(amount) || amount <= 0) return null;
@@ -13,5 +15,6 @@ globalThis.MobialoCatalogFilter = (plans, filters = {}) => {
     (!filters.price || p.price<=Number(filters.price))
   );
   const value = p => filters.sort==='data' ? gb(p)??-1 : filters.sort==='days' ? p.validityHours??-1 : p.price;
-  return result.sort((a,b)=>(filters.sort==='data'||filters.sort==='days'?-1:1)*(value(a.plan)-value(b.plan)) || a.plan.title.localeCompare(b.plan.title));
+  const regional = p => home && !filters.sort && !(p.countries.length === 1 && p.countries[0] === home) ? 1 : 0;
+  return result.sort((a,b)=>regional(a.plan)-regional(b.plan) || (filters.sort==='data'||filters.sort==='days'?-1:1)*(value(a.plan)-value(b.plan)) || a.plan.title.localeCompare(b.plan.title));
 };

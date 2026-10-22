@@ -4,6 +4,10 @@ import {hasAdminAccess} from './admin-access.mjs';
 import {deliveryServices} from './esim-delivery.mjs';
 import {createLiveOrder,captureLiveOrder,paypalFailure} from './live-checkout.mjs';
 import {loadSettings,workerFresh} from './app-settings.mjs';
+import {checkGuestLimits,clientIpHash} from './checkout-limits.mjs';
+
+// Version of the Terms and Delivery & refund policy accepted with the checkout consent checkbox.
+export const TERMS_VERSION='v1.0-2026-10-22';
 
 // Internal error codes are safe to log and to show to administrators.
 export function checkoutErrorCode(error){
@@ -18,11 +22,13 @@ const workerWarned=new WeakSet();
 
 // Checkout mode comes from the admin settings (app_settings 'checkout', else CHECKOUT_MODE):
 // 'admin' = signed-in administrators with 2FA only (testing);
-// 'public' = any signed-in customer with a confirmed email, while the delivery worker reports in.
-// Anything else is closed. In every mode the signed-in owner can capture an existing order.
+// 'public' = every visitor while the delivery worker reports in: customers with a confirmed email buy
+// on their account, everyone else as a guest (typed email, no owner, per-address and global limits).
+// Anything else is closed. In every mode an existing order stays capturable: by its signed-in owner,
+// or, without an owner, by whoever holds its capability (state ID plus PayPal order ID).
 export async function hostedCheckout(action,req,{
   env=process.env,identity=customerIdentity,services=deliveryServices,
-  create=createLiveOrder,capture=captureLiveOrder,settings=loadSettings,log=console
+  create=createLiveOrder,capture=captureLiveOrder,settings=loadSettings,limits=checkGuestLimits,log=console
 }={}){
   const result=(status,body)=>({status,body});
   const fail=(status,error)=>result(status,{error});
@@ -40,7 +46,7 @@ export async function hostedCheckout(action,req,{
     mode='admin';
     if(!workerWarned.has(log)){workerWarned.add(log);log.error('Public checkout limited to administrators: no fresh delivery worker heartbeat');}
   }
-  // A payment the buyer already approved in PayPal stays capturable by its owner after the shop closes.
+  // A payment the buyer already approved in PayPal stays capturable after the shop closes (owner or guest capability).
   const ownerCapture=action==='capture'&&mode!=='public';
   if(mode==='closed'&&!ownerCapture)return closed();
   const methods={paypal:checkout?.paypal===true,card:checkout?.card===true};
@@ -51,25 +57,25 @@ export async function hostedCheckout(action,req,{
   const unavailable=reason=>{log.error('Hosted checkout unavailable',JSON.stringify({action,reason}));return result(503,{error:'CHECKOUT_UNAVAILABLE',...(trusted?{reason}:{})});};
   try{
     const auth=await identity(req.headers.authorization,undefined,env);
-    if(auth.status!==200){
+    const user=auth.status===200?auth.user:null;
+    // Signed-out and unconfirmed visitors buy as guests in public mode. A broken Supabase
+    // configuration must not look like "signed out". Captures are decided by the order below.
+    if(!user&&action!=='capture'&&!(mode==='public'&&auth.status!==503)){
       if(action!=='config')return fail(auth.status,'SIGN_IN_REQUIRED');
-      // A broken Supabase configuration must not look like "signed out".
       if(auth.status===503)return unavailable('AUTH_UNAVAILABLE');
-      const reason=auth.status===403?'EMAIL_NOT_CONFIRMED':undefined;
-      if(mode==='public')return result(200,{environment:'live',checkoutEnabled:false,signInRequired:true,...(reason?{reason}:{})});
-      return disabled(reason);
+      return disabled(auth.status===403?'EMAIL_NOT_CONFIRMED':undefined);
     }
-    if(mode!=='public'){
+    if(user&&mode!=='public'){
       // Administrators always pass 2FA. Anyone else may only capture an order they already own
       // (ownership is checked below), e.g. one approved before the shop was closed.
-      const admin=await hasAdminAccess(auth.user.id,env).catch(error=>{if(ownerCapture)return false;throw error;});
-      if(admin){const mfa=adminMfaError(req.headers.authorization,auth.user,env.SUPER_ADMIN_USER_IDS?{...env,ADMIN_MFA_REQUIRED:'true'}:env);if(mfa)return fail(403,mfa);trusted=true;}
+      const admin=await hasAdminAccess(user.id,env).catch(error=>{if(ownerCapture)return false;throw error;});
+      if(admin){const mfa=adminMfaError(req.headers.authorization,user,env.SUPER_ADMIN_USER_IDS?{...env,ADMIN_MFA_REQUIRED:'true'}:env);if(mfa)return fail(403,mfa);trusted=true;}
       else if(!ownerCapture)return action==='config'?disabled('ADMIN_ONLY'):fail(403,'ADMIN_ONLY');
     }
     if(action==='config'){
       const clientId=(env.PAYPAL_LIVE_CLIENT_ID||env.PAYPAL_CLIENT_ID||'').trim();
       if(!clientId)return unavailable('PAYPAL_CLIENT_ID_MISSING');
-      return result(200,{environment:'live',checkoutEnabled:true,clientId,currency:'EUR',methods});
+      return result(200,{environment:'live',checkoutEnabled:true,clientId,currency:'EUR',methods,guest:!user});
     }
     if(req.headers.origin!=='https://www.mobialo.eu')return fail(403,'INVALID_ORIGIN');
     if(!/^application\/json(?:;|$)/i.test(req.headers['content-type']||''))return fail(415,'JSON_REQUIRED');
@@ -80,18 +86,25 @@ export async function hostedCheckout(action,req,{
     }
     if(!body||Array.isArray(body)||typeof body!=='object')return fail(400,'INVALID_REQUEST');
     if(Buffer.byteLength(JSON.stringify(body))>4096)return fail(413,'BODY_TOO_LARGE');
-    // Default pricing may differ from the owner's: never charge while the settings are unreadable.
-    if(action==='create'&&loaded?.unavailable===true)return unavailable('SETTINGS_UNAVAILABLE');
-    const deps=await services({paymentOnly:true});
     if(action==='create'){
+      // Default pricing may differ from the owner's: never charge while the settings are unreadable.
+      if(loaded?.unavailable===true)return unavailable('SETTINGS_UNAVAILABLE');
       if(typeof body.productId!=='string'||body.productId.length>200)return fail(400,'INVALID_PRODUCT');
-      // Without a typed address the eSIM goes to the verified account email.
-      const email=typeof body.email==='string'&&body.email.trim()?body.email:auth.user.email;
-      return result(200,await create({productId:body.productId,email,language:body.language,userId:auth.user.id},deps));
+      if(body.consent!==true)return fail(400,'CONSENT_REQUIRED');
+      // Guests have no per-account limit; theirs are checked before any payment service is used.
+      const ipHash=user?undefined:clientIpHash(req.headers,env.SUPABASE_SERVICE_ROLE_KEY);
+      if(!user)await limits(ipHash,env);
+      const deps=await services({paymentOnly:true});
+      // Without a typed address the eSIM goes to the verified account email; guests must type one.
+      const email=typeof body.email==='string'&&body.email.trim()?body.email:user?.email;
+      return result(200,await create({productId:body.productId,email,language:body.language,userId:user?.id,clientIpHash:ipHash,termsVersion:TERMS_VERSION},deps));
     }
     if(action!=='capture'||!/^[a-f0-9-]{36}$/i.test(body.state||'')||typeof body.token!=='string'||body.token.length>100)return fail(400,'INVALID_ORDER');
+    const deps=await services({paymentOnly:true});
     const order=await deps.store.get(body.state);
-    if(!order||order.user_id!==auth.user.id)return fail(403,'ORDER_ACCESS_DENIED');
+    if(order?.user_id&&!user)return fail(auth.status,'SIGN_IN_REQUIRED');
+    // An order without an owner is bound to its capability alone: the random state ID plus its PayPal order ID.
+    if(!order||(order.user_id?order.user_id!==user.id:order.paypal_order_id!==body.token))return fail(403,'ORDER_ACCESS_DENIED');
     const captured=await capture(body.state,body.token,deps,{deferDelivery:true});
     // Customers are told the payment is held; PayPal's reason describes the merchant account.
     if(!trusted&&captured?.status==='PENDING')captured.reason=null;

@@ -90,6 +90,18 @@ test('ambiguous reservation and email outcomes require review without external r
   assert.equal((await recoverDeliveries(f.services)).review,1);
 });
 
+test('paid orders refunded, reversed, denied or disputed before the purchase go to review without provider calls',async()=>{
+  for(const payment_status of ['refunded','partially_refunded','reversed','denied','disputed']){
+    const f=fixture({state:'paid',paypal_capture_id:'capture',payment_status});
+    f.services.paypal=()=>assert.fail('No PayPal read is needed');
+    const result=await recoverDeliveries(f.services);
+    assert.equal(f.row().state,'review');
+    assert.deepEqual([result.sent,result.failed],[0,0]);
+    assert.deepEqual(f.calls,[]);
+    assert.equal((await recoverDeliveries(f.services)).review,1);
+  }
+});
+
 test('concurrent workers cannot purchase or send twice',async()=>{
   const f=fixture();
   await Promise.all([recoverDeliveries(f.services),recoverDeliveries(f.services)]);
@@ -143,7 +155,8 @@ test('recovery queries take paid work oldest first and poll unpaid checkouts for
   assert.equal(await services.store.reviewCount(),2);
   const [work,workNext,payment,paymentNext,review]=urls.map(url=>new URL(url).searchParams);
   const cursor=compare=>`or(created_at.${compare}."2026-10-22T11:00:00.123456+00:00",and(created_at.eq."2026-10-22T11:00:00.123456+00:00",id.${compare}.0b7c))`;
-  const recent='or(paypal_capture_id.not.is.null,created_at.gte."2026-10-22T06:00:00.000Z")';
+  // Denied, refunded or disputed checkouts drop out of polling.
+  const recent='or(paypal_capture_id.not.is.null,created_at.gte."2026-10-22T06:00:00.000Z"),or(payment_status.is.null,payment_status.eq.pending)';
   assert.equal(work.get('state'),'in.(paid,reserved,completing,ready)');assert.equal(work.get('order'),'created_at.asc,id.asc');assert.equal(work.get('and'),null);
   assert.equal(workNext.get('and'),'('+cursor('gt')+')');
   assert.equal(payment.get('state'),'eq.awaiting_payment');assert.equal(payment.get('order'),'created_at.desc,id.desc');

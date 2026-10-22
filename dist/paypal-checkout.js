@@ -19,6 +19,10 @@ function preparePayPalDialog(container){
   backdrop.className='paypal-dialog-backdrop';
   backdrop.setAttribute('aria-hidden','true');
   document.body.append(backdrop);
+  // Without a native modal the page behind would take keyboard focus. PayPal's overlays are added
+  // to body later, so they are never in this list.
+  const outside=[...document.body.children].filter(node=>node!==dialog&&node!==backdrop&&!node.contains(dialog)&&!['SCRIPT','STYLE','IFRAME'].includes(node.tagName));
+  for(const node of outside)node.inert=true;
   const close=()=>dialog.close();
   const escape=event=>{if(event.key==='Escape'&&dialog.contains(event.target)){event.preventDefault();close();}};
   backdrop.addEventListener('click',close);
@@ -26,6 +30,7 @@ function preparePayPalDialog(container){
   const cleanup=()=>{
     if(dialog.open)return; // close event from switching to non-modal mode
     backdrop.remove();
+    for(const node of outside)node.inert=false;
     dialog.classList.remove('paypal-dialog');
     dialog.removeEventListener('keydown',escape);
     dialog.removeEventListener('close',cleanup);
@@ -46,7 +51,7 @@ async function waitForCustomerSession(){
 }
 async function checkoutAuthHeaders(){
   const headers={};
-  await waitForCustomerSession();
+  await waitForCustomerSession();checkoutUserEmail='';
   if(window.mobialoCustomerSession){
     let client;try{client=await window.mobialoCustomerSession;}catch{throw checkoutError('AUTH_UNAVAILABLE');}
     if(client){const {data:{session},error}=await client.auth.getSession();if(error)throw checkoutError('AUTH_UNAVAILABLE');if(session){headers.Authorization='Bearer '+session.access_token;checkoutUserEmail=session.user?.email||'';}}
@@ -108,7 +113,7 @@ function showCheckoutMfa(container,say,onVerified){
   const form=document.createElement('form');
   const label=document.createElement('label');label.textContent=checkoutText('Kodi 2FA','2FA code','Codice 2FA');
   const input=document.createElement('input');input.inputMode='numeric';input.autocomplete='one-time-code';input.pattern='[0-9]{6}';input.maxLength=6;input.required=true;
-  input.style.cssText='display:block;width:100%;padding:12px;margin:8px 0 12px;box-sizing:border-box';
+  input.style.cssText='display:block;width:100%;padding:12px;margin:8px 0 12px;box-sizing:border-box;font-size:16px';
   const submit=document.createElement('button');submit.type='submit';submit.className='button';submit.textContent=checkoutText('Verifiko','Verify','Verifica');
   label.append(input);form.append(label,submit);checkoutExtra(container,form);input.focus();
   form.addEventListener('submit',async event=>{
@@ -140,13 +145,17 @@ function createFailureText(error){
   if(code==='INVALID_ORIGIN')return checkoutText('Pagesa funksionon vetëm te https://www.mobialo.eu. Hap faqen atje dhe provo përsëri.','Payments only work on https://www.mobialo.eu. Open the site there and try again.','I pagamenti funzionano solo su https://www.mobialo.eu. Apri il sito lì e riprova.');
   if(code==='INVALID_PRODUCT')return checkoutText('Kjo paketë nuk është e disponueshme për blerje.','This plan is not available for purchase.','Questo piano non è disponibile per acquisto.');
   if(code==='EMAIL_REQUIRED')return checkoutText('Plotëso një email të vlefshëm përpara pagesës.','Enter a valid email before paying.','Inserisci un indirizzo email valido prima del pagamento.');
-  if(code==='TOO_MANY_OPEN_ORDERS')return checkoutText('Ke shumë porosi të papaguara në orën e fundit. Prit pak dhe provo përsëri.','You have too many unpaid orders in the last hour. Wait a little and try again.','Hai troppi ordini non pagati nell’ultima ora. Attendi un po’ e riprova.');
-  if(['CHECKOUT_CLOSED','ADMIN_ONLY'].includes(code))return checkoutText('Prezantim online. Blerjet do të hapen së shpejti.','Online preview. Purchases will open soon.','Anteprima online. Gli acquisti saranno disponibili prossimamente.');
+  if(code==='CONSENT_REQUIRED')return checkoutText('Për të vazhduar, shëno kutinë e pranimit të Kushteve dhe të dërgimit të menjëhershëm.','To continue, tick the box to accept the Terms and immediate delivery.','Per continuare, spunta la casella di accettazione dei Termini e della consegna immediata.');
+  // Per account, per connection for guests, or all guest orders together: the buyer can only wait.
+  if(code==='TOO_MANY_OPEN_ORDERS')return checkoutText('Ka shumë porosi të papaguara në orën e fundit. Prit pak dhe provo përsëri.','There are too many unpaid orders in the last hour. Wait a little and try again.','Ci sono troppi ordini non pagati nell’ultima ora. Attendi un po’ e riprova.');
+  if(['CHECKOUT_CLOSED','ADMIN_ONLY'].includes(code))return checkoutText('Blerjet janë përkohësisht të padisponueshme. Provo përsëri pas pak minutash.','Purchases are temporarily unavailable. Please try again in a few minutes.','Gli acquisti sono temporaneamente non disponibili. Riprova tra qualche minuto.');
   return checkoutText('Pagesa nuk mund të niste tani. Nuk u tërhoq asnjë pagesë. Provo përsëri pas pak.','Payment could not start right now. No money was taken. Try again shortly.','Il pagamento non è potuto partire. Nessun addebito effettuato. Riprova tra poco.');
 }
 async function mountPayPal(container,productId){
   const message=container.querySelector('[role=status]'),buttons=container.querySelector('.smart-buttons');
   const say=text=>{message.textContent=text;};
+  // The height reserved for the buttons is released when checkout ends with a message instead.
+  const final=text=>{say(text);container.closest('#shop-payment')?.classList.add('is-final');};
   const remount=()=>remountPayPal(container,productId);
   const reference=id=>checkoutText(' Referenca: ',' Reference: ',' Riferimento: ')+id;
   const retryLabel=checkoutText('Provo përsëri','Retry','Riprova');
@@ -162,61 +171,90 @@ async function mountPayPal(container,productId){
   try{
     const selectedProduct=liveProducts.find(p=>p.id===productId);
     if(['esim_addon','esim_replacement'].includes(selectedProduct?.category)){
-      say(checkoutText('Kjo paketë kërkon një eSIM ekzistuese. Blerja online për këtë kategori nuk është aktivizuar ende.','This plan requires an existing eSIM. Online purchase for this category is not enabled yet.','Questo piano richiede una eSIM esistente. L’acquisto online per questa categoria non è ancora attivo.'));
+      final(checkoutText('Kjo paketë kërkon një eSIM ekzistuese. Blerja online për këtë kategori nuk është aktivizuar ende.','This plan requires an existing eSIM. Online purchase for this category is not enabled yet.','Questo piano richiede una eSIM esistente. L’acquisto online per questa categoria non è ancora attivo.'));
       return;
     }
     const config=await checkoutConfig();if(!container.isConnected)return;
     if(config.checkoutEnabled===false){
       if(config.reason)console.info('MOBIALO checkout unavailable',{reason:safeCheckoutCode(config.reason)});
       if(config.signInRequired){showCheckoutSignIn(container,say,config.reason);return;}
-      say(createFailureText({code:'CHECKOUT_CLOSED'}));
+      final(createFailureText({code:'CHECKOUT_CLOSED'}));
       return;
     }
     if(!['sandbox','live'].includes(config.environment))throw checkoutError('CONFIGURATION');
     checkoutEnvironment=config.environment;
     const live=checkoutEnvironment==='live';
-    if(live&&(selectedProduct?.category!=='esim_realtime'||/\btest\b/i.test(selectedProduct.title))){say(createFailureText({code:'INVALID_PRODUCT'}));return;}
+    if(live&&(selectedProduct?.category!=='esim_realtime'||/\btest\b/i.test(selectedProduct.title))){final(createFailureText({code:'INVALID_PRODUCT'}));return;}
     const paypal=await loadPayPalSdk(config);if(!container.isConnected)return;
     preparePayPalDialog(container);
     let order,creating,completed=false,createFailure=null;
-    // Signed-in buyers get the eSIM at their account email; the input is only shown without one.
+    // Signed-in buyers get the eSIM at their account email. Guests (config.guest, also unconfirmed
+    // accounts) type the address; without an account they may sign in instead.
+    const guest=config.guest===true||!checkoutUserEmail;
     const email=document.createElement('input');email.type='email';email.required=true;email.autocomplete='email';email.maxLength=254;email.value=checkoutUserEmail;
+    const policyLink=(href,text)=>{const link=document.createElement('a');link.href=href;link.target='_blank';link.rel='noopener';link.textContent=text;return link;};
     let delivery;
-    if(checkoutUserEmail){
-      delivery=document.createElement('p');delivery.textContent=checkoutText('eSIM-i do të dërgohet te: ','Your eSIM will be sent to: ','La eSIM verrà inviata a: ')+checkoutUserEmail;
+    if(guest){
+      delivery=document.createElement('div');
+      const label=document.createElement('label'),hint=document.createElement('small');
+      label.textContent=checkoutText('Emaili ku do të marrësh eSIM-in','Email to receive your eSIM','Email per ricevere la eSIM');
+      email.style.cssText='display:block;width:100%;padding:12px;margin:8px 0 4px;box-sizing:border-box;font-size:16px';label.append(email);
+      hint.id='checkout-email-hint';hint.style.display='block';email.setAttribute('aria-describedby',hint.id);
+      hint.textContent=checkoutText('Kontrollo me kujdes: kodi QR dërgohet këtu.','Check carefully: the QR code is sent here.','Controlla bene: il codice QR viene inviato qui.');
+      // The privacy notice is reachable where the email is collected (the page footer is behind the dialog).
+      const privacy=document.createElement('small');privacy.style.cssText='display:block;margin-top:4px';
+      privacy.append(checkoutText('Si e përdorim emailin: ','How we use your email: ','Come usiamo la tua email: '),policyLink('/privacy.html',checkoutText('Politika e privatësisë','Privacy policy','Informativa sulla privacy')));
+      delivery.append(label,hint,privacy);
+      if(!checkoutUserEmail){
+        const signIn=document.createElement('a');signIn.href='/sign-in?'+new URLSearchParams({next:location.pathname+location.search});
+        signIn.textContent=checkoutText('Ke llogari? Hyr','Have an account? Sign in','Hai un account? Accedi');
+        const line=document.createElement('p');line.style.cssText='margin:8px 0 0;font-size:14px';line.append(signIn);delivery.append(line);
+      }
     }else{
-      delivery=document.createElement('label');delivery.textContent=checkoutText('Emaili ku do të marrësh eSIM-in','Email to receive your eSIM','Email per ricevere la eSIM');
-      email.style.cssText='display:block;width:100%;padding:12px;margin:8px 0 16px;box-sizing:border-box';delivery.append(email);
+      delivery=document.createElement('p');delivery.textContent=checkoutText('eSIM-i do të dërgohet te: ','Your eSIM will be sent to: ','La eSIM verrà inviata a: ')+checkoutUserEmail;
     }
-    container.prepend(delivery);
+    // Required before PayPal opens; the server refuses orders without it (CONSENT_REQUIRED).
+    const consent=document.createElement('input');consent.type='checkbox';consent.required=true;
+    consent.style.cssText='width:20px;height:20px;margin:2px 0 0;flex:none';
+    const consentLabel=document.createElement('label');consentLabel.style.cssText='display:flex;gap:10px;align-items:flex-start;margin:16px 0;line-height:1.45';
+    const words=checkoutText(['Pranoj ','Kushtet',' dhe ','Politikën e dërgesës dhe rimbursimit',' dhe kërkoj dërgimin e menjëhershëm të eSIM-it. E kuptoj që pasi eSIM-i dërgohet humbas të drejtën e tërheqjes.'],['I accept the ','Terms',' and the ','Delivery & refund policy',' and request immediate delivery of the eSIM. I understand that I lose my right of withdrawal once the eSIM is delivered.'],['Accetto i ','Termini',' e la ','Politica di consegna e rimborso',' e richiedo la consegna immediata della eSIM. Sono consapevole di perdere il diritto di recesso una volta consegnata la eSIM.']);
+    const consentText=document.createElement('span');consentText.append(words[0],policyLink('/terms.html',words[1]),words[2],policyLink('/delivery-refunds.html',words[3]),words[4]);
+    consentLabel.append(consent,consentText);
+    message.id||=('checkout-status-'+productId).replace(/[^A-Za-z0-9_-]/g,'');consent.setAttribute('aria-describedby',message.id);
+    consent.addEventListener('change',()=>{consent.removeAttribute('aria-invalid');if(consent.checked&&message.textContent===createFailureText({code:'CONSENT_REQUIRED'}))say('');});
+    container.prepend(consentLabel);container.prepend(delivery);
     // Only the payment methods enabled in the admin settings are offered (local sandbox config has no methods field).
     const methods={paypal:config.methods?.paypal!==false,card:config.methods?.card!==false};
     if(live){
       // The payment note has its own element; the plan's KYC and 4G/5G notes stay as they are.
-      const note=document.createElement('p');note.textContent=methods.paypal&&methods.card?checkoutText('Pagesë e sigurt përmes PayPal. Paguaj me PayPal ose fut të dhënat e kartës te "Debit or Credit Card".','Secure payment via PayPal. Pay with PayPal or enter your card under "Debit or Credit Card".','Pagamento sicuro tramite PayPal. Paga con PayPal o inserisci la carta in "Debit or Credit Card".'):methods.card?checkoutText('Pagesë e sigurt përmes PayPal. Fut të dhënat e kartës te "Debit or Credit Card".','Secure payment via PayPal. Enter your card under "Debit or Credit Card".','Pagamento sicuro tramite PayPal. Inserisci la carta in "Debit or Credit Card".'):checkoutText('Pagesë e sigurt përmes PayPal.','Secure payment via PayPal.','Pagamento sicuro tramite PayPal.');delivery.after(note);
+      // The methods are named once, in the status line under the buttons.
+      const note=document.createElement('p');note.textContent=checkoutText('Pagesë e sigurt përmes PayPal.','Secure payment via PayPal.','Pagamento sicuro tramite PayPal.');delivery.after(note);
     }
-    // After a definite refusal the next click starts a new PayPal order.
-    const resetOrder=()=>{order=null;email.disabled=false;checkoutLock=null;};
+    // Email and consent are fixed while an order exists; after a definite refusal the next click starts a new PayPal order.
+    const hold=on=>{email.disabled=on;consent.disabled=on;};
+    const resetOrder=()=>{order=null;hold(false);checkoutLock=null;};
     // Results reach both this mount and the newest one if the dialog was re-rendered meanwhile.
     const announce=text=>{say(text);if(checkoutStatus!==message&&checkoutStatus?.isConnected)checkoutStatus.textContent=text;};
     const lock=(text,options={})=>{checkoutLock={productId,text,final:false,retry:null,...options};announce(text);};
     const create=()=>{
       if(completed)throw Error('Already completed');
       if(!email.reportValidity())throw checkoutError('EMAIL_REQUIRED');
+      if(!consent.checked)throw checkoutError('CONSENT_REQUIRED');
       if(order)return Promise.resolve(order.id);
-      if(!creating){createFailure=null;clearCheckoutExtras(container);email.disabled=true;creating=paypalRequest('create',{productId,smart:true,email:email.value.trim(),language:window.MobialoLocale?.emailLanguage||lang}).then(data=>{order=data;return data.id;}).catch(error=>{email.disabled=false;createFailure=error;throw error;}).finally(()=>{creating=null;});}
+      if(!creating){const address=email.value.trim();createFailure=null;clearCheckoutExtras(container);hold(true);creating=paypalRequest('create',{productId,smart:true,email:address,consent:true,language:window.MobialoLocale?.emailLanguage||lang}).then(data=>{order={...data,email:address};return data.id;}).catch(error=>{hold(false);createFailure=error;throw error;}).finally(()=>{creating=null;});}
       return creating;
     };
     // The same order/capture flow serves the PayPal wallet and the guest "Debit or Credit Card" form.
     const handlers={onClick:(_data,actions)=>{
       if(lockedHere()){say(checkoutLock.text);return actions.reject();}
       if(!email.reportValidity()){say(createFailureText({code:'EMAIL_REQUIRED'}));email.focus();return actions.reject();}
+      if(!consent.checked){say(createFailureText({code:'CONSENT_REQUIRED'}));consent.setAttribute('aria-invalid','true');consent.focus();return actions.reject();}
       say(checkoutText('Po hapet formulari i pagesës…','Opening payment form…','Apertura del modulo di pagamento…'));
       return actions.resolve();
     },createOrder:create,
       onApprove:async (data,actions)=>{
         if(!order||order.id!==data.orderID){say(checkoutText('Porosia PayPal nuk përputhet. Mos paguaj përsëri; kontakto support@mobialo.eu.','PayPal order mismatch. Do not pay again; contact support@mobialo.eu.','Ordine PayPal non corrispondente. Non pagare di nuovo; contatta support@mobialo.eu.'));return;}
-        const target={state:order.state,token:order.id};
+        const target={state:order.state,token:order.id},address=order.email;
         const verifyLater=()=>location.assign('/payment.html?'+new URLSearchParams(target));
         clearCheckoutExtras(container);
         lock(checkoutText('Po verifikohet pagesa… Mos e mbyll faqen dhe mos paguaj përsëri.','Verifying payment… Keep this page open and do not pay again.','Verifica del pagamento… Non chiudere la pagina e non pagare di nuovo.'));
@@ -254,7 +292,7 @@ async function mountPayPal(container,productId){
         }
         completed=true;buttons.hidden=true;
         if(result.status==='PENDING'){lock(pendingPaymentMessage(result,lang),{final:true});return;}
-        if(result.environment==='live'){lock(livePaymentMessage(result,lang),{final:true});return;}
+        if(result.environment==='live'){lock(livePaymentMessage(result,lang,address),{final:true});return;}
         lock(checkoutText(`Pagesa provë ${result.amount} EUR u konfirmua. Nuk u krijua eSIM reale.`,`Test payment of ${result.amount} EUR confirmed. No real eSIM was created.`,`Pagamento di prova di ${result.amount} EUR confermato. Nessuna eSIM reale è stata creata.`),{final:true});
       },
       onCancel:()=>say(checkoutText('Dritarja PayPal u mbyll pa përfunduar pagesën.','PayPal checkout closed without completing payment.','Finestra PayPal chiusa senza completare il pagamento.')+(order?reference(order.id):'')),
@@ -264,7 +302,8 @@ async function mountPayPal(container,productId){
         if(lockedHere())return; // a capture outcome is already shown and must not be overwritten
         if(failure.code==='MFA_REQUIRED'){showCheckoutMfa(container,say,remount);return;}
         if(failure.code==='MFA_SETUP_REQUIRED'){showCheckoutMfaSetup(container,say,remount);return;}
-        if(failure.code==='SIGN_IN_REQUIRED'){showCheckoutSignIn(container,say);return;}
+        // A guest is only asked to sign in when the shop left public mode after the config loaded.
+        if(failure.code==='SIGN_IN_REQUIRED'){if(config.guest===true)say(createFailureText({code:'CHECKOUT_CLOSED'}));else showCheckoutSignIn(container,say);return;}
         if(failure.code==='AUTH_UNAVAILABLE'){say(checkoutText('Lidhja me llogarinë nuk u krye. Rifresko faqen.','Could not reach your account. Reload the page.','Impossibile raggiungere l’account. Ricarica la pagina.'));return;}
         // Without an order no money can have moved; with one, keep the reference for support.
         say((order?checkoutText('PayPal nuk e përfundoi pagesën. Ruaj referencën për kontroll.','PayPal did not complete payment. Keep the reference for support.','PayPal non ha completato il pagamento. Conserva il riferimento.'):createFailureText(failure))+(order?reference(order.id):'')+checkoutCodeSuffix(failure));
@@ -280,8 +319,8 @@ async function mountPayPal(container,productId){
       if(shown){count++;if(fundingSource===paypal.FUNDING.CARD)card=true;else wallet=true;}else slot.remove();
       if(!container.isConnected){instance.close();return;}
     }
-    if(!count){if(failed)throw checkoutError('PAYPAL_RENDER_FAILED');say(checkoutText('Nuk ka mënyrë pagese të disponueshme.','No payment method is available.','Nessun metodo di pagamento disponibile.'));return;}
-    say(card&&wallet?checkoutText('Paguaj me PayPal, ose me kartë te "Debit or Credit Card" pa llogari PayPal.','Pay with PayPal, or by card under "Debit or Credit Card" without a PayPal account.','Paga con PayPal, oppure con carta in "Debit or Credit Card" senza account PayPal.'):card?checkoutText('Paguaj me kartë te "Debit or Credit Card", pa llogari PayPal.','Pay by card under "Debit or Credit Card", without a PayPal account.','Paga con carta in "Debit or Credit Card", senza account PayPal.'):checkoutText('Zgjidh mënyrën e pagesës.','Choose your payment method.','Scegli il metodo di pagamento.'));
+    if(!count){if(failed)throw checkoutError('PAYPAL_RENDER_FAILED');final(checkoutText('Nuk ka mënyrë pagese të disponueshme.','No payment method is available.','Nessun metodo di pagamento disponibile.'));return;}
+    say(card&&wallet?checkoutText('Paguaj me PayPal, ose me kartë te "Debit or Credit Card" zakonisht pa llogari PayPal.','Pay with PayPal, or by card under "Debit or Credit Card" usually without a PayPal account.','Paga con PayPal, oppure con carta in "Debit or Credit Card" di solito senza account PayPal.'):card?checkoutText('Paguaj me kartë te "Debit or Credit Card", zakonisht pa llogari PayPal.','Pay by card under "Debit or Credit Card", usually without a PayPal account.','Paga con carta in "Debit or Credit Card", di solito senza account PayPal.'):checkoutText('Zgjidh mënyrën e pagesës.','Choose your payment method.','Scegli il metodo di pagamento.'));
   }catch(error){
     if(!container.isConnected)return;
     const code=safeCheckoutCode(error?.code||(/^[A-Z][A-Z0-9_]*$/.test(error?.message||'')?error.message:''))||'UNEXPECTED';
@@ -291,7 +330,7 @@ async function mountPayPal(container,productId){
       say(checkoutText('Lidhja me llogarinë nuk u krye. Rifresko faqen.','Could not reach your account. Reload the page.','Impossibile raggiungere l’account. Ricarica la pagina.')+checkoutCodeSuffix({code:'AUTH_UNAVAILABLE'}));
       checkoutAction(container,checkoutText('Rifresko faqen','Reload page','Ricarica la pagina'),()=>location.reload());return;
     }
-    say(checkoutText('Butonat e pagesës nuk u ngarkuan.','Payment buttons could not load.','Impossibile caricare i pulsanti di pagamento.')+checkoutCodeSuffix({...error,code}));
+    final(checkoutText('Butonat e pagesës nuk u ngarkuan.','Payment buttons could not load.','Impossibile caricare i pulsanti di pagamento.')+checkoutCodeSuffix({...error,code}));
     checkoutAction(container,retryLabel,remount);
   }
 }
@@ -303,10 +342,11 @@ renderModal=function(){
   old.replaceWith(container);document.getElementById('paypal-status')?.remove();
   mountPayPal(container,livePlansFor(selectedDestination)[selectedPlan].id);
 };
-function livePaymentMessage(result,language){
-  const sq=language==='sq',it=language==='it';
-  if(result.emailAccepted)return sq?`Pagesa ${result.amount} EUR u konfirmua. Emaili me QR u pranua për dërgim. Kontrollo edhe Spam.`:it?`Pagamento di ${result.amount} EUR confermato. Email con QR accettata per l'invio. Controlla anche lo spam.`:`Payment of ${result.amount} EUR confirmed. Your QR email was accepted for sending. Check spam too.`;
-  return sq?`Pagesa u konfirmua. eSIM-i është në përpunim. Mos paguaj përsëri. Kontakto support@mobialo.eu me referencën ${result.reference}.`:it?`Pagamento confermato. eSIM in elaborazione. Non pagare di nuovo. Contatta support@mobialo.eu con riferimento ${result.reference}.`:`Payment confirmed. Your eSIM is processing. Do not pay again. Contact support@mobialo.eu with reference ${result.reference}.`;
+// The delivery worker (every minute) emails the QR code, the plan details and the installation steps.
+function livePaymentMessage(result,language,email){
+  const sq=language==='sq',it=language==='it',to=sq?email||'adresa email e porosisë':it?(email?'all’indirizzo '+email:'all’indirizzo email dell’ordine'):email||'the email address of your order';
+  if(result.emailAccepted)return sq?`Pagesa ${result.amount} EUR u konfirmua. Emaili me kodin QR të eSIM-it dhe hapat e instalimit u dërgua te ${to}. Kontrollo edhe dosjen Spam. Mos paguaj përsëri. Referenca: ${result.reference}.`:it?`Pagamento di ${result.amount} EUR confermato. L’email con il codice QR della eSIM e i passaggi di installazione è stata inviata ${to}. Controlla anche la cartella Spam. Non pagare di nuovo. Riferimento: ${result.reference}.`:`Payment of ${result.amount} EUR confirmed. The email with your eSIM QR code and installation steps has been sent to ${to}. Check your Spam folder too. Do not pay again. Reference: ${result.reference}.`;
+  return sq?`Pagesa ${result.amount} EUR u konfirmua. Zakonisht brenda pak minutash do të marrësh një email te ${to} me kodin QR të eSIM-it dhe hapat e instalimit. Kontrollo edhe dosjen Spam. Mos paguaj përsëri. Nëse emaili nuk vjen, na shkruaj te support@mobialo.eu me referencën ${result.reference}.`:it?`Pagamento di ${result.amount} EUR confermato. Di solito entro pochi minuti riceverai un’email ${to} con il codice QR della eSIM e i passaggi di installazione. Controlla anche la cartella Spam. Non pagare di nuovo. Se l’email non arriva, scrivi a support@mobialo.eu indicando il riferimento ${result.reference}.`:`Payment of ${result.amount} EUR confirmed. You will usually receive an email at ${to} within a few minutes with your eSIM QR code and installation steps. Check your Spam folder too. Do not pay again. If the email does not arrive, write to support@mobialo.eu quoting reference ${result.reference}.`;
 }
 // PayPal accepted the money but holds it; the order completes automatically once PayPal releases it.
 function pendingPaymentMessage(result,language){

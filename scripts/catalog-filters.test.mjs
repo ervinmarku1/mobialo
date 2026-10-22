@@ -19,3 +19,10 @@ test('sorts use numeric values, place missing allowances last, and do not mutate
  assert.deepEqual(filter(plans).map(p=>p.plan.id),['unknown','small','large']);
  assert.equal(plans[0].id,'small');
 });
+test('on a country page the default order lists its own plans first, so the first plan matches the card price',()=>{
+ const albania=[...plans,{id:'regional',title:'Balkans',price:2,provider:'Other',countries:['AL','XK'],dataAmount:'1',dataUnit:'GB',validityHours:168}];
+ assert.deepEqual(filter(albania,{},'AL').map(p=>p.plan.id),['small','regional','unknown','large']);
+ // An explicit sort, or a region page, keeps the plain order.
+ assert.deepEqual(filter(albania,{sort:'data'},'AL').map(p=>p.plan.id),['large','regional','small','unknown']);
+ assert.deepEqual(filter(albania).map(p=>p.plan.id),['regional','unknown','small','large']);
+});

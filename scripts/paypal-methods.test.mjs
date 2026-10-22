@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 
 const source=await readFile(new URL('../dist/paypal-checkout.js',import.meta.url),'utf8');
-const node=()=>({style:{},append(){},prepend(){},after(){},remove(){this.removed=true;},setAttribute(){},reportValidity:()=>true});
+const node=()=>({style:{},append(){},prepend(){},after(){},remove(){this.removed=true;},setAttribute(){},removeAttribute(){},addEventListener(){},reportValidity:()=>true});
 
 // Mounts the checkout against a fake PayPal SDK and returns which buttons were rendered.
 async function mount(config,eligible=['paypal','card'],failing=[],notes=[]){
@@ -117,4 +117,172 @@ test('failure codes are shown on their own short line in the shopper language',(
   assert.equal(context.checkoutCodeSuffix({code:'HTTP_503',reason:'busy'}),'\nCodice: HTTP_503:busy');
   assert.equal(context.checkoutCodeSuffix({}),'');
   assert.doesNotMatch(source,/shop’s PayPal account|llogarisë PayPal të dyqanit|account PayPal del negozio/);
+});
+
+// A small DOM, PayPal SDK and API: returns the rendered checkout, its handlers and the requests made.
+const textOf=node=>typeof node==='string'?node:(node.textContent||'')+(node.children||[]).map(textOf).join('');
+const nodesOf=node=>typeof node==='string'?[]:[node,...(node.children||[]).flatMap(nodesOf)];
+function element(tag){
+  return {tag,children:[],style:{},attributes:{},append(...nodes){this.children.push(...nodes);},prepend(...nodes){this.children.unshift(...nodes);},after(node){this.next=node;},
+    setAttribute(name,value){this.attributes[name]=value;},removeAttribute(name){delete this.attributes[name];},remove(){this.removed=true;},focus(){this.focused=true;},
+    addEventListener(type,listener){(this.listeners||={})[type]=listener;},
+    reportValidity(){return this.disabled||this.type!=='email'||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.value);}};
+}
+async function checkout(config,{session=null,language='en',responses={}}={}){
+  const handlers=[],requests=[],status={textContent:''},buttons={append(){},hidden:false};
+  const paypal={FUNDING:{PAYPAL:'paypal',CARD:'card'},Buttons(options){handlers.push(options);return {isEligible:()=>true,render:async()=>{},close(){}};}};
+  const client=session&&{auth:{getSession:async()=>({data:{session},error:null})}};
+  const context=vm.createContext({
+    renderModal(){},lang:language,liveProducts:[{id:'plan',category:'esim_realtime',title:'Albania 5 GB'}],console:{...console,warn(){},info(){}},location:{pathname:'/',search:'?plan=plan',assign(){}},
+    window:{paypal,MobialoLocale:{emailLanguage:language},...(client?{mobialoCustomerSession:Promise.resolve(client)}:{})},URLSearchParams,
+    fetch:async(path,options)=>{
+      // Copied out of the script's realm so deepEqual compares plain objects.
+      requests.push(JSON.parse(JSON.stringify({path,headers:options.headers,...(options.body?{body:JSON.parse(options.body)}:{})})));
+      const [ok,body]=path==='/api/paypal/config'?[true,config]:responses[path]||[false,{error:'UNEXPECTED'}];
+      return {ok,status:ok?200:400,json:async()=>body};
+    },
+    document:{readyState:'complete',createElement:element,querySelectorAll:()=>[],head:element('head'),body:element('body')}
+  });
+  vm.runInContext(source,context);
+  const container={...element('section'),isConnected:true,closest:()=>null,querySelectorAll:()=>[],querySelector:selector=>selector==='[role=status]'?status:buttons};
+  await context.mountPayPal(container,'plan');
+  const nodes=nodesOf(container);
+  return {context,handlers:handlers[0],requests,status,nodes,text:textOf(container),
+    email:nodes.find(node=>node.type==='email'),consent:nodes.find(node=>node.type==='checkbox'),links:nodes.filter(node=>node.tag==='a')};
+}
+const live={environment:'live',checkoutEnabled:true,clientId:'client',currency:'EUR',methods:{paypal:true,card:true}};
+const actions={reject:()=>'rejected',resolve:()=>'resolved',restart:async()=>'restarted'};
+const state='12345678-1234-1234-1234-123456789abc';
+const closedText={en:'Purchases are temporarily unavailable. Please try again in a few minutes.',sq:'Blerjet janë përkohësisht të padisponueshme. Provo përsëri pas pak minutash.',it:'Gli acquisti sono temporaneamente non disponibili. Riprova tra qualche minuto.'};
+const consentText={
+  en:'I accept the Terms and the Delivery & refund policy and request immediate delivery of the eSIM. I understand that I lose my right of withdrawal once the eSIM is delivered.',
+  sq:'Pranoj Kushtet dhe Politikën e dërgesës dhe rimbursimit dhe kërkoj dërgimin e menjëhershëm të eSIM-it. E kuptoj që pasi eSIM-i dërgohet humbas të drejtën e tërheqjes.',
+  it:'Accetto i Termini e la Politica di consegna e rimborso e richiedo la consegna immediata della eSIM. Sono consapevole di perdere il diritto di recesso una volta consegnata la eSIM.'
+};
+
+test('guests type the delivery email (16px, autocomplete) with a check-carefully hint and an optional sign-in link',async()=>{
+  const view=await checkout({...live,guest:true});
+  assert.equal(view.email.autocomplete,'email');assert.equal(view.email.required,true);assert.equal(view.email.value,'');
+  assert.match(view.email.style.cssText,/font-size:16px/);
+  const hint=view.nodes.find(node=>node.id&&node.id===view.email.attributes['aria-describedby']);
+  assert.equal(hint.textContent,'Check carefully: the QR code is sent here.');
+  // The privacy policy is linked (new tab) where the email is collected, in every language.
+  for(const [language,words] of Object.entries({en:['How we use your email: ','Privacy policy'],sq:['Si e përdorim emailin: ','Politika e privatësisë'],it:['Come usiamo la tua email: ','Informativa sulla privacy']})){
+    const guest=language==='en'?view:await checkout({...live,guest:true},{language});
+    const privacy=guest.links.find(link=>link.href==='/privacy.html');
+    assert.deepEqual([privacy.target,privacy.rel,privacy.textContent],['_blank','noopener',words[1]],language);
+    assert.equal(textOf(guest.nodes.find(node=>node.children.includes(privacy))),words.join(''),language);
+  }
+  assert.match(view.text,/Email to receive your eSIM/);assert.doesNotMatch(view.text,/will be sent to/);
+  // PayPal decides whether guest card checkout is offered, so the note does not promise it.
+  assert.equal(view.status.textContent,'Pay with PayPal, or by card under "Debit or Credit Card" usually without a PayPal account.');
+  const signIn=view.links.find(link=>link.textContent==='Have an account? Sign in');
+  assert.equal(signIn.href,'/sign-in?next=%2F%3Fplan%3Dplan');
+  assert.equal(view.requests[0].headers.Authorization,undefined);
+  // An unconfirmed account also buys as a guest: its address is prefilled and editable, without a sign-in link.
+  const unconfirmed=await checkout({...live,guest:true},{session:{access_token:'token',user:{email:'new@example.com'}}});
+  assert.equal(unconfirmed.email.value,'new@example.com');assert.equal(unconfirmed.links.some(link=>link.href.startsWith('/sign-in')),false);
+  assert.equal(unconfirmed.requests[0].headers.Authorization,'Bearer token');
+});
+
+test('signed-in buyers keep the read-only delivery line; everyone gets the consent checkbox with policy links',async()=>{
+  for(const language of ['en','sq','it']){
+    const view=await checkout({...live,guest:false},{language,session:{access_token:'token',user:{email:'buyer@example.com'}}});
+    assert.equal(view.email,undefined);assert.equal(view.links.some(link=>link.href.startsWith('/sign-in')),false);
+    assert.equal(textOf(view.nodes.find(node=>node.tag==='p')),{en:'Your eSIM will be sent to: ',sq:'eSIM-i do të dërgohet te: ',it:'La eSIM verrà inviata a: '}[language]+'buyer@example.com');
+    const label=view.nodes.find(node=>node.tag==='label'&&node.children.includes(view.consent));
+    assert.equal(textOf(label),consentText[language]);assert.equal(view.consent.required,true);assert.equal(view.consent.checked,undefined);
+    const [terms,policy]=label.children[1].children.filter(node=>node.tag==='a');
+    assert.deepEqual([terms.href,terms.target,terms.rel],['/terms.html','_blank','noopener']);
+    assert.deepEqual([policy.href,policy.target,policy.rel],['/delivery-refunds.html','_blank','noopener']);
+    assert.deepEqual([terms.textContent,policy.textContent],{en:['Terms','Delivery & refund policy'],sq:['Kushtet','Politikën e dërgesës dhe rimbursimit'],it:['Termini','Politica di consegna e rimborso']}[language]);
+  }
+});
+
+test('PayPal does not open until the consent box is ticked, and the order is created with consent and the typed email',async()=>{
+  const view=await checkout({...live,guest:true},{responses:{
+    '/api/paypal/create':[true,{id:'remote',state,environment:'live'}],
+    '/api/paypal/capture':[true,{status:'COMPLETED',environment:'live',amount:'4.19',currency:'EUR',deliveryState:'paid',emailAccepted:false,reference:'remote'}]
+  }});
+  view.email.value='guest@example.com';
+  assert.equal(view.handlers.onClick({},actions),'rejected');
+  assert.equal(view.status.textContent,'To continue, tick the box to accept the Terms and immediate delivery.');assert.equal(view.consent.focused,true);
+  assert.throws(()=>view.handlers.createOrder(),error=>error.code==='CONSENT_REQUIRED');
+  assert.equal(view.requests.length,1);
+  // The error belongs to the checkbox and disappears once the box is ticked.
+  assert.equal(view.consent.attributes['aria-invalid'],'true');assert.equal(view.consent.attributes['aria-describedby'],view.status.id);assert.ok(view.status.id);
+  view.consent.checked=true;view.consent.listeners.change();
+  assert.equal(view.consent.attributes['aria-invalid'],undefined);assert.equal(view.status.textContent,'');
+  assert.equal(view.handlers.onClick({},actions),'resolved');
+  assert.equal(await view.handlers.createOrder(),'remote');
+  assert.deepEqual(view.requests[1],{path:'/api/paypal/create',headers:{'Content-Type':'application/json'},body:{productId:'plan',smart:true,email:'guest@example.com',consent:true,language:'en'}});
+  assert.equal(view.email.disabled,true);assert.equal(view.consent.disabled,true);
+  // A guest capture sends no Authorization header; the success text names the address and what arrives there.
+  await view.handlers.onApprove({orderID:'remote'},actions);
+  assert.deepEqual(view.requests[2],{path:'/api/paypal/capture',headers:{'Content-Type':'application/json'},body:{state,token:'remote'}});
+  assert.equal(view.status.textContent,'Payment of 4.19 EUR confirmed. You will usually receive an email at guest@example.com within a few minutes with your eSIM QR code and installation steps. Check your Spam folder too. Do not pay again. If the email does not arrive, write to support@mobialo.eu quoting reference remote.');
+});
+
+test('closed, admin-only and stalled checkouts show the temporary-unavailability text',async()=>{
+  for(const language of ['en','sq','it']){
+    for(const config of [{environment:'preview',checkoutEnabled:false},{environment:'preview',checkoutEnabled:false,reason:'ADMIN_ONLY'}]){
+      const view=await checkout(config,{language});
+      assert.equal(view.status.textContent,closedText[language]);assert.equal(view.handlers,undefined);
+    }
+    const context=vm.createContext({renderModal(){},lang:language});vm.runInContext(source,context);
+    for(const code of ['CHECKOUT_CLOSED','ADMIN_ONLY'])assert.equal(context.createFailureText({code}),closedText[language]);
+  }
+  assert.doesNotMatch(source,/Online preview|Prezantim online|Anteprima online/);
+});
+
+test('consent and order-limit refusals are explained, and a guest asked to sign in sees the closed text',async()=>{
+  for(const [code,text] of [['CONSENT_REQUIRED','To continue, tick the box to accept the Terms and immediate delivery.'],['TOO_MANY_OPEN_ORDERS','There are too many unpaid orders in the last hour. Wait a little and try again.'],['SIGN_IN_REQUIRED',closedText.en]]){
+    const view=await checkout({...live,guest:true},{responses:{'/api/paypal/create':[false,{error:code}]}});
+    view.email.value='guest@example.com';view.consent.checked=true;
+    await assert.rejects(view.handlers.createOrder());
+    view.handlers.onError(Object.assign(Error('x'),{code}));
+    assert.equal(view.status.textContent.split('\n')[0],text);
+    assert.equal(view.email.disabled,false);assert.equal(view.consent.disabled,false);
+  }
+});
+
+test('the success text promises only what the delivery email contains, in every language',()=>{
+  const context=vm.createContext({renderModal(){}});vm.runInContext(source,context);
+  const result={status:'COMPLETED',environment:'live',amount:'4.19',emailAccepted:false,reference:'5O190127TN364715T'};
+  for(const [language,words] of Object.entries({en:['QR code','installation steps','Spam','Do not pay again'],sq:['kodin QR','hapat e instalimit','Spam','Mos paguaj përsëri'],it:['codice QR','passaggi di installazione','Spam','Non pagare di nuovo']})){
+    for(const emailAccepted of [false,true]){
+      const text=context.livePaymentMessage({...result,emailAccepted},language,'buyer@example.com');
+      for(const word of [...words,'buyer@example.com','4.19 EUR','5O190127TN364715T'])assert.ok(text.includes(word),language+': '+word);
+    }
+    assert.doesNotMatch(context.livePaymentMessage(result,language,''),/undefined|null/);
+    // The delivery time is an estimate, not a promise.
+    assert.match(context.livePaymentMessage(result,language,'buyer@example.com'),{en:/You will usually receive an email at buyer@example\.com within a few minutes/,sq:/Zakonisht brenda pak minutash/,it:/Di solito entro pochi minuti/}[language]);
+  }
+});
+
+// payment.html imports customer-session.js before payment.js, so the session promise already exists.
+async function paymentPage(session,body){
+  const status={textContent:'',style:{}},retry={hidden:true,addEventListener(){}},requests=[];
+  const code=(await readFile(new URL('../dist/payment.js',import.meta.url),'utf8')).replace("import './customer-session.js';",'');
+  vm.runInContext(code,vm.createContext({
+    window:{MobialoLocale:{ready:Promise.resolve('en')},mobialoCustomerSession:session},URLSearchParams,
+    location:{search:'?state='+state+'&token=remote',pathname:'/payment.html'},history:{replaceState(){}},
+    document:{getElementById:id=>id==='payment-status'?status:retry},
+    fetch:async(path,options)=>{requests.push(JSON.parse(JSON.stringify({path,headers:options.headers,body:JSON.parse(options.body)})));return {ok:true,status:200,json:async()=>body};}
+  }));
+  for(let i=0;i<50&&(!status.textContent||status.textContent.startsWith('Verifying'));i++)await new Promise(resolve=>setTimeout(resolve,0));
+  return {status:status.textContent,requests};
+}
+test('the payment page verifies a guest order without a session and shows the delivery-email copy',async()=>{
+  const unavailable=Promise.reject(Error('AUTH_UNAVAILABLE'));unavailable.catch(()=>{});
+  const body={status:'COMPLETED',environment:'live',amount:'4.19',currency:'EUR',emailAccepted:false,reference:'remote'};
+  for(const session of [Promise.resolve(null),unavailable,Promise.resolve({auth:{getSession:async()=>({data:{session:null},error:null})}})]){
+    const page=await paymentPage(session,body);
+    assert.deepEqual(page.requests,[{path:'/api/paypal/capture',headers:{'Content-Type':'application/json'},body:{state,token:'remote'}}]);
+    assert.equal(page.status,'Payment of 4.19 EUR confirmed. You will usually receive an email at the email address of your order within a few minutes with your eSIM QR code and installation steps. Check your Spam folder too. Do not pay again. If the email does not arrive, write to support@mobialo.eu quoting the reference. Reference: remote');
+  }
+  // A signed-in owner's session is still sent.
+  const page=await paymentPage(Promise.resolve({auth:{getSession:async()=>({data:{session:{access_token:'token'}},error:null})}}),body);
+  assert.equal(page.requests[0].headers.Authorization,'Bearer token');
+  assert.doesNotMatch(await readFile(new URL('../dist/payment.js',import.meta.url),'utf8'),/waitForCustomerSession/);
 });
