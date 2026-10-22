@@ -35,13 +35,18 @@ function preparePayPalDialog(container){
 const checkoutText=(sq,en,it)=>lang==='sq'?sq:lang==='it'?it:en;
 const safeCheckoutCode=value=>String(value||'').replace(/[^A-Za-z0-9_:-]/g,'').slice(0,80);
 function checkoutError(code,details={}){const error=Error(code);error.code=code;return Object.assign(error,details);}
-// Server codes are shown so a failed payment can be diagnosed without DevTools.
+// Server codes are shown on their own line so support can diagnose a failed payment without DevTools.
 function checkoutCodeSuffix(error){
   const code=safeCheckoutCode(error?.code),reason=safeCheckoutCode(error?.reason),issues=(error?.issues||[]).map(safeCheckoutCode).filter(Boolean).filter(issue=>issue!==code);
-  return code?' ['+[code+(reason?':'+reason:''),...issues].join(', ')+']':'';
+  return code?'\n'+checkoutText('Kodi: ','Code: ','Codice: ')+[code+(reason?':'+reason:''),...issues].join(', '):'';
+}
+// customer-session.js loads asynchronously; give it up to 3 s before treating the visitor as signed out.
+async function waitForCustomerSession(){
+  for(let waited=0;window.mobialoCustomerSession===undefined&&document.readyState!=='complete'&&waited<3000;waited+=50)await new Promise(resolve=>setTimeout(resolve,50));
 }
 async function checkoutAuthHeaders(){
   const headers={};
+  await waitForCustomerSession();
   if(window.mobialoCustomerSession){
     let client;try{client=await window.mobialoCustomerSession;}catch{throw checkoutError('AUTH_UNAVAILABLE');}
     if(client){const {data:{session},error}=await client.auth.getSession();if(error)throw checkoutError('AUTH_UNAVAILABLE');if(session){headers.Authorization='Bearer '+session.access_token;checkoutUserEmail=session.user?.email||'';}}
@@ -75,7 +80,7 @@ async function paypalRequest(path,body){
 }
 function paypalContainer(){
   const container=document.createElement('section');
-  container.innerHTML='<div class="smart-buttons"></div><p role="status" aria-live="polite"></p>';
+  container.innerHTML='<div class="smart-buttons"></div><p role="status" aria-live="polite" style="white-space:pre-line"></p>';
   return container;
 }
 function remountPayPal(container,productId){
@@ -111,7 +116,7 @@ function showCheckoutMfa(container,say,onVerified){
     const code=input.value.trim();if(!/^\d{6}$/.test(code)){input.focus();return;}
     submit.disabled=true;
     try{
-      const client=await window.mobialoCustomerSession;if(!client)throw checkoutError('SIGN_IN_REQUIRED');
+      await waitForCustomerSession();const client=await window.mobialoCustomerSession;if(!client)throw checkoutError('SIGN_IN_REQUIRED');
       const {data,error}=await client.auth.mfa.listFactors();if(error)throw error;
       const factor=data.totp.find(f=>f.status==='verified');if(!factor)throw checkoutError('MFA_SETUP_REQUIRED');
       const verified=await client.auth.mfa.challengeAndVerify({factorId:factor.id,code});if(verified.error)throw verified.error;
@@ -187,8 +192,8 @@ async function mountPayPal(container,productId){
     // Only the payment methods enabled in the admin settings are offered (local sandbox config has no methods field).
     const methods={paypal:config.methods?.paypal!==false,card:config.methods?.card!==false};
     if(live){
-      const note=document.createElement('p');note.textContent=methods.paypal&&methods.card?checkoutText('Pagesë reale. Paguaj me PayPal ose fut të dhënat e kartës te "Debit or Credit Card".','Real payment. Pay with PayPal or enter your card under "Debit or Credit Card".','Pagamento reale. Paga con PayPal o inserisci la carta in "Debit or Credit Card".'):methods.card?checkoutText('Pagesë reale. Fut të dhënat e kartës te "Debit or Credit Card".','Real payment. Enter your card under "Debit or Credit Card".','Pagamento reale. Inserisci la carta in "Debit or Credit Card".'):checkoutText('Pagesë reale. Paguaj me PayPal.','Real payment. Pay with PayPal.','Pagamento reale. Paga con PayPal.');delivery.after(note);
-      document.querySelectorAll('#modal-content .modal-note').forEach(n=>n.textContent=note.textContent);
+      // The payment note has its own element; the plan's KYC and 4G/5G notes stay as they are.
+      const note=document.createElement('p');note.textContent=methods.paypal&&methods.card?checkoutText('Pagesë e sigurt përmes PayPal. Paguaj me PayPal ose fut të dhënat e kartës te "Debit or Credit Card".','Secure payment via PayPal. Pay with PayPal or enter your card under "Debit or Credit Card".','Pagamento sicuro tramite PayPal. Paga con PayPal o inserisci la carta in "Debit or Credit Card".'):methods.card?checkoutText('Pagesë e sigurt përmes PayPal. Fut të dhënat e kartës te "Debit or Credit Card".','Secure payment via PayPal. Enter your card under "Debit or Credit Card".','Pagamento sicuro tramite PayPal. Inserisci la carta in "Debit or Credit Card".'):checkoutText('Pagesë e sigurt përmes PayPal.','Secure payment via PayPal.','Pagamento sicuro tramite PayPal.');delivery.after(note);
     }
     // After a definite refusal the next click starts a new PayPal order.
     const resetOrder=()=>{order=null;email.disabled=false;checkoutLock=null;};
@@ -225,7 +230,7 @@ async function mountPayPal(container,productId){
           }
           if(error.code==='PAYMENT_REFUSED'){
             resetOrder();
-            announce(checkoutText('PayPal e refuzoi këtë pagesë. Nuk u tërhoq asnjë pagesë. Provo me një llogari ose mënyrë tjetër pagese.','PayPal refused this payment. No money was taken. Try another PayPal account or payment method.','PayPal ha rifiutato questo pagamento. Nessun addebito. Prova con un altro account o metodo di pagamento.')+checkoutCodeSuffix(error)+reference(target.token));
+            announce(checkoutText('PayPal e refuzoi këtë pagesë. Nuk u tërhoq asnjë pagesë. Provo me një llogari ose mënyrë tjetër pagese.','PayPal refused this payment. No money was taken. Try another PayPal account or payment method.','PayPal ha rifiutato questo pagamento. Nessun addebito. Prova con un altro account o metodo di pagamento.')+reference(target.token)+checkoutCodeSuffix(error));
             return;
           }
           if(error.code==='PAYMENT_APPROVAL_REQUIRED'){
@@ -235,7 +240,7 @@ async function mountPayPal(container,productId){
           }
           if(error.code==='MERCHANT_REFUSED'||error.code==='PAYPAL_COMPLIANCE_VIOLATION'){
             buttons.hidden=true;
-            lock(checkoutText('Pagesa nuk mund të pranohet tani për shkak të llogarisë PayPal të dyqanit. Nuk u tërhoq asnjë pagesë. Na shkruaj te support@mobialo.eu.','This payment cannot be accepted right now because of the shop’s PayPal account. No money was taken. Contact support@mobialo.eu.','Il pagamento non può essere accettato ora a causa dell’account PayPal del negozio. Nessun addebito. Contatta support@mobialo.eu.')+checkoutCodeSuffix(error)+reference(target.token),{final:true});
+            lock(checkoutText('Nuk mund ta pranojmë këtë pagesë tani. Nuk u tërhoq asnjë pagesë. Na shkruaj te support@mobialo.eu dhe përmend referencën.','We can’t accept this payment right now. You have not been charged. Please contact support@mobialo.eu and quote the reference.','Non possiamo accettare questo pagamento in questo momento. Nessun addebito. Contatta support@mobialo.eu indicando il riferimento.')+reference(target.token)+checkoutCodeSuffix(error),{final:true});
             return;
           }
           if(error.code==='MFA_REQUIRED'){
@@ -243,7 +248,7 @@ async function mountPayPal(container,productId){
             showCheckoutMfa(container,say,verifyLater);return;
           }
           // Unknown outcome: the money may have been taken, so never offer a new order here.
-          lock(checkoutText('Pagesa nuk u verifikua. Mos paguaj përsëri; riprovo verifikimin.','Payment not verified. Do not pay again; retry verification.','Pagamento non verificato. Non pagare di nuovo; riprova la verifica.')+checkoutCodeSuffix(error)+reference(target.token),{retry:verifyLater});
+          lock(checkoutText('Pagesa nuk u verifikua. Mos paguaj përsëri; riprovo verifikimin.','Payment not verified. Do not pay again; retry verification.','Pagamento non verificato. Non pagare di nuovo; riprova la verifica.')+reference(target.token)+checkoutCodeSuffix(error),{retry:verifyLater});
           if(container.isConnected)checkoutAction(container,checkoutText('Riprovo verifikimin','Retry verification','Riprova la verifica'),verifyLater);
           return;
         }
@@ -262,7 +267,7 @@ async function mountPayPal(container,productId){
         if(failure.code==='SIGN_IN_REQUIRED'){showCheckoutSignIn(container,say);return;}
         if(failure.code==='AUTH_UNAVAILABLE'){say(checkoutText('Lidhja me llogarinë nuk u krye. Rifresko faqen.','Could not reach your account. Reload the page.','Impossibile raggiungere l’account. Ricarica la pagina.'));return;}
         // Without an order no money can have moved; with one, keep the reference for support.
-        say((order?checkoutText('PayPal nuk e përfundoi pagesën. Ruaj referencën për kontroll.','PayPal did not complete payment. Keep the reference for support.','PayPal non ha completato il pagamento. Conserva il riferimento.'):createFailureText(failure))+checkoutCodeSuffix(failure)+(order?reference(order.id):''));
+        say((order?checkoutText('PayPal nuk e përfundoi pagesën. Ruaj referencën për kontroll.','PayPal did not complete payment. Keep the reference for support.','PayPal non ha completato il pagamento. Conserva il riferimento.'):createFailureText(failure))+(order?reference(order.id):'')+checkoutCodeSuffix(failure));
       }
     };
     // A button that fails to render is dropped; the others still show and the text follows what rendered.
@@ -283,7 +288,7 @@ async function mountPayPal(container,productId){
     if(code==='MFA_REQUIRED'){showCheckoutMfa(container,say,remount);return;}
     if(code==='MFA_SETUP_REQUIRED'){showCheckoutMfaSetup(container,say,remount);return;}
     if(code==='AUTH_UNAVAILABLE'){
-      say(checkoutText('Lidhja me llogarinë nuk u krye. Rifresko faqen.','Could not reach your account. Reload the page.','Impossibile raggiungere l’account. Ricarica la pagina.')+' [AUTH_UNAVAILABLE]');
+      say(checkoutText('Lidhja me llogarinë nuk u krye. Rifresko faqen.','Could not reach your account. Reload the page.','Impossibile raggiungere l’account. Ricarica la pagina.')+checkoutCodeSuffix({code:'AUTH_UNAVAILABLE'}));
       checkoutAction(container,checkoutText('Rifresko faqen','Reload page','Ricarica la pagina'),()=>location.reload());return;
     }
     say(checkoutText('Butonat e pagesës nuk u ngarkuan.','Payment buttons could not load.','Impossibile caricare i pulsanti di pagamento.')+checkoutCodeSuffix({...error,code}));

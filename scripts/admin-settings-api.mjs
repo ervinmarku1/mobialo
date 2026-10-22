@@ -45,6 +45,7 @@ function workerView(worker,now){
  if(!worker)return {at:null,ok:null,fresh:false};
  const view={at:worker.at,ok:worker.ok,fresh:workerFresh(worker,now)};
  for(const name of ['checked','sent','waiting','review','failed','deliveryFailed'])if(Number.isFinite(worker[name]))view[name]=worker[name];
+ if(typeof worker.truncated==='boolean')view.truncated=worker.truncated;
  // The sweep reports whether it can email QR codes, who runs it and, on failure, a safe error code and stage.
  if(typeof worker.email==='boolean')view.email=worker.email;
  if(typeof worker.code==='string'&&/^[A-Z][A-Z0-9_:]{0,80}$/.test(worker.code))view.code=worker.code;

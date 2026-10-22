@@ -88,6 +88,17 @@ test('preview snapshot prices follow the admin pricing and stay unchanged with t
   const raw=JSON.parse(await readFile(new URL('../dist/catalog-preview.json',import.meta.url),'utf8')).products.filter(p=>p.id===base[0].id)[0];
   assert.equal(base[0].price,priceIncludingProcessing(raw.price));assert.equal(free[0].price,raw.price);assert.equal(doubled[0].price,Math.round(raw.price*200)/100);
 });
+test('successful catalog responses are CDN-cacheable; errors and other methods are not',async()=>{
+  const call=async(method,deps)=>{const headers={};let status;const res={setHeader(name,value){headers[name]=value;},status(code){status=code;return this;},json(){}};await catalogHandler({method},res,deps);return {status,cache:headers['Cache-Control'],cdn:headers['Vercel-CDN-Cache-Control']};};
+  const env={MOBIMATTER_MERCHANT_ID:'fixture-merchant',MOBIMATTER_API_KEY:'fixture-key'},pricing={markupPercent:20,feePercent:2.5,feeFixed:0.2};
+  const cached={status:200,cache:'public, max-age=0, must-revalidate',cdn:'s-maxage=60, stale-while-revalidate=60'};
+  assert.deepEqual(await call('GET',{env,catalog:async()=>({products:[]}),settings:async()=>({pricing})}),cached);
+  assert.deepEqual(await call('GET',{env:{},settings:async()=>({pricing})}),cached);
+  // Prices built while settings were unreadable must not be shared through the CDN.
+  assert.deepEqual(await call('GET',{env,catalog:async()=>({products:[]}),settings:async()=>({pricing,unavailable:true})}),{status:200,cache:'no-store',cdn:undefined});
+  assert.deepEqual(await call('GET',{env,catalog:async()=>{throw Error('offline');}}),{status:503,cache:'no-store',cdn:undefined});
+  assert.deepEqual(await call('POST',{env,catalog:()=>assert.fail('Must not load')}),{status:405,cache:'no-store',cdn:undefined});
+});
 test('KYC flag and absent optional details are explicit',()=>{
   const [result]=normalizeProducts([{...product,productCategory:'esim_delayed',productDetails:[]}]);
   assert.equal(result.requiresIdentityVerification,true);assert.equal(result.dataAmount,null);assert.equal(result.validityHours,null);

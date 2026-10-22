@@ -35,40 +35,61 @@ export function workerHeartbeat({write=saveSetting,env,log=console,now=()=>new D
 
 // The delivery rows are the durable queue. No in-memory cursor survives a sweep:
 // every restart discovers unfinished work again. State transitions arbitrate races.
-export async function recoverDeliveries(services,{signal,report=()=>{},progress=async()=>{}}={}){
-  const counts={checked:0,sent:0,waiting:0,review:0,failed:0};
-  let after;
-  while(!signal?.aborted){
-    await progress();
-    const rows=await services.store.recoveryPage(after);
-    if(!rows.length)break;
-    for(const row of rows){
-      if(signal?.aborted)return counts;
+// Paid orders go first, so unpaid checkouts can never starve them; rows locked for manual review
+// (reserving, sending, review) are only counted; unpaid checkouts are polled last.
+// truncated: the signal or the deadline left paid work for the next sweep.
+export async function recoverDeliveries(services,{signal,deadline,report=()=>{},progress=async()=>{}}={}){
+  const counts={checked:0,sent:0,waiting:0,review:0,failed:0,truncated:false,workDone:0};
+  const halt=phase=>{if(phase==='work')counts.truncated=true;return counts;};
+  // A read cut short by the sweep signal ends the sweep like the signal itself, not as a failure.
+  const read=async load=>{try{return await load();}catch(error){if(signal?.aborted)return null;throw error;}};
+  for(const phase of ['work','review','payment']){
+    let after;
+    while(true){
+      if(signal?.aborted)return halt(phase);
       await progress();
-      counts.checked++;
-      // No safe remote identifier exists after an ambiguous reservation or send.
-      if(['reserving','sending','review'].includes(row.state)||row.paypal_order_id.startsWith('pending-')){
-        counts.review++;
-        report({id:row.id,state:row.state,outcome:'manual_review'});
-        continue;
+      if(phase==='review'){
+        const total=await read(()=>services.store.reviewCount());
+        if(total===null)return counts;
+        counts.review+=total;
+        // One summary event per sweep keeps 'manual_review' alerts working without per-row noise.
+        if(total>0)report({outcome:'manual_review',count:total});
+        break;
       }
-      try{
-        // Only reads PayPal: an APPROVED but uncaptured payment is never charged
-        // by this worker. A completed capture is validated again by fulfillment.
-        const result=await fulfillDelivery(row.id,services);
-        if(result.state==='sent')counts.sent++;
-        else counts.waiting++;
-        report({id:row.id,state:result.state,outcome:'checked'});
-      }catch(error){
-        if(error.message==='PAYMENT_NOT_VERIFIED')counts.waiting++;
-        else{
-          counts.failed++;
-          // Never log upstream bodies, customer data or activation credentials.
-          report({id:row.id,state:row.state,outcome:'retry_or_review'});
+      const rows=await read(()=>services.store.recoveryPage(phase,after));
+      if(!rows)return halt(phase);
+      if(!rows.length)break;
+      for(const row of rows){
+        if(signal?.aborted)return halt(phase);
+        await progress();
+        counts.checked++;
+        // A checkout whose PayPal order was never linked has no safe identifier to poll.
+        if(row.paypal_order_id.startsWith('pending-')){
+          counts.review++;
+          report({id:row.id,state:row.state,outcome:'manual_review'});
+          continue;
+        }
+        try{
+          // Only reads PayPal: an APPROVED but uncaptured payment is never charged
+          // by this worker. A completed capture is validated again by fulfillment.
+          const result=await fulfillDelivery(row.id,services,{deadline});
+          if(result.state==='sent')counts.sent++;
+          else counts.waiting++;
+          report({id:row.id,state:result.state,outcome:'checked'});
+          // Too little time is left to start a provider step; the next sweep starts with this row.
+          if(result.state==='deferred'&&phase==='work')return halt(phase);
+          if(phase==='work')counts.workDone++;
+        }catch(error){
+          if(error.message==='PAYMENT_NOT_VERIFIED')counts.waiting++;
+          else{
+            counts.failed++;
+            // Never log upstream bodies, customer data or activation credentials.
+            report({id:row.id,state:row.state,outcome:'retry_or_review'});
+          }
         }
       }
+      after=rows.at(-1);
     }
-    after=rows.at(-1).id;
   }
   return counts;
 }

@@ -1,0 +1,18 @@
+# Matches the existing code: UTF-8, LF, two-space indentation. Do not reformat existing files wholesale.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+trim_trailing_whitespace = false
+
+# Written by tools (npm run build:auth, catalog snapshot), never by hand.
+[{dist/auth.js,dist/admin.js,dist/customer-session.js,dist/catalog-preview.json}]
+insert_final_newline = unset
+trim_trailing_whitespace = unset

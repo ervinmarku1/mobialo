@@ -5,15 +5,16 @@ import {paypalWebhook} from './paypal-webhook.mjs';
 import {healthy} from './worker-health.mjs';
 import {deliveryServices} from './esim-delivery.mjs';
 
-const event={id:'event',event_type:'PAYMENT.CAPTURE.COMPLETED',resource:{id:'capture',status:'COMPLETED',supplementary_data:{related_ids:{order_id:'PAYPAL123'}}}};
-function request(body=JSON.stringify(event),method='POST'){
-  const req=Readable.from([body]);req.method=method;req.headers={'content-type':'application/json'};return req;
+const event={id:'WH-2WR32451HC0233532-67976317FL4543714',event_type:'PAYMENT.CAPTURE.COMPLETED',resource:{id:'capture',status:'COMPLETED',supplementary_data:{related_ids:{order_id:'PAYPAL123'}}}};
+const signed={'paypal-auth-algo':'SHA256withRSA','paypal-cert-url':'https://api.paypal.com/v1/notifications/certs/CERT-360caa42-fca2a594-1d93a270','paypal-transmission-id':'69cd13f0-d67a-11e5-baa3-778b53f4ae55','paypal-transmission-sig':'signature','paypal-transmission-time':'2026-10-20T12:00:00Z'};
+function request(body=JSON.stringify(event),method='POST',headers=signed){
+  const req=Readable.from([body]);req.method=method;req.headers={'content-type':'application/json',...headers};return req;
 }
 function fixture(){
   let row={id:'internal',paypal_order_id:'PAYPAL123',state:'awaiting_payment',amount:24};
   const calls=[];
   return {calls,row:()=>row,services:{
-    verifyWebhook:async(headers,raw)=>{calls.push('verify');assert.equal(JSON.parse(raw).id,'event');return true;},
+    verifyWebhook:async(headers,raw)=>{calls.push('verify');assert.equal(JSON.parse(raw).id,event.id);return true;},
     store:{
       byPayPal:async id=>{calls.push('lookup');assert.equal(id,'PAYPAL123');return {...row};},
       get:async()=>({...row}),
@@ -74,6 +75,14 @@ test('malformed, oversized or wrong-method requests are rejected before verifica
   assert.equal((await paypalWebhook(request('', 'GET'),f.services)).status,405);
   assert.deepEqual(f.calls,[]);
 });
+test('requests that cannot be PayPal webhooks are refused before any PayPal call',async()=>{
+  const f=fixture();f.services.verifyWebhook=()=>assert.fail('Must not reach PayPal');
+  for(const [name,value] of [['paypal-auth-algo','SHA1withRSA'],['paypal-auth-algo',undefined],['paypal-cert-url','http://api.paypal.com/cert'],['paypal-cert-url','https://api.paypal.com.attacker.invalid/cert'],['paypal-cert-url','https://evilpaypal.com/cert'],['paypal-cert-url','not a url'],['paypal-cert-url',undefined],['paypal-transmission-id','short'],['paypal-transmission-id','id with spaces'],['paypal-transmission-id','x'.repeat(65)],['paypal-transmission-id',undefined]]){
+    assert.deepEqual(await paypalWebhook(request(undefined,'POST',{...signed,[name]:value}),f.services),{status:401,body:{error:'INVALID_SIGNATURE'}});
+  }
+  assert.equal((await paypalWebhook(request(JSON.stringify({...event,id:'event'})),f.services)).status,401);
+  assert.deepEqual(f.calls,[]);
+});
 test('worker health rejects missing, failed, stale or future heartbeats',()=>{
   const now=1000000;
   assert.equal(healthy({ok:true,updatedAt:now-60000},now),true);
@@ -107,4 +116,14 @@ test('verification fails closed for absent registration, missing headers and Pay
   assert.equal(await incomplete.verifyWebhook({},'{}'),false);
   const rejected=await deliveryServices({paymentOnly:true,configuration,fetcher:async url=>Response.json(url.endsWith('/token')?{access_token:'token'}:{verification_status:'FAILURE'})});
   assert.equal(await rejected.verifyWebhook(headers,'{}'),false);
+});
+test('webhook verifications share one OAuth token until PayPal rejects it',async()=>{
+  const calls=[];let status=200;
+  const fetcher=async url=>{calls.push(new URL(url).pathname);return url.endsWith('/token')?Response.json({access_token:'token',expires_in:32400}):Response.json({verification_status:'SUCCESS'},{status});};
+  const verify=async()=>(await deliveryServices({paymentOnly:true,configuration:{...configuration,PAYPAL_LIVE_CLIENT_ID:'webhook-client'},fetcher})).verifyWebhook(headers,'{}');
+  assert.equal(await verify(),true);assert.equal(await verify(),true);
+  status=401;await assert.rejects(verify(),/WEBHOOK_VERIFICATION_UNAVAILABLE/);
+  status=200;assert.equal(await verify(),true);
+  const token='/v1/oauth2/token',check='/v1/notifications/verify-webhook-signature';
+  assert.deepEqual(calls,[token,check,check,check,token,check]);
 });

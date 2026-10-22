@@ -21,7 +21,7 @@ test('a valid cron call sweeps deliveries with the Vault email key and records a
   const f=fixture();
   const result=await workerSweep(f.req,f.deps);
   assert.equal(result.status,200);
-  assert.deepEqual(result.body,{checked:3,sent:1,waiting:2,review:0,failed:0,deliveryFailed:0,email:true});
+  assert.deepEqual(result.body,{checked:3,sent:1,waiting:2,review:0,failed:0,deliveryFailed:0,truncated:false,email:true});
   assert.equal(f.used[0].RESEND_API_KEY,'re_vault');
   const [name,beat]=f.saved[0];
   assert.equal(name,'worker');assert.equal(beat.ok,true);assert.equal(beat.email,true);assert.equal(beat.source,'cron');
@@ -81,6 +81,21 @@ test('a failed read of an unpaid checkout is reported but keeps the worker healt
   assert.equal((await workerSweep(f.req,f.deps)).status,200);
   const beat=f.saved[0][1];
   assert.equal(beat.ok,true);assert.equal(beat.failed,1);assert.equal(beat.deliveryFailed,0);
+});
+
+test('the budget reaches upstream calls, and paid work it leaves makes the heartbeat unhealthy',async()=>{
+  const given={};
+  const f=fixture({services:async({signal})=>{given.services=signal;return {};},recover:async(services,{signal,deadline})=>{Object.assign(given,{signal,deadline});return {checked:1,sent:0,waiting:1,review:0,failed:0,truncated:true};}});
+  const before=Date.now();
+  const result=await workerSweep(f.req,{...f.deps,budgetMs:45000});
+  assert.equal(result.status,200);assert.equal(result.body.truncated,true);
+  assert.equal(f.saved[0][1].ok,false);assert.equal(f.saved[0][1].truncated,true);
+  // A burst that finished at least one paid row this minute is progress, not a stall.
+  const g=fixture({recover:async()=>({checked:3,sent:2,waiting:0,review:0,failed:0,truncated:true,workDone:2})});
+  await workerSweep(g.req,g.deps);
+  assert.equal(g.saved[0][1].ok,true);assert.equal(g.saved[0][1].truncated,true);
+  assert.ok(given.signal instanceof AbortSignal);assert.equal(given.services,given.signal);assert.equal(given.signal.aborted,false);
+  assert.ok(given.deadline>=before+45000&&given.deadline<=Date.now()+45000);
 });
 
 test('a heartbeat write failure does not fail the sweep',async()=>{

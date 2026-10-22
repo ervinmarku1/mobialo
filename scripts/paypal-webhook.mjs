@@ -17,6 +17,11 @@ export async function paypalWebhook(req,services){
     event=JSON.parse(raw);
     if(!event||Array.isArray(event)||typeof event!=='object'||typeof event.id!=='string'||typeof event.event_type!=='string')return reply(400,'INVALID_EVENT');
   }catch{return reply(400,'INVALID_EVENT');}
+  // Shape checks before any PayPal call, so junk requests cost no OAuth token or verification call.
+  // PayPal itself verifies the signature and the certificate.
+  const header=name=>req.headers['paypal-'+name];
+  let cert=null;try{cert=new URL(header('cert-url'));}catch{}
+  if(!/^SHA(256|384|512)withRSA$/i.test(header('auth-algo')||'')||cert?.protocol!=='https:'||!cert.hostname.endsWith('.paypal.com')||!/^[0-9A-Za-z-]{8,64}$/.test(header('transmission-id')||'')||!event.id.startsWith('WH-'))return reply(401,'INVALID_SIGNATURE');
   try{
     services??=await deliveryServices({paymentOnly:true});
     if(!await services.verifyWebhook(req.headers,raw))return reply(401,'INVALID_SIGNATURE');

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "worker:delivery": "node scripts/delivery-worker.mjs",
-    "check": "node --check dist/app.js && node --check src/auth.js && node --test \"scripts/*.test.mjs\"",
+    "test": "node --test \"scripts/*.test.mjs\"",
+    "check": "node scripts/check-build.mjs && npm test",
     "build:auth": "node scripts/build-auth.mjs"
   },
   "dependencies": {

@@ -47,10 +47,16 @@ export async function workerSweep(req,{env=process.env,config=workerConfig,servi
   // Only failures on rows past payment mean customers wait for an eSIM; a slow PayPal read of an
   // unpaid checkout is retried next minute and must not close public checkout (ok gates it).
   const report=event=>{log.log(JSON.stringify(event));if(event.outcome==='retry_or_review'&&event.state!=='awaiting_payment')deliveryFailed++;};
-  try{result=await recover(await services({configuration}),{signal:AbortSignal.timeout(budgetMs),report});}
+  // The budget stops new rows and cuts upstream calls short, and no provider step starts in its last
+  // 15 s, so the sweep and its heartbeat finish inside maxDuration (60 s).
+  const signal=AbortSignal.timeout(budgetMs),deadline=Date.now()+budgetMs;
+  try{result=await recover(await services({configuration,signal}),{signal,deadline,report});}
   catch(error){code=recoveryErrorCode(error);log.error('Delivery sweep unavailable',JSON.stringify({code}));}
-  const counts=result?{checked:result.checked,sent:result.sent,waiting:result.waiting,review:result.review,failed:result.failed,deliveryFailed}:{};
-  try{await save(env,'worker',{at:new Date().toISOString(),ok:!code&&deliveryFailed===0,...counts,email,source:'cron',...(code?{code}:{})},null);}
+  const counts=result?{checked:result.checked,sent:result.sent,waiting:result.waiting,review:result.review,failed:result.failed,deliveryFailed,truncated:!!result.truncated}:{};
+  // Paid work left over is normal during a burst; only a sweep that ran out of budget without
+  // finishing any paid row is stalled and unhealthy, like a failed paid row.
+  const stalled=counts.truncated&&!(result?.workDone>0);
+  try{await save(env,'worker',{at:new Date().toISOString(),ok:!code&&deliveryFailed===0&&!stalled,...counts,email,source:'cron',...(code?{code}:{})},null);}
   catch(error){log.warn('Worker heartbeat not saved',JSON.stringify({code:/^[A-Z_]{1,40}$/.test(error?.message||'')?error.message:'HEARTBEAT_FAILED'}));}
   return code?reply(503,{error:'SWEEP_FAILED',code}):reply(200,{...counts,email});
 }

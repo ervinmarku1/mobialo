@@ -1,107 +1,116 @@
 # MOBIALO
 
-Bilingual English and Albanian eSIM storefront presentation, inspired by travel eSIM storefronts. This project currently runs locally only.
+Live eSIM shop at https://www.mobialo.eu, in Albanian and English (visitors from Italy get
+Italian automatically). It sells MobiMatter eSIMs for real money through PayPal (live).
+Vercel deploys every push to `main` straight to production.
 
-## Run locally
+## Architecture
 
-Install Node.js, then run from the project directory:
+- **Vercel** serves `dist/` as static files and `api/**/*.mjs` as Node 24 functions.
+  `vercel.json` sets the build command (`npm run build:auth`), function durations, security
+  headers, the rewrites for `/admin`, `/join`, `/sign-in`, `/forgot-password`,
+  `/update-password` and `/account`, and the redirect of `admin.mobialo.eu` to
+  https://www.mobialo.eu/admin.
+- **Frontend**: hand-written HTML, CSS and classic scripts in `dist/`. `dist/auth.js`,
+  `dist/customer-session.js` and `dist/admin.js` are esbuild bundles of `src/` (they embed
+  `@supabase/supabase-js`): edit `src/`, run `npm run build:auth` and commit both. Never edit
+  the bundles by hand; CI fails when they differ from a fresh build.
+- **API**: `api/*.mjs` are thin adapters. The logic lives in `scripts/*.mjs`, shared with the
+  local server and the tests.
+- **Supabase**: authentication (email and password, Authenticator 2FA for admins), the tables
+  `esim_deliveries` (orders and delivery queue), `esim_test_orders` (sandbox only),
+  `admin_access_requests` and `app_settings` (Cilësimet and the worker heartbeat), and Vault
+  secrets for the worker. Browsers never access the tables; only the server's service-role
+  key does.
+- **PayPal (live)**: hosted checkout through `/api/paypal/config`, `/api/paypal/create` and
+  `/api/paypal/capture`, plus the verified webhook `/api/paypal/webhook`. A capture only
+  marks the order `paid`.
+- **Delivery worker**: Supabase pg_cron job `mobialo-delivery-sweep` POSTs to
+  `/api/worker/sweep` every minute. The sweep buys the eSIM from MobiMatter, emails the QR
+  code through Resend and writes the heartbeat shown in Cilësimet.
+- **Admin**: https://www.mobialo.eu/admin. Orders, and Cilësimet (superadmin only): shop mode
+  (Mbyllur / Vetëm admin / Publik), payment methods, pricing, administrators and system
+  status. See [supabase/ADMIN-SETUP.md](supabase/ADMIN-SETUP.md).
+
+Checkout, delivery, the webhook, the worker, monitoring and the database migration order
+are documented in [supabase/DELIVERY-SETUP.md](supabase/DELIVERY-SETUP.md).
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/catalog` | New-eSIM catalog with server-side EUR prices |
+| `GET /api/auth-config` | Supabase URL and publishable key for browser sign-in |
+| `GET /api/locale` | Site and email language from the Vercel IP country |
+| `/api/paypal/config`, `create`, `capture` | Hosted checkout (session, mode and 2FA checks) |
+| `POST /api/paypal/webhook` | Verified `PAYMENT.CAPTURE.COMPLETED` reconciliation |
+| `POST /api/worker/sweep` | Delivery sweep, called by pg_cron with `x-worker-secret` |
+| `GET /api/account/orders` | The signed-in customer's orders |
+| `/api/admin/orders`, `access`, `settings` | Admin panel: orders, access requests and approvals, Cilësimet |
+
+## Configuration
+
+`.env.example` lists every variable the code reads, with comments. Vercel reads them from
+Project Settings > Environment Variables (Production); locally they go in `.env.local`,
+which is ignored by Git. Redeploy after changing Vercel variables. Never put credentials in
+browser code or commit them; MobiMatter, PayPal secrets, the service-role key and Resend
+stay on the server.
+
+Supabase Auth: Email signups and email confirmation enabled, custom SMTP (Resend) for
+customer emails, Site URL https://www.mobialo.eu and the redirect allowlist
+https://www.mobialo.eu/** (add http://localhost:3000/** for local sign-in). The email
+templates in `supabase/email-templates` are pasted into the dashboard by hand; see
+[supabase/email-templates/README.md](supabase/email-templates/README.md).
+
+## Pricing
+
+Prices are computed on the server from the MobiMatter USD retail price, which is treated
+numerically as EUR (a selling-price rule, not an exchange-rate conversion; non-USD supplier
+prices are rejected). Base price: `retail × (1 + markup)`, rounded to cents. Displayed and
+charged price: `ceil_to_cent((base + fixed fee) / (1 − fee %))`, the same for every payment
+method, with no surcharge at checkout. Markup and fees are set in Cilësimet (defaults in
+`DEFAULT_PRICING`, scripts/app-settings.mjs: 20% markup, 2.5% + EUR 0.20) and apply to the
+catalog and to new orders within about 30 seconds. Existing orders keep their stored price.
+
+The public catalog contains new eSIM products only; top-ups and replacements are excluded.
+Identity-verification (delayed) products carry an explicit flag; checkout accepts realtime
+products only. Without MobiMatter credentials, `/api/catalog` serves the checked-in snapshot
+`dist/catalog-preview.json` (allowlisted fields, no credentials or wholesale prices).
+Catalog errors (`NOT_CONFIGURED`, `AUTH_FAILED`, `UPSTREAM_UNAVAILABLE`, `INVALID_CATALOG`)
+are never returned as an empty catalog.
+
+## Languages and emails
+
+`/api/locale` maps `x-vercel-ip-country`: IT → Italian, AL/XK → Albanian, anything else →
+English. A language chosen in the menu is stored under `mobialo-language-choice` and wins
+over detection. No IP address is stored. Signup saves the resolved email language (36
+languages) in `user_metadata.language`; delivery emails support SQ, EN and IT.
+
+## Development
+
+Requires Node.js 24 (`engines`). Install with `npm ci`.
 
 ```sh
-npm run dev
+npm test              # node --test "scripts/*.test.mjs" (offline, no real payments or emails)
+npm run check         # syntax of every script, JSON files, .env.example and migration docs, then the tests
+npm run build:auth    # rebuild dist/auth.js, dist/customer-session.js and dist/admin.js from src/
+npm run dev           # local server on http://localhost:3000 (PORT to change it)
 ```
 
-Open http://localhost:3000. Run `npm install` first to install the pinned dependencies. Set the `PORT` environment variable to use another port.
+GitHub Actions (`.github/workflows/ci.yml`) runs `npm ci`, `node scripts/check-build.mjs`,
+the tests and a bundle drift check on every push and pull request to `main`. Vercel deploys
+`main` whether or not CI passes; to make CI a gate, merge through pull requests with the
+check required (and use Vercel preview deployments to try changes).
 
-## Files
+### Local development uses whatever `.env.local` points at
 
-- `dist/index.html`: page structure.
-- `dist/styles.css`: responsive styling.
-- `dist/app.js`: translations, sample catalog, destination search, and plan preview.
-- `scripts/serve.mjs`: local HTTP server.
+With the production Supabase keys in `.env.local`, `npm run dev` works on the LIVE data:
+local sign-ins, orders and admin actions (Cilësimet, approvals) change the live shop. With
+`PAYPAL_ENV=live` as well, it creates real PayPal orders, and a completed local capture
+immediately buys a real eSIM and sends the email. The local server skips the hosted
+checkout gates (shop mode, admin list, 2FA, worker heartbeat, ownership check on capture);
+it listens on 127.0.0.1 only. Use `PAYPAL_ENV=sandbox` with sandbox credentials locally,
+preferably with a separate Supabase project: sandbox orders go to `esim_test_orders`, are
+limited to 100 an hour and never buy an eSIM. Set `LOCAL_COUNTRY=IT` in the shell to
+simulate an Italian visitor.
 
-## Current scope
-
-Plans and prices are read from the live MobiMatter catalog through the local server. Checkout is disabled. GitHub stores the source only; there is no deployment workflow. Domain setup, Supabase, payments, and eSIM ordering are deferred.
-
-Never put partner API credentials in browser code or commit secrets. MobiMatter requests go through the server-side integration.
-
-## Local MobiMatter catalog connection
-
-Requires Node.js 22 or newer. Enter the Merchant ID and API Key from the partner
-portal in `.env.local`, using `.env.example` as a template. Never share or commit
-this file. The local server reads it for catalog requests; no restart is needed
-after changing the credentials.
-
-`GET /api/catalog` reads the merchant product catalog through the server. It uses
-a five-minute in-memory cache and returns only customer-facing fields. Prices
-use the merchant's EUR selling-price rule: the numerical MobiMatter USD retail
-price multiplied by 1.20, rounded to two decimals. For example, 20 USD becomes
-24 EUR before processing-cost coverage. The final displayed price is
-`ceil_to_cent((base_price + 0.20) / 0.975)`, covering the configured 2.5% + EUR 0.20
-fee on the final total. Thus 24 EUR becomes 24.83 EUR. The same all-in price applies
-to every payment method and is computed server-side; no surcharge is added at
-checkout. The fee assumption was supplied by the merchant and must be checked
-against the POK contract. Existing orders retain their stored price.
-This is not an exchange-rate conversion. Non-USD supplier input is rejected. Validity is
-returned in hours. The public catalog includes new eSIM products only.
-Top-ups and replacements are excluded from public browsing and new-eSIM checkout.
-They are reserved for a future authenticated customer flow tied to a purchased,
-active eSIM, with server-side ownership and provider eligibility verification.
-These account actions are not enabled yet.
-Identity-verification products carry an explicit flag.
-
-The storefront loads /api/catalog and groups all new-sale plans by country coverage.
-Prices are displayed in EUR, with the markup applied once on the server. Credentials are required; request failures show a retry
-state rather than fabricated demo prices.
-There are no order or payment endpoints. Nothing is deployed.
-
-Catalog error codes include `NOT_CONFIGURED`, `AUTH_FAILED`, `UPSTREAM_UNAVAILABLE`
-and `INVALID_CATALOG`. A failed request is never returned as an empty catalog.
-
-Run adapter checks with `node --test scripts/mobimatter.test.mjs`.
-
-Documentation: https://docs.mobimatter.com/docs/guides/getting-products
-
-Fonts, travel photos, and flags currently load from external services and need an internet connection.
-
-## Check JavaScript syntax
-
-```sh
-npm run check
-```
-
-## Supabase authentication (local frontend)
-
-Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in .env.local. Only the validated
-publishable key is exposed by /api/auth-config; MobiMatter credentials stay private.
-Supabase Email signups and email confirmation must be enabled. Site URL should be
-http://localhost:3000 and the local redirect allowlist http://localhost:3000/**.
-
-Routes: /join, /sign-in, /forgot-password, /update-password, /account.
-The official browser SDK manages PKCE confirmation, sessions and token refresh.
-Confirmation and recovery links should be opened in the same browser that requested
-them, with the local server running. Passwords go directly to Supabase over HTTPS.
-The browser stores session tokens, never application-saved passwords. Sign out is
-local to the current session. No order data or protected application API exists yet.
-
-Edit src/auth.js and src/auth-copy.js, then run npm run build:auth to regenerate
-dist/auth.js. Do not edit the generated bundle directly.
-
-For delivery to customer email addresses, configure custom SMTP in Supabase.
-The default Supabase email service has restrictions and is intended for testing.
-
-
-### Local PayPal Sandbox
-Set PAYPAL_ENV=sandbox, PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET in .env.local. Live mode is deliberately rejected. Open a plan, view details, and choose PayPal Sandbox. Use a Sandbox Personal buyer from PayPal Developer, not your real account. The server creates EUR orders from its catalog pricing and validates completed captures after the redirect. No MobiMatter order is placed. Test orders are in memory, expire after an hour and are lost on server restart. This is a guest test flow, not production checkout: persistent account-linked orders, verified webhooks, reconciliation, refunds and fulfillment are still required before going live.
-
-Smart Buttons: plan details now load the PayPal JavaScript SDK on demand. Only the public Client ID is returned by /api/paypal/config. PayPal and card buttons render according to SDK eligibility; Sandbox eligibility does not establish Live eligibility. Orders and captures remain server-side and Sandbox-only.
-
-
-### Vercel domain preview
-vercel.json serves dist and the api functions on Node 24. The checked-in catalog-preview.json is an allowlisted catalog snapshot, with no merchant credentials or wholesale prices. Configure MOBIMATTER_MERCHANT_ID and MOBIMATTER_API_KEY in Vercel to use live catalog data. Configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY and authorize the production callback URLs in Supabase before enabling online accounts. Without them the hosted page displays an account-preview message. Hosted live checkout is controlled by `CHECKOUT_MODE` (closed, admin or public); see supabase/DELIVERY-SETUP.md. `admin.mobialo.eu` redirects to `https://www.mobialo.eu/admin`.
-
-
-### Automatic language and emails
-Vercel /api/locale maps x-vercel-ip-country: IT ? Italian, AL/XK ? Albanian, other/unknown ? English. Responses are private/no-store. Localhost defaults to English; LOCAL_COUNTRY=IT can simulate Italy for local QA. No IP is stored. Menu choices remain EN/SQ; detected Italian is displayed as IT ? Auto, not an extra selectable language. Explicit choices persist under mobialo-language-choice, separately from automatic detection. Old automatically stored mobialo-language values are not treated as explicit choices.
-
-Signup writes the independently resolved email locale to user_metadata.language. Emails now support 36 languages: IP country first, browser preference for multilingual countries, manual EN/SQ always wins. Website translations remain EN/SQ/IT. Apply the files under supabase/email-templates in the Supabase dashboard to enable localized emails; repository deployment alone does not install email templates. Existing accounts without this metadata receive English. Recovery follows the registration language. Provider-supplied package descriptions and product names remain in the source language; storefront labels and country names are localized.
+Fonts, travel photos, flags and provider logos load from external services and need an
+internet connection.

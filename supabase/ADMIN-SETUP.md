@@ -1,6 +1,7 @@
 # MOBIALO admin
 
-Separate page: `/admin`. Landing page files are unchanged.
+Separate page: `/admin` (dist/admin.html; src/admin*.js bundled into dist/admin.js by
+`npm run build:auth`).
 
 Server environment variables (Production in Vercel):
 - SUPABASE_URL
@@ -40,8 +41,11 @@ Cilësimet (superadmin only, always with 2FA; `GET/POST /api/admin/settings`):
   (Resend), and the worker's last report.
 
 Settings are stored in `public.app_settings` (migration 20261022150000_app_settings.sql,
-already applied). A saved row wins over the Vercel `CHECKOUT_MODE`, which remains the
-fallback before the first save and is capped at admin-only during a Supabase outage.
+already applied) and access requests in `public.admin_access_requests` (migration
+20261022074725_admin_access_requests.sql). The full migration order and a query that shows
+which ones are applied are in DELIVERY-SETUP.md. A saved row wins over the Vercel
+`CHECKOUT_MODE`, which remains the fallback before the first save and is capped at
+admin-only during a Supabase outage.
 Keep `CHECKOUT_MODE=admin` (or closed) in Vercel.
 
-Checks: node --test scripts/admin-orders.test.mjs scripts/admin-settings-api.test.mjs scripts/app-settings.test.mjs
+Checks: node --test scripts/admin-orders.test.mjs scripts/admin-access.test.mjs scripts/admin-settings-api.test.mjs scripts/app-settings.test.mjs

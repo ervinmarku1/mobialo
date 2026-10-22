@@ -1,6 +1,7 @@
 import {renderDelivery} from './delivery-template.mjs';
 import {readFile} from 'node:fs/promises';
 import {parseEnv} from 'node:util';
+import {createHash} from 'node:crypto';
 
 export function deliveryEmail(order,details){
   const fields=new Map((details.orderLineItem?.lineItemDetails||[]).map(v=>[v.name,v.value]));
@@ -13,7 +14,11 @@ export function deliveryEmail(order,details){
 
 // Each irreversible step is claimed durably BEFORE its network request.
 // Ambiguous failures remain locked for manual reconciliation, never auto-repurchased.
-export async function fulfillDelivery(id,{store,paypal,mobimatter,send}){
+// No provider step starts within 15 s of the sweep deadline, where an aborted or killed call would
+// lock the order for review; 'deferred' leaves the row unclaimed for the next sweep.
+const STEP_MARGIN=15000;
+export async function fulfillDelivery(id,{store,paypal,mobimatter,send},{deadline=Infinity}={}){
+  const late=()=>deadline-Date.now()<STEP_MARGIN;
   let order=await store.get(id);
   if(!order)throw Error('ORDER_NOT_FOUND');
   if(order.state==='sent')return {state:'sent'};
@@ -29,12 +34,14 @@ export async function fulfillDelivery(id,{store,paypal,mobimatter,send}){
     if(!order)return {state:'busy'};
   }
   if(order.state==='paid'){
+    if(late())return {state:'deferred'};
     order=await store.transition(id,'paid',{state:'reserving'});if(!order)return {state:'busy'};
     const reserved=await mobimatter('POST','/order',{productId:order.product_id,productCategory:'esim_realtime',label:order.id});
     if(!reserved.orderId)throw Error('PROVIDER_ORDER_UNKNOWN');
     order=await store.transition(id,'reserving',{state:'reserved',provider_order_id:reserved.orderId});
   }
   if(order?.state==='reserved'){
+    if(late())return {state:'deferred'};
     order=await store.transition(id,'reserved',{state:'completing'});if(!order)return {state:'busy'};
     const result=await mobimatter('PUT','/order/complete',{orderId:order.provider_order_id});
     if(result.orderState!=='Completed')throw Error('ESIM_NOT_READY');
@@ -52,6 +59,7 @@ export async function fulfillDelivery(id,{store,paypal,mobimatter,send}){
     const details=await mobimatter('GET','/order/'+encodeURIComponent(order.provider_order_id));
     if(details.orderId!==order.provider_order_id)throw Error('PROVIDER_ORDER_MISMATCH');
     const email=deliveryEmail(order,details);
+    if(late())return {state:'deferred'};
     order=await store.transition(id,'ready',{state:'sending'});if(!order)return {state:'busy'};
     const result=await send(email,'esim/'+id);if(!result.id)throw Error('EMAIL_STATUS_UNKNOWN');
     await store.transition(id,'sending',{state:'sent',email_id:result.id});
@@ -60,28 +68,38 @@ export async function fulfillDelivery(id,{store,paypal,mobimatter,send}){
   return {state:order?.state||'busy'};
 }
 
-export async function deliveryServices({paymentOnly=false,configuration,fetcher=fetch}={}){
+// PayPal throttles clients that fetch a new OAuth token per request. Tokens are shared by every
+// services instance of this process (warm serverless invocations) until near expiry.
+const paypalTokens=new Map();
+export async function deliveryServices({paymentOnly=false,configuration,fetcher=fetch,signal}={}){
   let local={};if(!configuration){try{local=parseEnv(await readFile(new URL('../.env.local',import.meta.url),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}}
   const env=configuration?{...configuration}:{...local,...process.env};
   env.PAYPAL_CLIENT_ID=env.PAYPAL_LIVE_CLIENT_ID||env.PAYPAL_CLIENT_ID;
   env.PAYPAL_CLIENT_SECRET=env.PAYPAL_LIVE_CLIENT_SECRET||env.PAYPAL_CLIENT_SECRET;
   for(const name of ['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','PAYPAL_CLIENT_ID','PAYPAL_CLIENT_SECRET',...(!paymentOnly?['RESEND_API_KEY','MOBIMATTER_MERCHANT_ID','MOBIMATTER_API_KEY']:[])])if(!env[name]?.trim())throw Error('DELIVERY_NOT_CONFIGURED:'+name);
   if(env.PAYPAL_ENV!=='live')throw Error('LIVE_PAYMENT_REQUIRED');
-  // PayPal throttles clients that fetch a new OAuth token per request; reuse it until near expiry.
-  let cachedToken=null;
-  async function accessToken(){
-    if(cachedToken&&cachedToken.expires>Date.now())return cachedToken.value;
-    const response=await fetcher('https://api-m.paypal.com/v1/oauth2/token',{method:'POST',redirect:'error',headers:{Authorization:'Basic '+Buffer.from(env.PAYPAL_CLIENT_ID+':'+env.PAYPAL_CLIENT_SECRET).toString('base64'),'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=client_credentials',signal:AbortSignal.timeout(20000)});
+  // An optional sweep signal cuts reads short next to their own timeout. Claims, irreversible provider
+  // calls and result recordings keep only their own timeout: aborting them would strand paid orders.
+  const bounded=ms=>signal?AbortSignal.any([signal,AbortSignal.timeout(ms)]):AbortSignal.timeout(ms);
+  const own=()=>AbortSignal.timeout(25000);
+  // Keyed by client id and a secret digest, so rotated or mismatched secrets never share a token.
+  const tokenKey=env.PAYPAL_CLIENT_ID+':'+createHash('sha256').update(String(env.PAYPAL_CLIENT_SECRET)).digest('hex');
+  async function accessToken(fresh=false){
+    const cached=paypalTokens.get(tokenKey);
+    if(!fresh&&cached?.expires>Date.now())return cached.value;
+    const response=await fetcher('https://api-m.paypal.com/v1/oauth2/token',{method:'POST',redirect:'error',headers:{Authorization:'Basic '+Buffer.from(env.PAYPAL_CLIENT_ID+':'+env.PAYPAL_CLIENT_SECRET).toString('base64'),'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=client_credentials',signal:bounded(20000)});
     if(!response.ok)throw Error('PAYPAL_AUTH_FAILED');
     const token=await response.json();
     if(!token.access_token)throw Error('PAYPAL_AUTH_FAILED');
-    cachedToken={value:token.access_token,expires:Date.now()+Math.max(0,Number(token.expires_in)-300||0)*1000};
+    paypalTokens.set(tokenKey,{value:token.access_token,expires:Date.now()+Math.max(0,Number(token.expires_in)-300||0)*1000});
     return token.access_token;
   }
-  async function request(url,method,headers,body){
-    const response=await fetcher(url,{method,redirect:'error',headers,...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(25000)});
+  async function request(url,method,headers,body,timeout=bounded(25000)){
+    const response=await fetcher(url,{method,redirect:'error',headers,...(body?{body:JSON.stringify(body)}:{}),signal:timeout});
     if(!response.ok){
       if(new URL(url).hostname==='api-m.paypal.com'){
+        // A rejected token (revoked or rotated credentials) is not reused by the next request.
+        if(response.status===401)paypalTokens.delete(tokenKey);
         const failure=await response.json().catch(()=>({}));
         const safe=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(value)?value:undefined;
         const diagnostic={status:response.status,name:safe(failure.name),debugId:safe(failure.debug_id),issues:Array.isArray(failure.details)?failure.details.map(d=>safe(d.issue)).filter(Boolean):[]};
@@ -96,23 +114,31 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
   }
   const dbHeaders={apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY,'Content-Type':'application/json',Prefer:'return=representation'};
   const db=env.SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/esim_deliveries';
+  let verified=false;
   return {
     // Credential check for the admin status panel: obtains an OAuth token, moves no money.
-    verifyPayPal:async()=>!!await accessToken(),
+    // The first check of each instance asks PayPal, so a shared cached token cannot hide revoked credentials.
+    verifyPayPal:async()=>{const token=await accessToken(!verified);verified=true;return !!token;},
     store:{
       insert:async row=>(await request(db,'POST',dbHeaders,row))[0],
       get:async id=>(await request(db+'?id=eq.'+encodeURIComponent(id),'GET',dbHeaders))[0],
       byPayPal:async id=>(await request(db+'?paypal_order_id=eq.'+encodeURIComponent(id),'GET',dbHeaders))[0],
-      transition:async(id,state,patch)=>(await request(db+'?id=eq.'+encodeURIComponent(id)+'&state=eq.'+state,'PATCH',dbHeaders,patch))[0],
+      // Claims and result recordings are never cut short by the sweep budget.
+      transition:async(id,state,patch)=>(await request(db+'?id=eq.'+encodeURIComponent(id)+'&state=eq.'+state,'PATCH',dbHeaders,patch,own()))[0],
       openOrders:async(userId,since)=>(await request(db+'?'+new URLSearchParams({select:'id',user_id:'eq.'+userId,state:'eq.awaiting_payment',created_at:'gte.'+since,limit:'50'}),'GET',dbHeaders)).length,
-      recoveryPage:async(after,now=Date.now())=>{
-        // Abandoned checkouts are polled for 7 days. Rows holding a PENDING capture are polled
-        // until PayPal completes them; the webhook records late completions as well.
-        const since=new Date(now-7*86400000).toISOString();
-        const query=new URLSearchParams({select:'id,state,paypal_order_id',state:'in.(awaiting_payment,paid,reserving,reserved,completing,ready,sending,review)',or:`(state.neq.awaiting_payment,paypal_capture_id.not.is.null,created_at.gte."${since}")`,order:'id.asc',limit:'100'});
-        if(after)query.set('id','gt.'+after);
+      recoveryPage:async(phase,after,now=Date.now())=>{
+        // 'work' rows (paid, not yet delivered) come oldest first. Unpaid checkouts are polled newest
+        // first for 6 hours, or while a recorded capture is PENDING; the capture endpoint and the
+        // verified webhook record later completions. The cursor is the last row of the previous page.
+        const work=phase==='work',since=new Date(now-6*3600000).toISOString(),step=work?'gt':'lt';
+        const query=new URLSearchParams({select:'id,state,paypal_order_id,created_at',state:work?'in.(paid,reserved,completing,ready)':'eq.awaiting_payment',order:work?'created_at.asc,id.asc':'created_at.desc,id.desc',limit:'100'});
+        const filters=work?[]:[`or(paypal_capture_id.not.is.null,created_at.gte."${since}")`];
+        if(after)filters.push(`or(created_at.${step}."${after.created_at}",and(created_at.eq."${after.created_at}",id.${step}.${after.id}))`);
+        if(filters.length)query.set('and','('+filters.join(',')+')');
         return request(db+'?'+query,'GET',dbHeaders);
-      }
+      },
+      // Rows locked for manual reconciliation are only counted, never worked on.
+      reviewCount:async()=>(await request(db+'?'+new URLSearchParams({select:'id',state:'in.(reserving,sending,review)'}),'GET',dbHeaders)).length
     },
     verifyWebhook:async(headers,raw)=>{
       if(!env.PAYPAL_WEBHOOK_ID?.trim())throw Error('WEBHOOK_NOT_CONFIGURED');
@@ -125,16 +151,18 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
       // Preserve the event's original JSON bytes inside the verification payload.
       // No request is made to the untrusted cert_url; PayPal verifies it.
       const body=JSON.stringify(fields).slice(0,-1)+',"webhook_event":'+raw+'}';
-      const response=await fetcher('https://api-m.paypal.com/v1/notifications/verify-webhook-signature',{method:'POST',redirect:'error',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json'},body,signal:AbortSignal.timeout(20000)});
+      const response=await fetcher('https://api-m.paypal.com/v1/notifications/verify-webhook-signature',{method:'POST',redirect:'error',headers:{Authorization:'Bearer '+await accessToken(),'Content-Type':'application/json'},body,signal:bounded(20000)});
+      if(response.status===401)paypalTokens.delete(tokenKey);
       if(!response.ok)throw Error('WEBHOOK_VERIFICATION_UNAVAILABLE');
       return (await response.json()).verification_status==='SUCCESS';
     },
     paypal:async (id,method='GET',body,requestId)=>{
-      const token=await accessToken();
       const path=id.endsWith('/capture')?encodeURIComponent(id.slice(0,-8))+'/capture':encodeURIComponent(id);
-      return request('https://api-m.paypal.com/v2/checkout/orders'+(path?'/'+path:''),method,{Authorization:'Bearer '+token,'Content-Type':'application/json',...(requestId?{'PayPal-Request-Id':requestId}:{})},body);
+      const call=async fresh=>request('https://api-m.paypal.com/v2/checkout/orders'+(path?'/'+path:''),method,{Authorization:'Bearer '+await accessToken(fresh),'Content-Type':'application/json',...(requestId?{'PayPal-Request-Id':requestId}:{})},body,method==='GET'?undefined:own());
+      // A token revoked since it was cached is replaced once; POSTs carry an idempotency key.
+      try{return await call(false);}catch(error){if(error.paypalDiagnostic?.status!==401)throw error;return call(true);}
     },
-    mobimatter:async(method,path,body)=>(await request('https://api.mobimatter.com/mobimatter/api/v2'+path,method,{'Content-Type':'application/json',merchantId:env.MOBIMATTER_MERCHANT_ID,'api-key':env.MOBIMATTER_API_KEY},body)).result,
-    send:(body,key)=>request('https://api.resend.com/emails','POST',{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':key},body)
+    mobimatter:async(method,path,body)=>(await request('https://api.mobimatter.com/mobimatter/api/v2'+path,method,{'Content-Type':'application/json',merchantId:env.MOBIMATTER_MERCHANT_ID,'api-key':env.MOBIMATTER_API_KEY},body,method==='GET'?undefined:own())).result,
+    send:(body,key)=>request('https://api.resend.com/emails','POST',{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':key},body,own())
   };
 }

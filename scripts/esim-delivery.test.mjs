@@ -14,8 +14,8 @@ test('complete email escapes credentials and uses customer price without invente
  assert.match(email.html,/TEST — jo eSIM reale/);assert.doesNotMatch(email.html,/LPA:1|SM-DP\+|EUR 0/);
 });
 const details={orderId:'provider',orderState:'Completed',orderLineItem:{productId:'product',title:'<Plan>',lineItemDetails:[{name:'QR_CODE',value:'data:image/png;base64,iVBORw0KGgo='}]}};
-function fixture(){
- let row={id:'internal',paypal_order_id:'paypal',product_id:'product',amount:24,customer_email:'buyer@example.com',language:'sq',state:'awaiting_payment'};const calls=[];
+function fixture(overrides={}){
+ let row={id:'internal',paypal_order_id:'paypal',product_id:'product',amount:24,customer_email:'buyer@example.com',language:'sq',state:'awaiting_payment',...overrides};const calls=[];
  const services={store:{get:async()=>({...row}),transition:async(id,from,patch)=>{if(row.state!==from)return;row={...row,...patch};return {...row};}},paypal:async()=>({id:'paypal',status:'COMPLETED',purchase_units:[{payments:{captures:[{id:'capture',status:'COMPLETED',amount:{currency_code:'EUR',value:'24.00'}}]}}]}),mobimatter:async(method,path)=>{calls.push(path);return path==='/order'?{orderId:'provider'}:details;},send:async()=>{calls.push('email');return {id:'email'};}};
  return {services,calls,row:()=>row};
 }
@@ -24,4 +24,11 @@ test('concurrent requests only reserve once',async()=>{const f=fixture();await P
 test('unpaid or mismatched amount never buys an eSIM',async()=>{for(const value of ['23.00','25.00']){const f=fixture();const get=f.services.paypal;f.services.paypal=async()=>{const p=await get();p.purchase_units[0].payments.captures[0].amount.value=value;return p;};await assert.rejects(fulfillDelivery('internal',f.services),/PAYMENT_NOT_VERIFIED/);assert.equal(f.calls.length,0);}});
 test('ambiguous provider create is locked for review, not purchased again',async()=>{const f=fixture();f.services.mobimatter=async()=>{f.calls.push('create');throw Error('timeout');};await assert.rejects(fulfillDelivery('internal',f.services));assert.deepEqual(await fulfillDelivery('internal',f.services),{state:'reserving'});assert.equal(f.calls.length,1);});
 test('email ambiguity never causes another purchase or automatic duplicate email',async()=>{const f=fixture();f.services.send=async()=>{f.calls.push('email');throw Error('timeout');};await assert.rejects(fulfillDelivery('internal',f.services));await fulfillDelivery('internal',f.services);assert.equal(f.row().state,'sending');assert.equal(f.calls.filter(c=>c==='email').length,1);});
+test('no provider step starts within 15 s of the deadline; enough time delivers normally',async()=>{
+ const near={deadline:Date.now()+14000};
+ const f=fixture();assert.deepEqual(await fulfillDelivery('internal',f.services,near),{state:'deferred'});assert.equal(f.row().state,'paid');assert.deepEqual(f.calls,[]);
+ const g=fixture({state:'reserved',provider_order_id:'provider'});assert.deepEqual(await fulfillDelivery('internal',g.services,near),{state:'deferred'});assert.equal(g.row().state,'reserved');assert.deepEqual(g.calls,[]);
+ const h=fixture({state:'ready',provider_order_id:'provider'});assert.deepEqual(await fulfillDelivery('internal',h.services,near),{state:'deferred'});assert.equal(h.row().state,'ready');assert.deepEqual(h.calls,['/order/provider']);
+ assert.deepEqual(await fulfillDelivery('internal',f.services,{deadline:Date.now()+16000}),{state:'sent'});assert.deepEqual(f.calls,['/order','/order/complete','/order/provider','email']);
+});
 test('QR comes from provider, HTML is escaped and missing QR blocks send',()=>{const f=fixture();const email=deliveryEmail(f.row(),details);assert.match(email.html,/&lt;Plan&gt;/);assert.equal(email.attachments[0].content_id,'esim-qr');assert.throws(()=>deliveryEmail(f.row(),{...details,orderLineItem:{productId:'product',lineItemDetails:[]}}));});

@@ -1,6 +1,9 @@
 import {getCatalog,CatalogError,priceIncludingProcessing,isHiddenTestProduct} from '../scripts/mobimatter.mjs';
 import {DEFAULT_PRICING,loadSettings} from '../scripts/app-settings.mjs';
 import {readFile} from 'node:fs/promises';
+// The same for every visitor, so the Vercel CDN may serve it for a minute; browsers always revalidate,
+// and checkout recomputes the charged price. Errors, and prices built without readable settings, stay no-store.
+const cached=res=>{res.setHeader('Cache-Control','public, max-age=0, must-revalidate');res.setHeader('Vercel-CDN-Cache-Control','s-maxage=60, stale-while-revalidate=60');};
 export default async function handler(req,res,{env=process.env,settings=loadSettings,catalog=getCatalog}={}){
   res.setHeader('Cache-Control','no-store');
   if(req.method!=='GET')return res.status(405).json({error:'METHOD_NOT_ALLOWED'});
@@ -11,8 +14,11 @@ export default async function handler(req,res,{env=process.env,settings=loadSett
       const {pricing}=await settings(env);
       const markup=(100+pricing.markupPercent)/(100+DEFAULT_PRICING.markupPercent);
       snapshot.products=snapshot.products.filter(product=>!isHiddenTestProduct(product.id)).map(product=>({...product,price:priceIncludingProcessing(product.price*markup,pricing)}));
+      cached(res);
       return res.status(200).json(snapshot);
     }
-    return res.status(200).json(await catalog());
+    const body=await catalog();
+    if(!(await settings(env)).unavailable)cached(res);
+    return res.status(200).json(body);
   }catch(error){return res.status(error instanceof CatalogError?error.status:503).json({error:'CATALOG_UNAVAILABLE'});}
 }

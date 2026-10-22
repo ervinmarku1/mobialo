@@ -5,3 +5,4 @@
 !scripts/esim-delivery.mjs
 !scripts/delivery-template.mjs
 !scripts/worker-health.mjs
+!scripts/app-settings.mjs

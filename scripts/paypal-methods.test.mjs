@@ -7,14 +7,14 @@ const source=await readFile(new URL('../dist/paypal-checkout.js',import.meta.url
 const node=()=>({style:{},append(){},prepend(){},after(){},remove(){this.removed=true;},setAttribute(){},reportValidity:()=>true});
 
 // Mounts the checkout against a fake PayPal SDK and returns which buttons were rendered.
-async function mount(config,eligible=['paypal','card'],failing=[]){
+async function mount(config,eligible=['paypal','card'],failing=[],notes=[]){
   const created=[],rendered=[],slots=[],extras=[],status={textContent:''};
   const paypal={FUNDING:{PAYPAL:'paypal',CARD:'card'},Buttons(options){created.push(options.fundingSource);return {isEligible:()=>eligible.includes(options.fundingSource),render:async()=>{if(failing.includes(options.fundingSource))throw Object.assign(Error('render failed'),{name:'RenderError'});rendered.push(options.fundingSource);},close(){}};}};
   const context=vm.createContext({
     renderModal(){},lang:'en',liveProducts:[{id:'plan',category:'esim_realtime',title:'Albania 5 GB'}],console:{...console,warn(){}},location:{pathname:'/',search:''},
     window:{paypal},URLSearchParams,
     fetch:async()=>({ok:true,json:async()=>({checkoutEnabled:true,environment:'sandbox',clientId:'client',currency:'EUR',...config})}),
-    document:{createElement:node,querySelectorAll:()=>[],head:node(),body:node()}
+    document:{readyState:'complete',createElement:node,querySelectorAll:()=>notes,head:node(),body:node()}
   });
   vm.runInContext(source,context);
   const container={isConnected:true,closest:()=>null,prepend(){},append(node){extras.push(node);},querySelectorAll:()=>[],querySelector:selector=>selector==='[role=status]'?status:{append(slot){slots.push(slot);},hidden:false}};
@@ -63,7 +63,7 @@ test('a button that fails to render is removed and the remaining button still sh
 test('when every button fails to render the load error and a retry are shown',async()=>{
   const result=await mount({},['paypal','card'],['paypal','card']);
   assert.deepEqual(result.rendered,[]);assert.equal(result.slots,0);
-  assert.match(result.status,/^Payment buttons could not load\..*\[PAYPAL_RENDER_FAILED\]$/);
+  assert.equal(result.status,'Payment buttons could not load.\nCode: PAYPAL_RENDER_FAILED');
   assert.equal(result.extras.filter(node=>node.textContent==='Retry').length,1);
 });
 
@@ -86,4 +86,35 @@ test('the cached SDK promise keeps the funding of the config that loaded it',asy
   window.paypal={ready:true};scripts[0].onload();
   assert.equal(await second,window.paypal);
   assert.equal(new URL(scripts[0].src).searchParams.get('disable-funding'),'card');
+});
+
+test('a live checkout adds its own payment note and leaves the plan notes (KYC, 4G/5G) untouched',async()=>{
+  const notes=[{textContent:'This plan requires identity verification.'},{textContent:'4G/5G indicates network technology.'}];
+  const result=await mount({environment:'live',methods:{paypal:true,card:false}},['paypal'],[],notes);
+  assert.deepEqual(result.rendered,['paypal']);
+  assert.deepEqual(notes.map(note=>note.textContent),['This plan requires identity verification.','4G/5G indicates network technology.']);
+});
+
+test('checkout waits for an asynchronously loaded customer session instead of treating the buyer as signed out',async()=>{
+  const window={},requests=[];
+  const context=vm.createContext({renderModal(){},window,setTimeout,document:{readyState:'interactive'},
+    fetch:async(path,options)=>{requests.push(options.headers);return {ok:true,json:async()=>({checkoutEnabled:true})};}});
+  vm.runInContext(source,context);
+  setTimeout(()=>{window.mobialoCustomerSession=Promise.resolve({auth:{getSession:async()=>({data:{session:{access_token:'token',user:{email:'buyer@example.com'}}},error:null})}});},120);
+  await context.checkoutConfig();
+  assert.equal(requests[0].Authorization,'Bearer token');
+  // Once the page has finished loading, a missing session means signed out, without waiting.
+  const started=Date.now(),loaded=vm.createContext({renderModal(){},window:{},setTimeout,document:{readyState:'complete'},fetch:async(path,options)=>{requests.push(options.headers);return {ok:true,json:async()=>({})};}});
+  vm.runInContext(source,loaded);await loaded.checkoutConfig();
+  assert.equal(requests[1].Authorization,undefined);assert.ok(Date.now()-started<100);
+});
+
+test('failure codes are shown on their own short line in the shopper language',()=>{
+  const context=vm.createContext({renderModal(){},lang:'sq'});
+  vm.runInContext(source,context);
+  assert.equal(context.checkoutCodeSuffix({code:'PAYPAL_COMPLIANCE_VIOLATION',issues:['COMPLIANCE_VIOLATION','PAYPAL_COMPLIANCE_VIOLATION']}),'\nKodi: PAYPAL_COMPLIANCE_VIOLATION, COMPLIANCE_VIOLATION');
+  vm.runInContext("lang='it'",context);
+  assert.equal(context.checkoutCodeSuffix({code:'HTTP_503',reason:'busy'}),'\nCodice: HTTP_503:busy');
+  assert.equal(context.checkoutCodeSuffix({}),'');
+  assert.doesNotMatch(source,/shop’s PayPal account|llogarisë PayPal të dyqanit|account PayPal del negozio/);
 });

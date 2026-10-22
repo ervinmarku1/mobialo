@@ -1,0 +1,39 @@
+# Vercel deploys every push to main whether or not this passes. To make it a gate, merge through
+# pull requests with this check required, or have Vercel's Ignored Build Step wait for it.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Syntax, JSON and docs checks
+        run: node scripts/check-build.mjs
+      - name: Tests
+        run: node --test "scripts/*.test.mjs"
+      - name: Committed bundles match a fresh build
+        run: |
+          npm run build:auth
+          git diff --exit-code --stat -- dist/auth.js dist/customer-session.js dist/admin.js || { echo "::error::dist bundles differ from src/. Run npm run build:auth and commit dist/."; exit 1; }
