@@ -1,6 +1,7 @@
 import {readFile} from 'node:fs/promises';
 import {parseEnv} from 'node:util';
 import {adminMfaError} from './admin-mfa.mjs';
+import {hasAdminAccess} from './admin-access.mjs';
 export const states=['awaiting_payment','paid','reserving','reserved','completing','ready','sending','sent','review'];
 export async function adminOrders(request,fetcher=fetch,configuration){
  let env=configuration;
@@ -10,13 +11,13 @@ export async function adminOrders(request,fetcher=fetch,configuration){
  const token=request.headers.authorization;
  if(!/^Bearer [^\s]+$/.test(token||''))return fail(401,'SIGN_IN_REQUIRED');
  const ids=(env.ADMIN_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
- if(!ids.length||!env.SUPABASE_SERVICE_ROLE_KEY||!env.SUPABASE_URL)return fail(503,'ADMIN_NOT_CONFIGURED');
+ if((!ids.length&&!env.SUPER_ADMIN_USER_IDS?.trim())||!env.SUPABASE_SERVICE_ROLE_KEY||!env.SUPABASE_URL)return fail(503,'ADMIN_NOT_CONFIGURED');
  const base=new URL(env.SUPABASE_URL);if(base.protocol!=='https:'||!base.hostname.endsWith('.supabase.co'))return fail(503,'ADMIN_NOT_CONFIGURED');
  const auth=await fetcher(base.origin+'/auth/v1/user',{headers:{apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:token},signal:AbortSignal.timeout(10000)});
  if(!auth.ok)return fail(auth.status===401||auth.status===403?401:503,'SIGN_IN_REQUIRED');
  const user=await auth.json();
- if(!user.email_confirmed_at||!ids.includes(user.id))return fail(403,'ADMIN_ONLY');
- const mfa=adminMfaError(token,user,env);if(mfa)return fail(403,mfa);
+ if(!user.email_confirmed_at||!await hasAdminAccess(user.id,env,fetcher))return fail(403,'ADMIN_ONLY');
+ const mfa=adminMfaError(token,user,env.SUPER_ADMIN_USER_IDS?{...env,ADMIN_MFA_REQUIRED:'true'}:env);if(mfa)return fail(403,mfa);
  const query=new URL(request.url,'https://admin.mobialo.eu').searchParams;
  const page=Number(query.get('page')||1),state=query.get('state')||'',search=(query.get('search')||'').trim();
  const from=query.get('from')||'',to=query.get('to')||'';

@@ -1,5 +1,6 @@
 import {customerIdentity} from './customer-orders.mjs';
 import {adminMfaError} from './admin-mfa.mjs';
+import {hasAdminAccess} from './admin-access.mjs';
 import {deliveryServices} from './esim-delivery.mjs';
 import {createLiveOrder,captureLiveOrder} from './live-checkout.mjs';
 
@@ -15,9 +16,8 @@ export async function hostedCheckout(action,req,{
   try{
     const auth=await identity(req.headers.authorization,undefined,env);
     if(auth.status!==200)return action==='config'?disabled():fail(auth.status,'SIGN_IN_REQUIRED');
-    const admins=(env.ADMIN_USER_IDS||'').split(',').map(id=>id.trim()).filter(Boolean);
-    if(!admins.includes(auth.user.id))return action==='config'?disabled():fail(403,'ADMIN_ONLY');
-    const mfa=adminMfaError(req.headers.authorization,auth.user,env);if(mfa)return fail(403,mfa);
+    if(!await hasAdminAccess(auth.user.id,env))return action==='config'?disabled():fail(403,'ADMIN_ONLY');
+    const mfa=adminMfaError(req.headers.authorization,auth.user,env.SUPER_ADMIN_USER_IDS?{...env,ADMIN_MFA_REQUIRED:'true'}:env);if(mfa)return fail(403,mfa);
     if(action==='config'){
       const clientId=(env.PAYPAL_LIVE_CLIENT_ID||env.PAYPAL_CLIENT_ID||'').trim();
       if(!clientId)return fail(503,'CHECKOUT_UNAVAILABLE');

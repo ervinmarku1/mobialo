@@ -1,18 +1,20 @@
+import {setupAdminAccess} from './admin-access.js';
 import {setupAdminMfa} from './admin-mfa.js';
 import {createClient} from '@supabase/supabase-js';
 const $=id=>document.getElementById(id);
-let mfa;
+let mfa,access;
 let client,page=1,orders=[],sequence=0;
 let products=new Map();
 const labels={awaiting_payment:'Në pritje të pagesës',paid:'Paguar',reserving:'Duke rezervuar',reserved:'Rezervuar',completing:'Duke përfunduar',ready:'eSIM gati',sending:'Duke dërguar emailin',sent:'Email i pranuar për dërgim',review:'Për kontroll'};
 const message=text=>{$('message').textContent=text;};
-function clear(){orders=[];$('rows').replaceChildren();$('detail-list').replaceChildren();$('details').close();$('panel').hidden=true;}
+function clear(){access?.clear();orders=[];$('rows').replaceChildren();$('detail-list').replaceChildren();$('details').close();$('panel').hidden=true;}
 async function load(){
  const current=++sequence;clear();message('Duke ngarkuar porositë…');
  const {data:{session}}=await client.auth.getSession();
  $('login').hidden=!!session;$('logout').hidden=!session;
  if(!session){message('');return;}
  try{
+  await access.load();if(current!==sequence)return;
   const params=new URLSearchParams({page:String(page),state:$('state').value,search:$('search').value.trim(),from:$('from').value,to:$('to').value});
   const r=await fetch('/api/admin/orders?'+params,{headers:{Authorization:'Bearer '+session.access_token},cache:'no-store'});
   const data=await r.json();if(current!==sequence)return;
@@ -42,4 +44,4 @@ $('export').onclick=()=>{
 $('filters').onsubmit=e=>{e.preventDefault();page=1;load();};$('refresh').onclick=()=>load();$('previous').onclick=()=>{page--;load();};$('next').onclick=()=>{page++;load();};
 $('logout').onclick=async()=>{++sequence;clear();const {error}=await client.auth.signOut();if(error){message('Dalja nuk u krye. Provo përsëri.');return;}$('login').hidden=false;$('logout').hidden=true;message('');};
 $('login-form').onsubmit=async e=>{e.preventDefault();$('submit').disabled=true;try{const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});$('password').value='';if(error){message('Hyrja nuk u krye. Kontrollo emailin dhe fjalëkalimin.');return;}page=1;await load();}catch{message('Lidhja nuk u krye.');}finally{$('submit').disabled=false;}};
-try{const r=await fetch('/api/auth-config',{cache:'no-store'});const config=await r.json();client=createClient(config.url,config.publishableKey);mfa=setupAdminMfa(client,load);try{const catalog=await(await fetch('/api/catalog')).json();products=new Map((catalog.products||[]).map(p=>[p.id,p]));}catch{}await load();client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){++sequence;clear();$('login').hidden=false;$('logout').hidden=true;}});}catch{message('Paneli nuk mund të lidhet. Provo më vonë.');$('submit').disabled=true;}
+try{const r=await fetch('/api/auth-config',{cache:'no-store'});const config=await r.json();client=createClient(config.url,config.publishableKey);mfa=setupAdminMfa(client,load);access=setupAdminAccess(client,mfa);try{const catalog=await(await fetch('/api/catalog')).json();products=new Map((catalog.products||[]).map(p=>[p.id,p]));}catch{}await load();client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){++sequence;clear();$('login').hidden=false;$('logout').hidden=true;}});}catch{message('Paneli nuk mund të lidhet. Provo më vonë.');$('submit').disabled=true;}

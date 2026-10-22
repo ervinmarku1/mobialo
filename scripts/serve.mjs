@@ -1,4 +1,6 @@
 import http from 'node:http';
+import {parseEnv} from 'node:util';
+import {adminAccess} from './admin-access-api.mjs';
 import {localeForCountry,emailLocaleForCountry} from './locale.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -15,6 +17,14 @@ const types = {'.svg':'image/svg+xml','.html':'text/html; charset=utf-8','.css':
 http.createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
+    if(pathname==='/api/admin/access'){
+      response.setHeader('Content-Type','application/json');response.setHeader('Cache-Control','private, no-store');response.setHeader('Vary','Authorization');
+      if(!['localhost','127.0.0.1'].some(host=>request.headers.host===`${host}:${port}`)){response.writeHead(403);response.end('{}');return;}
+      let raw='';for await(const chunk of request){raw+=chunk;if(Buffer.byteLength(raw)>1024){response.writeHead(413);response.end('{}');return;}}
+      let local={};try{local=parseEnv(await readFile(new URL('../.env.local',import.meta.url),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
+      const result=await adminAccess({method:request.method,headers:request.headers,url:request.url,body:raw},{env:{...local,...process.env},allowedOrigins:[`http://${request.headers.host}`]});
+      response.writeHead(result.status);response.end(JSON.stringify(result.body));return;
+    }
     if(pathname==='/api/paypal/webhook'){
       const result=await paypalWebhook(request);
       response.writeHead(result.status,{'Content-Type':'application/json','Cache-Control':'no-store'});
