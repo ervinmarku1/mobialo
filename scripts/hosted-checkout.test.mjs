@@ -2,12 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {hostedCheckout} from './hosted-checkout.mjs';
 import {captureLiveOrder} from './live-checkout.mjs';
-import {loadSettings,clearSettingsCache} from './app-settings.mjs';
+import {loadSettings,clearSettingsCache,defaultSettings} from './app-settings.mjs';
 const id='12345678-1234-1234-1234-123456789abc';
+const fresh=()=>({at:new Date().toISOString(),ok:true});
 function fixture(){
   const calls=[];
   const deps={
     env:{CHECKOUT_MODE:'admin',PAYPAL_ENV:'live',ADMIN_USER_IDS:'admin',PAYPAL_LIVE_CLIENT_ID:'client'},
+    // CHECKOUT_MODE decides the mode; the delivery worker is reporting in.
+    settings:async env=>({...defaultSettings(env),worker:fresh()}),
     identity:async()=>({status:200,user:{id:'admin'}}),
     services:async options=>{assert.equal(options.paymentOnly,true);return {store:{get:async()=>({user_id:'admin'})}};},
     create:async input=>{calls.push(input);return {id:'remote'};},
@@ -168,10 +171,10 @@ test('unexpected failures are logged by code and only admins see the reason',asy
  const f=fixture();f.deps.log={error(){}};f.deps.create=async()=>{throw Error('raw provider text with buyer@example.com');};
  assert.equal((await hostedCheckout('create',f.req,f.deps)).body.reason,'UNEXPECTED');
 });
-const settingsFor=checkout=>async()=>({checkout:{mode:'admin',paypal:true,card:true,...checkout}});
+const settingsFor=(checkout,extra={})=>async()=>({checkout:{mode:'admin',paypal:true,card:true,...checkout},worker:fresh(),...extra});
 const get=f=>({...f.req,method:'GET'});
 test('the checkout mode saved in the admin settings wins over CHECKOUT_MODE',async()=>{
- const f=fixture();const seen=[];f.deps.settings=async env=>{seen.push(env);return {checkout:{mode:'public',paypal:true,card:true}};};
+ const f=fixture();const seen=[];f.deps.settings=async env=>{seen.push(env);return {checkout:{mode:'public',paypal:true,card:true},worker:fresh()};};
  f.deps.identity=async()=>({status:200,user:{id:'customer'}});f.deps.services=async()=>({store:{get:async()=>({user_id:'customer'})}});
  assert.equal((await hostedCheckout('config',get(f),f.deps)).body.checkoutEnabled,true);
  assert.equal((await hostedCheckout('create',f.req,f.deps)).status,200);assert.equal(f.calls[0].userId,'customer');
@@ -217,4 +220,74 @@ test('PayPal refusals are classified so the buyer knows no money was taken',asyn
   const result=await hostedCheckout('capture',f.req,f.deps);
   assert.equal(result.status,status);assert.equal(result.body.error,code);
  }
+});
+test('unreadable settings refuse new orders with a logged reason, while config still answers',async()=>{
+ const logged=[];const f=fixture();f.deps.log={error:(...args)=>logged.push(args.join(' '))};
+ f.deps.settings=async env=>({...defaultSettings(env),unavailable:true});
+ assert.equal((await hostedCheckout('config',get(f),f.deps)).body.checkoutEnabled,true);
+ const services=f.deps.services;f.deps.services=()=>assert.fail('Must not build payment services');
+ assert.deepEqual(await hostedCheckout('create',f.req,f.deps),{status:503,body:{error:'CHECKOUT_UNAVAILABLE',reason:'SETTINGS_UNAVAILABLE'}});
+ assert.equal(f.calls.length,0);assert.ok(logged.some(line=>line.includes('SETTINGS_UNAVAILABLE')));
+ // An order approved before the outage is still captured.
+ f.deps.services=services;assert.equal((await hostedCheckout('capture',f.req,f.deps)).status,200);
+ // Customers get no diagnostic reason.
+ const g=fixture();g.deps.log={error(){}};g.deps.settings=settingsFor({mode:'public'},{unavailable:true});g.deps.identity=async()=>({status:200,user:{id:'customer'}});
+ assert.deepEqual(await hostedCheckout('create',g.req,g.deps),{status:503,body:{error:'CHECKOUT_UNAVAILABLE'}});assert.equal(g.calls.length,0);
+});
+test('a settings outage through loadSettings never opens public checkout or charges default pricing',async()=>{
+ clearSettingsCache();
+ const f=fixture();Object.assign(f.deps.env,{CHECKOUT_MODE:'public',SUPABASE_URL:'https://checkout-outage.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'key'});f.deps.log={error(){}};
+ f.deps.settings=e=>loadSettings(e,{fetcher:async()=>new Response('',{status:503})});
+ f.deps.identity=async()=>({status:200,user:{id:'customer'}});
+ assert.deepEqual((await hostedCheckout('config',get(f),f.deps)).body,{environment:'preview',checkoutEnabled:false,reason:'ADMIN_ONLY'});
+ assert.equal((await hostedCheckout('create',f.req,f.deps)).body.error,'ADMIN_ONLY');
+ f.deps.identity=async()=>({status:200,user:{id:'admin'}});
+ assert.equal((await hostedCheckout('create',f.req,f.deps)).body.reason,'SETTINGS_UNAVAILABLE');assert.equal(f.calls.length,0);
+ clearSettingsCache();
+});
+test('public checkout is limited to administrators while the delivery worker heartbeat is stale',async()=>{
+ const logged=[],log={error:(...args)=>logged.push(args.join(' '))};
+ for(const worker of [null,{at:new Date(Date.now()-600000).toISOString(),ok:true},{at:new Date().toISOString(),ok:false}]){
+  const f=fixture();f.deps.log=log;f.deps.settings=settingsFor({mode:'public'},{worker});
+  f.deps.identity=async()=>({status:200,user:{id:'customer'}});f.deps.services=async()=>({store:{get:async()=>({user_id:'customer'})}});
+  assert.deepEqual((await hostedCheckout('config',get(f),f.deps)).body,{environment:'preview',checkoutEnabled:false,reason:'ADMIN_ONLY'});
+  assert.deepEqual(await hostedCheckout('create',f.req,f.deps),{status:403,body:{error:'ADMIN_ONLY'}});assert.equal(f.calls.length,0);
+  // An order created while the shop was public can still be paid.
+  assert.equal((await hostedCheckout('capture',f.req,f.deps)).status,200);
+  f.deps.identity=async()=>({status:401});
+  assert.deepEqual((await hostedCheckout('config',get(f),f.deps)).body,{environment:'preview',checkoutEnabled:false});
+  f.deps.identity=async()=>({status:200,user:{id:'admin'}});
+  assert.equal((await hostedCheckout('create',f.req,f.deps)).status,200);
+ }
+ assert.deepEqual(logged,['Public checkout limited to administrators: no fresh delivery worker heartbeat']);
+ const f=fixture();f.deps.settings=settingsFor({mode:'public'});f.deps.identity=async()=>({status:200,user:{id:'customer'}});
+ assert.equal((await hostedCheckout('config',get(f),f.deps)).body.checkoutEnabled,true);
+});
+test('closing the shop never breaks capturing an order the signed-in owner already approved',async()=>{
+ const closedSettings=[settingsFor({mode:'closed'}),settingsFor({mode:'admin'}),settingsFor({mode:'closed',paypal:false,card:false}),settingsFor({mode:'open'}),async()=>{throw Error('down');}];
+ for(const settings of closedSettings){
+  const f=fixture();f.deps.settings=settings;f.deps.log={error(){}};f.deps.env.ADMIN_MFA_REQUIRED='true';
+  f.deps.identity=async()=>({status:200,user:{id:'customer',factors:[]}});
+  let order={user_id:'customer'};f.deps.services=async()=>({store:{get:async()=>order}});
+  assert.equal((await hostedCheckout('capture',f.req,f.deps)).status,200);assert.deepEqual(f.calls,[{deferDelivery:true}]);
+  assert.equal((await hostedCheckout('create',f.req,f.deps)).status,403);
+  assert.equal((await hostedCheckout('config',get(f),f.deps)).body.checkoutEnabled,false);
+  for(const other of [{user_id:'other'},null]){order=other;assert.deepEqual(await hostedCheckout('capture',f.req,f.deps),{status:403,body:{error:'ORDER_ACCESS_DENIED'}});}
+  order={user_id:'customer'};
+  assert.equal((await hostedCheckout('capture',{...f.req,headers:{...f.req.headers,origin:'https://evil.invalid'}},f.deps)).body.error,'INVALID_ORIGIN');
+  assert.equal((await hostedCheckout('capture',{...f.req,headers:{...f.req.headers,'content-type':'text/plain'}},f.deps)).status,415);
+  f.deps.identity=async()=>({status:401});assert.equal((await hostedCheckout('capture',f.req,f.deps)).status,401);
+  assert.equal(f.calls.length,1);
+ }
+ // Administrators always pass 2FA, also for a capture, before payment services are touched.
+ {const f=fixture();f.deps.identity=async()=>({status:200,user:{id:'admin',factors:[{status:'verified'}]}});f.deps.services=()=>assert.fail('Must not touch payments');
+  assert.deepEqual(await hostedCheckout('capture',f.req,f.deps),{status:403,body:{error:'MFA_REQUIRED'}});}
+ // With an unreadable access table the caller is treated as a buyer: own order only, no diagnostics.
+ {const f=fixture();f.deps.env={CHECKOUT_MODE:'admin',PAYPAL_ENV:'live',SUPER_ADMIN_USER_IDS:'owner',SUPABASE_URL:'http://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'key'};
+  f.deps.capture=async()=>({status:'PENDING',reason:'RECEIVING_PREFERENCE_MANDATES_MANUAL_ACTION'});
+  const result=await hostedCheckout('capture',f.req,f.deps);
+  assert.equal(result.status,200);assert.equal(result.body.reason,null);}
+ // PAYPAL_ENV=live is still required for any capture.
+ const f=fixture();f.deps.env.PAYPAL_ENV='sandbox';f.deps.identity=()=>assert.fail('Unexpected authentication');
+ assert.equal((await hostedCheckout('capture',f.req,f.deps)).body.error,'CHECKOUT_CLOSED');
 });

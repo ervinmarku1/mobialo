@@ -153,10 +153,10 @@ test('each sweep result is saved as the worker heartbeat for the admin panel',as
   const writes=[];const env={SUPABASE_URL:'https://example.supabase.co'};
   const beat=workerHeartbeat({env,now:()=>new Date('2026-10-22T12:00:00Z'),write:async(...args)=>{writes.push(args);},log:{warn:()=>assert.fail('Unexpected warning')}});
   await beat({ok:true,checked:3,sent:1,waiting:2,review:0,failed:0});
-  await beat({ok:false,stage:'configuration',error:'DELIVERY_NOT_CONFIGURED:RESEND_API_KEY'});
+  await beat({ok:false,stage:'configuration',code:'DELIVERY_NOT_CONFIGURED:RESEND_API_KEY'});
   assert.deepEqual(writes,[
     [env,'worker',{at:'2026-10-22T12:00:00.000Z',ok:true,checked:3,sent:1,waiting:2,review:0,failed:0},null],
-    [env,'worker',{at:'2026-10-22T12:00:00.000Z',ok:false,stage:'configuration',error:'DELIVERY_NOT_CONFIGURED:RESEND_API_KEY'},null]
+    [env,'worker',{at:'2026-10-22T12:00:00.000Z',ok:false,stage:'configuration',code:'DELIVERY_NOT_CONFIGURED:RESEND_API_KEY'},null]
   ]);
 });
 test('heartbeat write failures are logged once by safe code and never stop the worker',async()=>{

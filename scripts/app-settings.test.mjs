@@ -52,12 +52,53 @@ test('settings are cached for 30 seconds and the last good value survives an out
  const fallback=await loadSettings(env,{fetcher:async()=>{throw new TypeError('fetch failed');},now});
  assert.equal(fallback.checkout.mode,'admin');assert.equal(fallback.unavailable,true);assert.equal(fallback.source,'env');
 });
-test('a missing table (404) falls back to the environment checkout mode',async()=>{
+test('a missing table (404) applies the environment defaults, cached for 30 seconds',async()=>{
  clearSettingsCache();
- const settings=await loadSettings({...env,CHECKOUT_MODE:'public'},{fetcher:recorder(Response.json({code:'PGRST205'},{status:404})).fetcher,now});
- assert.deepEqual(settings,{...defaultSettings({CHECKOUT_MODE:'public'}),unavailable:true});
- // Failures are not cached: the table is picked up as soon as the migration runs.
- assert.equal((await loadSettings({...env,CHECKOUT_MODE:'public'},{fetcher:recorder(Response.json(rows)).fetcher,now})).source,'database');
+ const publicEnv={...env,CHECKOUT_MODE:'public'};
+ const missing=recorder(Response.json({code:'PGRST205'},{status:404}));
+ assert.deepEqual(await loadSettings(publicEnv,{fetcher:missing.fetcher,now}),defaultSettings({CHECKOUT_MODE:'public'}));
+ assert.equal((await loadSettings(publicEnv,{fetcher:missing.fetcher,now:now+29999})).checkout.mode,'public');
+ assert.equal(missing.calls.length,1);
+ // The table is picked up once the negative cache expires (or at once after a save).
+ assert.equal((await loadSettings(publicEnv,{fetcher:recorder(Response.json(rows)).fetcher,now:now+30000})).source,'database');
+ clearSettingsCache();
+});
+test('without a recent good value, any other failure gives unavailable defaults capped at admin checkout',async()=>{
+ const failures={'5xx':async()=>new Response('',{status:503}),timeout:async()=>{throw new DOMException('timed out','TimeoutError');},network:async()=>{throw new TypeError('fetch failed');},json:async()=>new Response('<html>',{status:200}),shape:async()=>Response.json({rows})};
+ for(const [name,fetcher] of Object.entries(failures))for(const [mode,expected] of [['public','admin'],['admin','admin'],['closed','closed'],['','closed']]){
+  clearSettingsCache();
+  const settings=await loadSettings({...env,CHECKOUT_MODE:mode},{fetcher,now});
+  assert.deepEqual(settings,{...defaultSettings({CHECKOUT_MODE:mode}),checkout:{mode:expected,paypal:true,card:true},unavailable:true},name+' '+mode);
+ }
+ clearSettingsCache();
+});
+test('failures are cached for 30 seconds so an outage adds no request to every call',async()=>{
+ clearSettingsCache();
+ const down=recorder(()=>new Response('',{status:500}));
+ for(const offset of [0,1000,29999])assert.equal((await loadSettings(env,{fetcher:down.fetcher,now:now+offset})).unavailable,true);
+ assert.equal(down.calls.length,1);
+ await loadSettings(env,{fetcher:down.fetcher,now:now+30000});assert.equal(down.calls.length,2);
+ // maxAge 0 (the admin API before opening checkout) always asks the database.
+ await loadSettings(env,{fetcher:down.fetcher,now:now+30001,maxAge:0});assert.equal(down.calls.length,3);
+ clearSettingsCache();
+});
+test('the last good value is reused only while it is younger than 10 minutes',async()=>{
+ clearSettingsCache();
+ let healthy=true;const f=recorder(()=>healthy?Response.json(rows):new Response('',{status:502}));
+ await loadSettings(env,{fetcher:f.fetcher,now});healthy=false;
+ const stale=await loadSettings(env,{fetcher:f.fetcher,now:now+599000});
+ assert.equal(stale.source,'database');assert.equal(stale.checkout.mode,'public');assert.equal(stale.pricing.markupPercent,25);assert.equal(stale.unavailable,undefined);
+ // The stale value is served from the negative cache only until it turns 10 minutes old.
+ await loadSettings(env,{fetcher:f.fetcher,now:now+599999});assert.equal(f.calls.length,2);
+ const expired=await loadSettings(env,{fetcher:f.fetcher,now:now+600000});
+ assert.equal(f.calls.length,3);assert.equal(expired.unavailable,true);assert.equal(expired.source,'env');assert.equal(expired.checkout.mode,'admin');assert.deepEqual(expired.pricing,DEFAULT_PRICING);
+ clearSettingsCache();
+ healthy=true;await loadSettings(env,{fetcher:f.fetcher,now});healthy=false;
+ assert.equal((await loadSettings(env,{fetcher:f.fetcher,now:now+600000})).unavailable,true);
+ // A save forgets the previous good value, so an outage never brings back a setting the owner just changed.
+ clearSettingsCache();healthy=true;await loadSettings(env,{fetcher:f.fetcher,now});
+ await saveSetting(env,'checkout',{mode:'closed',paypal:true,card:true},owner,{fetcher:async()=>Response.json([]),now});
+ healthy=false;assert.equal((await loadSettings(env,{fetcher:f.fetcher,now:now+1})).unavailable,true);
  clearSettingsCache();
 });
 test('saveSetting validates, strips unknown fields and upserts with merge-duplicates',async()=>{

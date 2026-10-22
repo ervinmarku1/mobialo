@@ -7,8 +7,10 @@ const STALE_WORKER='Worker-i i dërgimit nuk po punon: klientët do paguanin pa 
 const METHODS=[['paypal','PayPal','Klientët paguajnë me llogarinë e tyre PayPal.'],['card','Kartë (Debit/Credit)','Klientët paguajnë me kartë pa llogari PayPal, te formulari “Debit or Credit Card”.']];
 const FIELDS=[['markupPercent','Marzhi (%)',200,'Mbi çmimin MobiMatter (USD i trajtuar si EUR).'],['feePercent','Tarifa e pagesës (%)',10,'Përqindja e PayPal-it, llogaritet mbi totalin.'],['feeFixed','Tarifa fikse (EUR)',2,'Kosto fikse për çdo pagesë.']];
 const REQUESTS={pending:['Në pritje','warn'],approved:['Miratuar','ok'],rejected:['Refuzuar','bad']};
+const SOURCES={cron:'Supabase cron (çdo minutë)'};
+const LOCKED='Ruajtja e statusit, e mënyrave të pagesës dhe e çmimeve është çaktivizuar, që vlerat fillestare nga Vercel të mos mbishkruajnë ato të ruajtura.';
 const ERRORS={
- WORKER_NOT_RUNNING:'Statusi Publik u refuzua: worker-i i dërgimit nuk po punon, ndaj klientët do paguanin pa marrë eSIM. Nis worker-in dhe prit raportimin e tij.',
+ WORKER_NOT_RUNNING:'Statusi Publik u refuzua: worker-i i dërgimit nuk po raporton, ndaj klientët do paguanin pa marrë eSIM. Kontrollo cron-in te Supabase dhe prit raportimin e tij.',
  NO_PAYMENT_METHODS:'Duhet të mbetet aktive të paktën një mënyrë pagese.',
  SETTINGS_TABLE_MISSING:'Tabela e cilësimeve mungon. Ekzekuto një herë '+SETTINGS_MIGRATION+' te Supabase → SQL Editor, pastaj provo përsëri.',
  MFA_REQUIRED:'Sesioni nuk ka verifikimin me dy hapa. Konfirmo kodin 2FA (rifresko faqen) dhe provo përsëri.',
@@ -26,7 +28,15 @@ const ERRORS={
  NETWORK_ERROR:'Lidhja nuk u krye. Kontrollo internetin dhe provo përsëri.',
  INVALID_REQUEST:'Kërkesa nuk u pranua. Rifresko faqen dhe provo përsëri.'
 };
-export const settingsError=code=>ERRORS[code]||'Veprimi nuk u krye. Provo përsëri. ['+(String(code||'').replace(/[^A-Za-z0-9_]/g,'').slice(0,60)||'UNEXPECTED')+']';
+// Server-provided keys are looked up as own properties only, so "constructor" or "__proto__" never match.
+export const settingsError=code=>Object.hasOwn(ERRORS,code)?ERRORS[code]:'Veprimi nuk u krye. Provo përsëri. ['+(String(code||'').replace(/[^A-Za-z0-9_]/g,'').slice(0,60)||'UNEXPECTED')+']';
+export const requestLabel=status=>Object.hasOwn(REQUESTS,status)?REQUESTS[status]:[String(status??'—'),''];
+const cleanCode=value=>typeof value==='string'?value.replace(/[^A-Za-z0-9_:]/g,'').slice(0,80):'';
+// Forms filled from the Vercel defaults (no database read) are never saved back over the stored values.
+export function settingsState(data){
+ const supabase=data?.status?.supabase,locked=data?.source!=='database'||data?.unavailable===true||data?.settings?.unavailable===true;
+ return {locked,notice:supabase==='error'?'supabase':!data?.tableReady&&supabase==='ok'?'migration':locked?'unread':null};
+}
 const twoDecimals=value=>Number.isFinite(value)&&Math.abs(Math.round(value*100)-value*100)<1e-6;
 // Same bounds as validPricing on the server.
 export function validPricingInput(value){return !!value&&FIELDS.every(([key,,max])=>twoDecimals(value[key])&&value[key]>=0&&value[key]<=max);}
@@ -37,9 +47,15 @@ export function examplePrice(usd,{markupPercent,feePercent,feeFixed}){
  return cents===0?0:Math.ceil((cents+Math.round(feeFixed*100))*10000/(10000-Math.round(feePercent*100)))/100;
 }
 const when=value=>{const date=new Date(value);return value&&Number.isFinite(date.getTime())?date.toLocaleString('sq-AL'):'—';};
+// Detail lines of the delivery worker row: last report, error code, last cycle, email and who runs it.
+export function workerDetails(worker={},status={}){
+ const counts=[['checked','kontrolluar'],['sent','dërguar'],['waiting','në pritje'],['review','për kontroll'],['failed','dështuar']].filter(([key])=>Number.isFinite(worker[key])).map(([key,label])=>worker[key]+' '+label).join(' · ');
+ const source=Object.hasOwn(SOURCES,worker.source)?SOURCES[worker.source]:cleanCode(worker.source),stage=cleanCode(worker.stage);
+ return [worker.at?'Raportimi i fundit: '+when(worker.at):'Nuk ka raportuar kurrë.',worker.ok===false&&'Gabim: '+(cleanCode(worker.code)||'pa kod')+(stage?' (hapi: '+stage+')':''),counts&&'Cikli i fundit: '+counts,'Email: '+(status.email===true?'OK':'Mungon'),source&&'Burimi: '+source].filter(Boolean);
+}
 function el(tag,props={},...children){const node=Object.assign(document.createElement(tag),props);node.append(...children);return node;}
 const button=(text,onclick,className='')=>el('button',{type:'button',textContent:text,className,onclick});
-const submit=text=>el('button',{type:'submit',textContent:text,className:'primary'});
+const submit=(text,disabled=false)=>el('button',{type:'submit',textContent:text,className:'primary',disabled});
 const badge=(text,kind='')=>el('span',{className:'badge'+(kind?' '+kind:''),textContent:text});
 const alertBox=(title,...lines)=>{const box=el('div',{className:'settings-alert'},el('strong',{textContent:title}),...lines.map(line=>typeof line==='string'?el('p',{textContent:line}):line));box.setAttribute('role','alert');return box;};
 const choice=(input,label,...help)=>el('label',{className:'settings-choice'},input,el('span',{},el('b',{textContent:label}),...help.map(text=>el('small',{textContent:text}))));
@@ -88,51 +104,55 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
  }
  function render(data){
   statuses={};say('');
-  const settings=data.settings,checkout=settings.checkout,fresh=data.worker?.fresh===true,admins=data.admins||{};
+  const settings=data.settings,checkout=settings.checkout,fresh=data.worker?.fresh===true,admins=data.admins||{},{locked,notice:state}=settingsState(data);
   const people=new Map([...(admins.superAdmins||[]),...(admins.envAdmins||[])].map(a=>[a.id,a.email]));
   for(const row of admins.requests||[])if(!people.has(row.user_id))people.set(row.user_id,row.email);
   const changed=(key,fallback)=>{const u=data.updated?.[key];return u?.at?'Ndryshuar më '+when(u.at)+(people.get(u.by)?' nga '+people.get(u.by):'')+'.':fallback;};
-  const nodes=[];
-  if(!data.tableReady)nodes.push(alertBox('Tabela e cilësimeve nuk ekziston ende në Supabase.','Hap Supabase → SQL Editor, ngjit të gjithë përmbajtjen e skedarit më poshtë dhe kliko Run. Deri atëherë dyqani përdor vlerat nga Vercel dhe ndryshimet këtu nuk ruhen.',el('code',{textContent:SETTINGS_MIGRATION})));
-  nodes.push(el('div',{className:'settings-grid'},shopCard(checkout,fresh,changed),methodsCard(checkout),pricingCard(settings.pricing,changed),systemCard(data),adminsCard(admins)));
+  const nodes=[],reload=()=>button('Rifresko cilësimet',()=>load());
+  if(state==='supabase')nodes.push(alertBox('Supabase nuk u përgjigj. Provo përsëri pas pak.',LOCKED,reload()));
+  else if(state==='migration')nodes.push(alertBox('Tabela e cilësimeve nuk ekziston ende në Supabase.','Hap Supabase → SQL Editor, ngjit të gjithë përmbajtjen e skedarit më poshtë dhe kliko Run. Deri atëherë dyqani përdor vlerat nga Vercel dhe ndryshimet këtu nuk ruhen.',el('code',{textContent:SETTINGS_MIGRATION})));
+  else if(state==='unread')nodes.push(alertBox('Cilësimet nuk u lexuan nga databaza; rifresko.',LOCKED,reload()));
+  nodes.push(el('div',{className:'settings-grid'},shopCard(checkout,fresh,changed,locked),methodsCard(checkout,locked),pricingCard(settings.pricing,changed,locked),systemCard(data),adminsCard(admins)));
   body.replaceChildren(...nodes);
   if(notice)show(notice.key,notice.text,notice.kind);
  }
- function shopCard(checkout,fresh,changed){
+ // Switching TO Publik needs a fresh worker report (the server checks it again); an already public shop keeps it selectable.
+ function shopCard(checkout,fresh,changed,locked){
   const form=el('form',{className:'settings-form'}),radios=[],active=MODES.find(([mode])=>mode===checkout.mode);
   for(const [mode,label,help] of MODES){
-   const input=el('input',{type:'radio',name:'checkout-mode',value:mode,checked:checkout.mode===mode,disabled:mode==='public'&&!fresh});radios.push(input);
+   const input=el('input',{type:'radio',name:'checkout-mode',value:mode,checked:checkout.mode===mode,disabled:mode==='public'&&!fresh&&checkout.mode!=='public'});radios.push(input);
    form.append(choice(input,label,help,...(mode==='public'&&!fresh?[STALE_WORKER]:[])));
   }
-  form.append(submit('Ruaj statusin'));
+  form.append(submit('Ruaj statusin',locked));
   form.onsubmit=event=>{
-   event.preventDefault();const mode=radios.find(r=>r.checked)?.value,label=MODES.find(m=>m[0]===mode)?.[1];
+   event.preventDefault();if(locked)return;const mode=radios.find(r=>r.checked)?.value,label=MODES.find(m=>m[0]===mode)?.[1];
    if(!mode||mode===checkout.mode){show('shop','Dyqani është tashmë në “'+(active?.[1]||checkout.mode)+'”.');return;}
    if(mode==='public'&&!fresh){show('shop',STALE_WORKER,'error');return;}
-   if(CONFIRM[mode]&&!confirm(CONFIRM[mode]))return;
+   if(Object.hasOwn(CONFIRM,mode)&&!confirm(CONFIRM[mode]))return;
    save('shop',{action:'checkout',value:{mode,paypal:checkout.paypal,card:checkout.card}},'U ruajt: dyqani tani është “'+label+'”.');
   };
   const intro=[el('p',{className:'settings-meta'},'Aktualisht: ',el('b',{textContent:active?.[1]||checkout.mode}),'. '+changed('checkout','Vlera vjen nga Vercel (CHECKOUT_MODE).'))];
   if(checkout.mode==='public'&&!fresh)intro.push(alertBox('Kujdes: dyqani është publik, por worker-i i dërgimit nuk po punon.','Klientët mund të paguajnë pa marrë eSIM. Kalo në “Vetëm admin” ose “Mbyllur” derisa worker-i të raportojë përsëri.'));
   return card('shop','Statusi i dyqanit',...intro,form);
  }
- function methodsCard(checkout){
+ // Allowed while the shop is Publik even with a stale worker: the server only guards switching TO Publik.
+ function methodsCard(checkout,locked){
   const form=el('form',{className:'settings-form'}),boxes={};
   for(const [key,label,help] of METHODS){
    const input=boxes[key]=el('input',{type:'checkbox',checked:checkout[key]===true});
    input.onchange=()=>{if(!boxes.paypal.checked&&!boxes.card.checked){input.checked=true;show('methods',ERRORS.NO_PAYMENT_METHODS,'error');}};
    form.append(choice(input,label,help));
   }
-  form.append(submit('Ruaj mënyrat e pagesës'));
+  form.append(submit('Ruaj mënyrat e pagesës',locked));
   form.onsubmit=event=>{
-   event.preventDefault();const paypal=boxes.paypal.checked,card=boxes.card.checked;
+   event.preventDefault();if(locked)return;const paypal=boxes.paypal.checked,card=boxes.card.checked;
    if(!paypal&&!card){show('methods',ERRORS.NO_PAYMENT_METHODS,'error');return;}
    if(paypal===checkout.paypal&&card===checkout.card){show('methods','Nuk ka ndryshime për t’u ruajtur.');return;}
    save('methods',{action:'checkout',value:{mode:checkout.mode,paypal,card}},'U ruajt: '+(paypal&&card?'PayPal dhe Karta janë aktive.':paypal?'vetëm PayPal është aktiv.':'vetëm Karta është aktive.'));
   };
   return card('methods','Mënyrat e pagesës',el('p',{className:'settings-help',textContent:'Butonat që klientët shohin te pagesa. Të paktën njëri duhet të mbetet aktiv.'}),form);
  }
- function pricingCard(pricing,changed){
+ function pricingCard(pricing,changed,locked){
   const form=el('form',{className:'settings-form'}),fields=el('div',{className:'settings-fields'}),example=el('p',{className:'settings-example'}),inputs={};
   example.setAttribute('aria-live','polite');
   const read=()=>Object.fromEntries(FIELDS.map(([key])=>[key,inputs[key].value.trim()===''?NaN:Number(inputs[key].value)]));
@@ -141,9 +161,9 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
    const input=inputs[key]=el('input',{type:'number',min:'0',max:String(max),step:'0.01',inputMode:'decimal',required:true,value:String(pricing[key])});input.oninput=update;
    fields.append(el('label',{},label,input,el('small',{textContent:help+' Lejohet 0–'+max+'.'})));
   }
-  update();form.append(fields,example,submit('Ruaj çmimet'));
+  update();form.append(fields,example,submit('Ruaj çmimet',locked));
   form.onsubmit=event=>{
-   event.preventDefault();const value=read();
+   event.preventDefault();if(locked)return;const value=read();
    if(!validPricingInput(value)){show('pricing',ERRORS.INVALID_SETTING,'error');return;}
    if(FIELDS.every(([key])=>value[key]===pricing[key])){show('pricing','Nuk ka ndryshime për t’u ruajtur.');return;}
    const next=examplePrice(20,value).toFixed(2),before=examplePrice(20,pricing).toFixed(2);
@@ -157,7 +177,6 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
   const level=value=>value==='ok'?['ok','Në rregull']:value==='error'?['bad','Gabim']:['warn','E pakontrolluar'];
   const set=value=>value?['ok','Konfiguruar']:['bad','Mungon'];
   const row=(label,[kind,text],...details)=>el('li',{},el('div',{className:'settings-person'},el('strong',{textContent:label}),...details.filter(Boolean).map(detail=>el('small',{textContent:detail}))),badge(text,kind));
-  const counts=[['checked','kontrolluar'],['sent','dërguar'],['waiting','në pritje'],['review','për kontroll'],['failed','dështuar']].filter(([key])=>Number.isFinite(worker[key])).map(([key,label])=>worker[key]+' '+label).join(' · ');
   const workerBadge=worker.fresh===true?['ok','Aktiv']:!worker.at?['bad','Pa raportim']:worker.ok===false?['bad','Raportoi gabim']:['bad','Nuk po punon'];
   return card('system','Statusi i sistemit',el('ul',{className:'settings-list'},
    row('PayPal',level(status.paypal)),
@@ -165,7 +184,7 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
    row('Supabase',level(status.supabase)),
    row('Katalogu MobiMatter',catalog.ok?['ok',Number.isFinite(catalog.products)?catalog.products+' paketa':'Në rregull']:['bad','Nuk u ngarkua']),
    row('Email (Resend)',set(status.email)),
-   row('Worker-i i dërgimit',workerBadge,worker.at?'Raportimi i fundit: '+when(worker.at):'Nuk ka raportuar kurrë.',counts&&'Cikli i fundit: '+counts),
+   row('Worker-i i dërgimit',workerBadge,...workerDetails(worker,status)),
    row('Verifikimi me dy hapa',status.mfa?['ok','I detyrueshëm']:['warn','I pakonfirmuar'],'Për superadminin në çdo ndryshim.')
   ),el('p',{className:'settings-meta',textContent:data.source==='database'?'Cilësimet lexohen nga Supabase.':'Cilësimet aktuale vijnë nga Vercel (vlerat fillestare).'}));
  }
@@ -176,7 +195,7 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
   for(const a of admins.envAdmins||[])people.append(el('li',{},el('div',{className:'settings-person'},el('strong',{textContent:a.email||a.id}),el('small',{textContent:'Vetëm lexim. Ndryshohet te Vercel (ADMIN_USER_IDS).'})),badge('nga Vercel')));
   const decide=(action,row,question,done)=>()=>{if(confirm(question))save('admins',{action,userId:row.user_id},done);};
   for(const row of admins.requests||[]){
-   const name=row.email||row.user_id,[label,kind]=REQUESTS[row.status]||[row.status,''],actions=el('div',{className:'settings-actions'});
+   const name=row.email||row.user_id,[label,kind]=requestLabel(row.status),actions=el('div',{className:'settings-actions'});
    if(!supers.has(row.user_id)){
     if(row.status==='pending')actions.append(button('Mirato',decide('approve',row,'Mirato '+name+' si administrator? Do të shohë porositë e klientëve dhe do të blejë në modalitetin admin.','U miratua: '+name+'.'),'primary'),button('Refuzo',decide('reject',row,'Refuzo kërkesën e '+name+'?','U refuzua: '+name+'.')));
     else if(row.status==='approved'&&!envIds.has(row.user_id))actions.append(button('Hiq aksesin',decide('revoke',row,'Hiq aksesin e administratorit për '+name+'?','Aksesi u hoq për '+name+'.')));

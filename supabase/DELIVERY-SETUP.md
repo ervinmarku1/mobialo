@@ -1,13 +1,18 @@
 # eSIM delivery preparation
 
-Status: hosted live checkout runs in admin mode (`CHECKOUT_MODE=admin`). Public mode exists but stays off until the delivery worker is hosted.
+Status: the shop mode (closed / admin / public), payment methods and pricing are managed
+in the admin panel (Cilësimet, stored in `app_settings`). The delivery worker runs every
+minute through Supabase pg_cron (see "Worker hosting and monitoring").
 
 ## Controlled hosted checkout
 
-Vercel now provides `/api/paypal/create` and `/api/paypal/capture`. Set
-`CHECKOUT_MODE=admin` and `PAYPAL_ENV=live` to allow only confirmed Supabase
-users listed in `ADMIN_USER_IDS`. All other visitors continue to see preview.
-Keep `CHECKOUT_MODE=closed` (or unset) to disable the hosted flow.
+Vercel provides `/api/paypal/create` and `/api/paypal/capture`. The effective mode is
+the saved Cilësimet value; before the first save (and, capped at admin, during a
+Supabase outage) it falls back to the Vercel `CHECKOUT_MODE`. With `PAYPAL_ENV=live`,
+admin mode allows only confirmed Supabase users listed in `ADMIN_USER_IDS` or the
+superadmin. All other visitors continue to see preview. Closed disables the hosted
+flow, except that a capture of an order the signed-in buyer already created is still
+allowed, so closing the shop never breaks a payment approved in PayPal.
 Use `https://www.mobialo.eu` and sign in with the configured admin account.
 Config, creation and capture all verify the session server-side. Capture also
 requires the order's stored user ID to match. Prices come from the catalog.
@@ -24,14 +29,19 @@ asks for the Authenticator code in place; it can also be verified at
 `https://www.mobialo.eu/admin`. `admin.mobialo.eu` redirects there, because sessions
 are stored per origin and create/capture only accept `https://www.mobialo.eu`.
 
-`CHECKOUT_MODE=public` opens checkout to every signed-in customer with a confirmed
-email (no admin list, no 2FA). Anonymous visitors are asked to sign in and return to
-the plan afterwards. Each customer may open at most 10 unpaid orders per hour
-(`TOO_MANY_OPEN_ORDERS`, HTTP 429). Enable public mode only after the delivery worker
-runs continuously (nothing in the code checks this; without it customers are charged
-and receive no eSIM), a real admin purchase has succeeded end to end, and Supabase
-custom SMTP is configured for customer emails. Any other value keeps checkout closed.
-Redeploy after changing Vercel environment variables.
+Public mode opens checkout to every signed-in customer with a confirmed email (no
+admin list, no 2FA). Anonymous visitors are asked to sign in and return to the plan
+afterwards. Each customer may open at most 10 unpaid orders per hour
+(`TOO_MANY_OPEN_ORDERS`, HTTP 429). Cilësimet only allows switching to public while
+the worker heartbeat is fresh (under 10 minutes), and checkout treats public as admin
+whenever the heartbeat goes stale, so customers are never charged while nothing
+provisions their eSIM. Before going public, complete one real admin purchase end to
+end. Customer emails use Supabase custom SMTP (Resend, already configured).
+
+Card payments use PayPal's guest "Debit or Credit Card" button (Advanced Card Fields
+are not available for the Albanian merchant account). PayPal → Account Settings →
+Website payments → Website preferences → "PayPal account optional" must be On.
+Kosovo-issued cards may not be offered guest checkout by PayPal.
 
 Capture outcomes:
 - COMPLETED: the order becomes `paid`; the worker provisions it.
@@ -130,10 +140,9 @@ not a Vercel background deployment; `npm run dev` does not launch it automatical
 
 Start a local server with `npm run dev` (or set PORT to a free port).
 PAYPAL_ENV=live selects the durable live path; sandbox keeps the isolated test path.
-Public visitors still get checkoutEnabled:false while `CHECKOUT_MODE=admin`. The live
-webhook is registered (https://www.mobialo.eu/api/paypal/webhook, PAYMENT.CAPTURE.COMPLETED).
-Before `CHECKOUT_MODE=public`, finish hosting and alerting for the recovery worker,
-refunds/support handling, and end-to-end real delivery validation.
+Public visitors get checkoutEnabled:false unless the shop is public. The live webhook
+is registered (https://www.mobialo.eu/api/paypal/webhook, PAYMENT.CAPTURE.COMPLETED).
+Before going public, finish refunds/support handling and an end-to-end real delivery.
 These deployment and real-payment validation steps remain required.
 
 ## Verified live PayPal webhook
@@ -165,6 +174,25 @@ app: PayPal's mock simulator does not support this postback verification method.
 No webhook has been registered or real payment made by the automated tests.
 
 ## Worker hosting and monitoring
+
+Production runs the worker without a separate server: Supabase `pg_cron` job
+`mobialo-delivery-sweep` POSTs to `https://www.mobialo.eu/api/worker/sweep` every
+minute (`migrations/20261022160000_worker_cron.sql`). The endpoint checks the
+`x-worker-secret` header against Supabase Vault secret `mobialo_worker_secret`,
+reads `mobialo_resend_api_key` from Vault (a Vercel `RESEND_API_KEY` wins if set),
+runs one bounded recovery sweep (45 s) and writes the `worker` heartbeat to
+`app_settings`, which the admin Settings page shows. Both secrets are read only
+through `public.mobialo_worker_config()`, executable by `service_role` alone.
+Vault secrets are created with `vault.create_secret` outside the repository; to
+rotate, `vault.update_secret` the value; the cron job reads it on each run, but warm
+Vercel instances cache it for up to 5 minutes, so expect 401s in `cron.job_run_details`
+for up to 5 minutes (or redeploy).
+Inspect runs with `select * from cron.job_run_details order by start_time desc limit 20;`
+and HTTP results with `select * from net._http_response order by created desc limit 20;`.
+Pause with `select cron.unschedule('mobialo-delivery-sweep');`.
+
+The Docker worker below remains an alternative; running both is safe because
+every state change is a conditional transition.
 
 `Dockerfile.worker` packages only the worker's four required source files.
 Credentials are injected at runtime; `.env.local` is excluded from the build.

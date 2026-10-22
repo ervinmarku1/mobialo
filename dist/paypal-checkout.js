@@ -56,12 +56,13 @@ async function checkoutFetch(path,options){
 }
 // Gates are re-checked on every mount, so a new sign-in or 2FA takes effect without a reload.
 async function checkoutConfig(){return checkoutFetch('/api/paypal/config',{headers:await checkoutAuthHeaders(),cache:'no-store'});}
+// The SDK loads once per page, so its card funding follows the config it was first loaded with.
 function loadPayPalSdk(config){
   if(window.paypal)return Promise.resolve(window.paypal);
   if(paypalSdkPromise)return paypalSdkPromise;
   paypalSdkPromise=new Promise((resolve,reject)=>{
     const script=document.createElement('script');
-    script.src='https://www.paypal.com/sdk/js?'+new URLSearchParams({'client-id':config.clientId,currency:'EUR',intent:'capture',components:'buttons,funding-eligibility','enable-funding':'card'});
+    script.src='https://www.paypal.com/sdk/js?'+new URLSearchParams({'client-id':config.clientId,currency:'EUR',intent:'capture',components:'buttons,funding-eligibility',...(config.methods?.card===false?{'disable-funding':'card'}:{'enable-funding':'card'})});
     script.onload=()=>resolve(window.paypal);
     script.onerror=()=>{script.remove();reject(checkoutError('PAYPAL_SDK_UNAVAILABLE'));};
     document.head.append(script);
@@ -264,14 +265,17 @@ async function mountPayPal(container,productId){
         say((order?checkoutText('PayPal nuk e përfundoi pagesën. Ruaj referencën për kontroll.','PayPal did not complete payment. Keep the reference for support.','PayPal non ha completato il pagamento. Conserva il riferimento.'):createFailureText(failure))+checkoutCodeSuffix(failure)+(order?reference(order.id):''));
       }
     };
-    let count=0,card=false,wallet=false;
+    // A button that fails to render is dropped; the others still show and the text follows what rendered.
+    let count=0,failed=0,card=false,wallet=false;
     for(const fundingSource of [methods.paypal&&paypal.FUNDING.PAYPAL,methods.card&&paypal.FUNDING.CARD].filter(Boolean)){
       const slot=document.createElement('div');buttons.append(slot);
       const instance=paypal.Buttons({fundingSource,style:{layout:'vertical',height:48},...handlers});
-      if(instance.isEligible()){await instance.render(slot);count++;if(fundingSource===paypal.FUNDING.CARD)card=true;else wallet=true;}else slot.remove();
+      let shown=false;
+      if(instance.isEligible()){try{await instance.render(slot);shown=true;}catch(error){failed++;console.warn('PayPal button not rendered',{fundingSource,code:safeCheckoutCode(error?.code||error?.name)||null});}}
+      if(shown){count++;if(fundingSource===paypal.FUNDING.CARD)card=true;else wallet=true;}else slot.remove();
       if(!container.isConnected){instance.close();return;}
     }
-    if(!count){say(checkoutText('Nuk ka mënyrë pagese të disponueshme.','No payment method is available.','Nessun metodo di pagamento disponibile.'));return;}
+    if(!count){if(failed)throw checkoutError('PAYPAL_RENDER_FAILED');say(checkoutText('Nuk ka mënyrë pagese të disponueshme.','No payment method is available.','Nessun metodo di pagamento disponibile.'));return;}
     say(card&&wallet?checkoutText('Paguaj me PayPal, ose me kartë te "Debit or Credit Card" pa llogari PayPal.','Pay with PayPal, or by card under "Debit or Credit Card" without a PayPal account.','Paga con PayPal, oppure con carta in "Debit or Credit Card" senza account PayPal.'):card?checkoutText('Paguaj me kartë te "Debit or Credit Card", pa llogari PayPal.','Pay by card under "Debit or Credit Card", without a PayPal account.','Paga con carta in "Debit or Credit Card", senza account PayPal.'):checkoutText('Zgjidh mënyrën e pagesës.','Choose your payment method.','Scegli il metodo di pagamento.'));
   }catch(error){
     if(!container.isConnected)return;

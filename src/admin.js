@@ -3,19 +3,21 @@ import {setupAdminMfa} from './admin-mfa.js';
 import {setupAdminSettings} from './admin-settings.js';
 import {createClient} from '@supabase/supabase-js';
 const $=id=>document.getElementById(id);
-let mfa,access,settings;
+let mfa,access,settings,settingsRole='';
 let client,page=1,orders=[],sequence=0;
 let products=new Map();
 const labels={awaiting_payment:'Në pritje të pagesës',paid:'Paguar',reserving:'Duke rezervuar',reserved:'Rezervuar',completing:'Duke përfunduar',ready:'eSIM gati',sending:'Duke dërguar emailin',sent:'Email i pranuar për dërgim',review:'Për kontroll'};
 // A PENDING PayPal capture is stored on an awaiting_payment row until PayPal releases it.
-const stateLabel=o=>o.state==='awaiting_payment'&&o.paypal_capture_id?'PayPal në pritje: prano pagesën te PayPal':labels[o.state]||o.state;
+const stateLabel=o=>o.state==='awaiting_payment'&&o.paypal_capture_id?'PayPal në pritje: prano pagesën te PayPal':Object.hasOwn(labels,o.state)?labels[o.state]:o.state;
 const message=text=>{$('message').textContent=text;};
-function clear(){access?.clear();settings?.clear();orders=[];$('rows').replaceChildren();$('detail-list').replaceChildren();$('details').close();$('panel').hidden=true;}
+// Orders reloads keep Cilësimet (it sits inside #panel, so it is only hidden meanwhile); sign-out clears it.
+function clear(){access?.clear();orders=[];$('rows').replaceChildren();$('detail-list').replaceChildren();$('details').close();$('panel').hidden=true;}
+function clearSettings(){settingsRole='';settings?.clear();}
 async function load(){
  const current=++sequence;clear();message('Duke ngarkuar porositë…');
  const {data:{session}}=await client.auth.getSession();
  $('login').hidden=!!session;$('logout').hidden=!session;
- if(!session){message('');return;}
+ if(!session){clearSettings();message('');return;}
  try{
   const superAdmin=await access.load();if(current!==sequence)return;
   const params=new URLSearchParams({page:String(page),state:$('state').value,search:$('search').value.trim(),from:$('from').value,to:$('to').value});
@@ -33,8 +35,10 @@ async function load(){
    const reference=document.createElement('td');reference.textContent=o.paypal_order_id;tr.append(reference);
    const action=document.createElement('td'),button=document.createElement('button');button.textContent='Shiko';button.onclick=()=>details(o);action.append(button);tr.append(action);$('rows').append(tr);
   }
-  // Cilësimet is superadmin-only; when the role is unknown it is probed silently.
-  if(superAdmin===false)settings.clear();else settings.load(superAdmin!==true);
+  // Cilësimet is superadmin-only and loads once per account and role, not on every reload, filter or page;
+  // an unknown role (null) is probed silently and never replaces a known one. "Rifresko cilësimet" reloads it.
+  const id=session.user?.id||'',role=id+':'+superAdmin;
+  if(role!==settingsRole&&!(superAdmin===null&&settingsRole.startsWith(id+':'))){settingsRole=role;if(superAdmin===false)settings.clear();else settings.load(superAdmin!==true);}
   $('empty').hidden=orders.length!==0;$('page').textContent='Faqja '+page;$('previous').disabled=page===1;$('next').disabled=data.total!==null?page*50>=data.total:orders.length<50;
  }catch{if(current===sequence)message('Lidhja nuk u krye. Provo përsëri.');}
 }
@@ -47,6 +51,6 @@ $('export').onclick=()=>{
  const url=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='mobialo-porosi-faqja-'+page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 $('filters').onsubmit=e=>{e.preventDefault();page=1;load();};$('refresh').onclick=()=>load();$('previous').onclick=()=>{page--;load();};$('next').onclick=()=>{page++;load();};
-$('logout').onclick=async()=>{++sequence;clear();const {error}=await client.auth.signOut();if(error){message('Dalja nuk u krye. Provo përsëri.');return;}$('login').hidden=false;$('logout').hidden=true;message('');};
+$('logout').onclick=async()=>{++sequence;clear();clearSettings();const {error}=await client.auth.signOut();if(error){message('Dalja nuk u krye. Provo përsëri.');return;}$('login').hidden=false;$('logout').hidden=true;message('');};
 $('login-form').onsubmit=async e=>{e.preventDefault();$('submit').disabled=true;try{const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});$('password').value='';if(error){message('Hyrja nuk u krye. Kontrollo emailin dhe fjalëkalimin.');return;}page=1;await load();}catch{message('Lidhja nuk u krye.');}finally{$('submit').disabled=false;}};
-try{const r=await fetch('/api/auth-config',{cache:'no-store'});const config=await r.json();client=createClient(config.url,config.publishableKey);mfa=setupAdminMfa(client,load);access=setupAdminAccess(client,mfa);settings=setupAdminSettings(client);try{const catalog=await(await fetch('/api/catalog')).json();products=new Map((catalog.products||[]).map(p=>[p.id,p]));}catch{}await load();client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){++sequence;clear();$('login').hidden=false;$('logout').hidden=true;}});}catch{message('Paneli nuk mund të lidhet. Provo më vonë.');$('submit').disabled=true;}
+try{const r=await fetch('/api/auth-config',{cache:'no-store'});const config=await r.json();client=createClient(config.url,config.publishableKey);mfa=setupAdminMfa(client,load);access=setupAdminAccess(client,mfa);settings=setupAdminSettings(client);try{const catalog=await(await fetch('/api/catalog')).json();products=new Map((catalog.products||[]).map(p=>[p.id,p]));}catch{}await load();client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){++sequence;clear();clearSettings();$('login').hidden=false;$('logout').hidden=true;}});}catch{message('Paneli nuk mund të lidhet. Provo më vonë.');$('submit').disabled=true;}

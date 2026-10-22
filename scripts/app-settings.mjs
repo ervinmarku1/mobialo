@@ -4,7 +4,7 @@
 export const CHECKOUT_MODES=['closed','admin','public'];
 export const DEFAULT_PRICING=Object.freeze({markupPercent:20,feePercent:2.5,feeFixed:0.2});
 export const WRITABLE_KEYS=['checkout','pricing','worker'];
-const SETTINGS_MAX_AGE=30000;
+const SETTINGS_MAX_AGE=30000,STALE_MAX_AGE=600000;
 
 // Tolerance: 1.1*100 is 110.00000000000001 in binary floating point.
 const twoDecimals=value=>Number.isFinite(value)&&Math.abs(Math.round(value*100)-value*100)<1e-6;
@@ -48,19 +48,23 @@ function connection(env){
   return {url:base.origin+'/rest/v1/app_settings',headers:{apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY,'Content-Type':'application/json'}};
 }
 
-let cache=null;
-export function clearSettingsCache(){cache=null;}
+let cache=null,good=null;
+export function clearSettingsCache(){cache=good=null;}
 
-// Cached per process for 30 seconds. If the table is unreachable, the last good value is kept;
-// without one, the environment defaults apply (checkout mode from CHECKOUT_MODE).
+// Every result, failures included, is cached per process for 30 seconds, so an outage or a missing
+// table never adds a Supabase request to each call. A missing table (404) means the environment
+// defaults apply. Any other failure reuses the last good value while it is younger than 10 minutes;
+// after that the defaults apply, marked unavailable and never wider than 'admin' checkout.
 export async function loadSettings(env=process.env,{fetcher=fetch,now=Date.now(),maxAge=SETTINGS_MAX_AGE}={}){
   const defaults=defaultSettings(env);
   const db=connection(env);
   if(!db)return defaults;
   const key=db.url+'|'+(env.CHECKOUT_MODE||'');
-  if(cache?.key===key&&now-cache.at<maxAge)return cache.value;
+  if(cache?.key===key&&now-cache.at<maxAge&&now<cache.until)return cache.value;
+  const remember=(value,until=Infinity)=>(cache={key,at:now,until,value},value);
   try{
     const response=await fetcher(db.url+'?select=key,value,updated_at,updated_by',{headers:db.headers,signal:AbortSignal.timeout(5000)});
+    if(response.status===404)return remember(defaults);
     if(!response.ok)throw Error('SETTINGS_UNAVAILABLE');
     const rows=await response.json();
     if(!Array.isArray(rows))throw Error('SETTINGS_UNAVAILABLE');
@@ -70,11 +74,11 @@ export async function loadSettings(env=process.env,{fetcher=fetch,now=Date.now()
     if(validPricing(map.get('pricing')?.value))value.pricing=pickPricing(map.get('pricing').value);
     if(validWorker(map.get('worker')?.value))value.worker=map.get('worker').value;
     for(const name of ['checkout','pricing'])if(map.has(name))value.updated[name]={at:map.get(name).updated_at||null,by:map.get(name).updated_by||null};
-    cache={key,at:now,value};
-    return value;
+    good={key,at:now,value};
+    return remember(value);
   }catch{
-    if(cache?.key===key)return cache.value;
-    return {...defaults,unavailable:true};
+    if(good?.key===key&&now-good.at<STALE_MAX_AGE)return remember(good.value,good.at+STALE_MAX_AGE);
+    return remember({...defaults,checkout:{...defaults.checkout,mode:defaults.checkout.mode==='public'?'admin':defaults.checkout.mode},unavailable:true});
   }
 }
 

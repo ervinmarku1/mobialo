@@ -13,6 +13,8 @@ export function accessStore(env,fetcher=fetch){
  return {
   get:async id=>(await request('GET',{user_id:'eq.'+id,select}))[0]||null,
   list:async page=>request('GET',{select,order:'created_at.desc,user_id',limit:'50',offset:String((page-1)*50)}),
+  // Every approved administrator, however old the request, so access can always be revoked.
+  approved:async()=>request('GET',{status:'eq.approved',select,order:'created_at.desc',limit:'500'}),
   submit:async user=>request('POST',{}, {user_id:user.id,email:user.email,status:'pending'}),
   decide:async(id,status,actor)=>(await request('PATCH',{user_id:'eq.'+id,status:'eq.pending'},{status,decided_by:actor,decided_at:new Date().toISOString()}))[0]||null,
   // Only an approved row can be revoked; it becomes rejected with the revoking actor recorded.

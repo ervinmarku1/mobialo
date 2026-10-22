@@ -97,7 +97,7 @@ async function main(){
       const code=recoveryErrorCode(error);
       console.error('Recovery sweep unavailable',JSON.stringify({stage,code}));
       // A failed local health file after a finished sweep keeps the sweep's own result.
-      beat??={ok:false,stage,error:code};
+      beat??={ok:false,stage,code};
       await writeWorkerHealth({ok:false}).catch(()=>{});
       if(process.argv.includes('--once')){process.exitCode=1;return;}
     }finally{

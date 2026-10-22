@@ -18,7 +18,7 @@ function fixture({id=root,rows=[{key:'worker',value:{at:minutesAgo(1),ok:true,ch
   assert.fail('Unexpected request '+url);
  };
  const request={user_id:candidate,email:'candidate@example.com',status:'pending',created_at:minutesAgo(30),decided_by:null,decided_at:null};
- const store={list:async page=>{calls.push(['list',page]);return [request];},decide:async(...args)=>{calls.push(['decide',...args]);return state.decided===false?null:{...request,status:args[1]};},revoke:async(...args)=>{calls.push(['revoke',...args]);return state.revoked===false?null:{...request,status:'rejected'};}};
+ const store={list:async page=>{calls.push(['list',page]);return [request];},approved:async()=>{calls.push(['approved']);if(state.approved instanceof Error)throw state.approved;return state.approved||[];},decide:async(...args)=>{calls.push(['decide',...args]);return state.decided===false?null:{...request,status:args[1]};},revoke:async(...args)=>{calls.push(['revoke',...args]);return state.revoked===false?null:{...request,status:'rejected'};}};
  const services=async options=>{calls.push(['services',options.paymentOnly]);return {verifyPayPal:async()=>true};};
  const deps={env:{SUPER_ADMIN_USER_IDS:root,ADMIN_USER_IDS:`${staff},${root}`,SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'service',PAYPAL_WEBHOOK_ID:'webhook',RESEND_API_KEY:' '},
   identity:async(authorization,fetch,env)=>{assert.equal(env,deps.env);return {status:200,user:{id,email:'owner@example.com',email_confirmed_at:'now',factors:[{status:'verified'}]}};},
@@ -36,7 +36,42 @@ test('owner overview reports settings, live checks and administrators without le
   status:{paypal:'ok',webhook:true,supabase:'ok',catalog:{ok:true,products:3},email:false,mfa:true},
   admins:{superAdmins:[{id:root,email:'owner@example.com'}],envAdmins:[{id:staff,email:'staff@example.com'}],requests:[{user_id:candidate,email:'candidate@example.com',status:'pending',created_at:minutesAgo(30),decided_at:null}]}
  });
- assert.ok(f.calls.some(c=>c[0]==='services'&&c[1]===true));assert.ok(f.calls.some(c=>c[0]==='list'&&c[1]===1));
+ assert.ok(f.calls.some(c=>c[0]==='services'&&c[1]===true));assert.ok(f.calls.some(c=>c[0]==='list'&&c[1]===1));assert.ok(f.calls.some(c=>c[0]==='approved'));
+});
+test('every approved administrator is listed once, beyond the first page of requests',async()=>{
+ const f=fixture(),old='44444444-4444-4444-4444-444444444444';
+ f.state.approved=[{user_id:old,email:'old@example.com',status:'approved',created_at:minutesAgo(90000),decided_by:root,decided_at:minutesAgo(80000)},{user_id:candidate,email:'candidate@example.com',status:'approved',created_at:minutesAgo(30),decided_by:root,decided_at:null},{user_id:old,email:'old@example.com',status:'approved',created_at:minutesAgo(90000),decided_by:root,decided_at:minutesAgo(80000)}];
+ const {requests}=(await f.get()).body.admins;
+ assert.deepEqual(requests,[{user_id:candidate,email:'candidate@example.com',status:'pending',created_at:minutesAgo(30),decided_at:null},{user_id:old,email:'old@example.com',status:'approved',created_at:minutesAgo(90000),decided_at:minutesAgo(80000)}]);
+ f.state.approved=Error('ACCESS_UNAVAILABLE');
+ assert.deepEqual((await f.get()).body.admins.requests,[]);assert.equal((await f.get()).body.admins.unavailable,true);
+});
+test('store lists approved administrators with a bounded, ordered query',async()=>{
+ const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'fixture'};
+ const store=accessStore(env,async(url,options)=>{
+  const query=new URL(url).searchParams;assert.equal(new URL(url).pathname,'/rest/v1/admin_access_requests');assert.equal(options.method,'GET');
+  assert.deepEqual(Object.fromEntries(query),{status:'eq.approved',select:'user_id,email,status,created_at,decided_by,decided_at',order:'created_at.desc',limit:'500'});
+  return Response.json([{user_id:candidate,status:'approved'}]);
+ });
+ assert.deepEqual(await store.approved(),[{user_id:candidate,status:'approved'}]);
+ await assert.rejects(accessStore(env,async()=>new Response('',{status:500})).approved(),/ACCESS_UNAVAILABLE/);
+});
+test('the worker view keeps only sanitized email, code, stage and source fields',async()=>{
+ const worker={at:minutesAgo(30),ok:false,checked:1,email:true,code:'DELIVERY_NOT_CONFIGURED:MOBIMATTER_API_KEY',stage:'configuration',source:'cron',secret:'x',error:'raw'};
+ const body=(await fixture({rows:[{key:'worker',value:worker}]}).get()).body;
+ assert.deepEqual(body.worker,{at:minutesAgo(30),ok:false,fresh:false,checked:1,email:true,code:'DELIVERY_NOT_CONFIGURED:MOBIMATTER_API_KEY',stage:'configuration',source:'cron'});
+ assert.equal(body.status.email,true);
+ for(const [field,value] of [['email','true'],['email',1],['code','raw upstream text'],['code','lowercase'],['code','A'.repeat(82)],['code','<IMG>'],['code',42],['stage','Recovery'],['stage','health-write'],['stage','x'.repeat(41)],['stage',''],['stage',7],['source','<script>'],['source','Cron Job']]){
+  const view=(await fixture({rows:[{key:'worker',value:{at:minutesAgo(1),ok:true,[field]:value}}]}).get()).body;
+  assert.equal(field in view.worker,false,field+' '+value);if(field==='email')assert.equal(view.status.email,false);
+ }
+ assert.equal((await fixture({rows:[{key:'worker',value:{at:minutesAgo(1),ok:true,stage:'health_write'}}]}).get()).body.worker.stage,'health_write');
+});
+test('unreadable settings are flagged in the overview',async()=>{
+ const f=fixture();f.state.table=503;
+ const {body}=await f.get();
+ assert.equal(body.unavailable,true);assert.equal(body.source,'env');assert.equal(body.status.supabase,'error');
+ assert.equal('unavailable' in (await fixture().get()).body,false);
 });
 test('only the owner with an authenticator session can read or change settings',async()=>{
  for(const [id,aal,error] of [[staff,'aal2','SUPER_ADMIN_ONLY'],[root,'aal1','MFA_REQUIRED']]){
@@ -88,6 +123,14 @@ test('public checkout requires a fresh worker heartbeat and at least one payment
  assert.equal(result.status,200);assert.equal(result.body.status.mfa,true);
  assert.deepEqual(f.saved[0].body,{key:'checkout',value:{mode:'public',paypal:true,card:false},updated_at:new Date(now).toISOString(),updated_by:root});
  assert.equal(f.saved[0].prefer,'resolution=merge-duplicates,return=representation');
+});
+test('payment methods can be changed while already public, even with a stale worker',async()=>{
+ const f=fixture({rows:[{key:'checkout',value:{mode:'public',paypal:true,card:true}},{key:'worker',value:{at:minutesAgo(30),ok:true}}]});
+ const result=await f.post({action:'checkout',value:{mode:'public',paypal:false,card:true}});
+ assert.equal(result.status,200);assert.deepEqual(f.saved.map(s=>s.body.value),[{mode:'public',paypal:false,card:true}]);
+ // Switching from admin-only to public still needs the worker.
+ const g=fixture({rows:[{key:'checkout',value:{mode:'admin',paypal:true,card:true}},{key:'worker',value:{at:minutesAgo(30),ok:true}}]});
+ assert.deepEqual(await g.post({action:'checkout',value:{mode:'public',paypal:false,card:true}}),{status:409,body:{error:'WORKER_NOT_RUNNING'}});assert.equal(g.saved.length,0);
 });
 test('closing or admin-only checkout does not depend on the worker',async()=>{
  const f=fixture({rows:[]});

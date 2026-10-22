@@ -24,7 +24,7 @@ export function setupAdminAccess(client,mfa){
    const data=await request();if(current!==version)return null;
    if(data.superAdmin)return true;
    box.hidden=false;box.append(text('h2','Kërkesë për akses administratori'));
-   if(data.request)box.append(text('p','Statusi: '+labels[data.request.status]));
+   if(data.request)box.append(text('p','Statusi: '+(Object.hasOwn(labels,data.request.status)?labels[data.request.status]:String(data.request.status??'—'))));
    else box.append(text('p','Kërkesa i dërgohet superadminit për shqyrtim. Nuk jep akses automatik.'),button('Kërko akses admin',()=>mutate({action:'request'})));
    box.append(button('Rifresko kërkesat',load));
    return false;
