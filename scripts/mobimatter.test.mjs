@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeProducts,fetchProducts,priceIncludingProcessing,sellingPrice,getCatalog} from './mobimatter.mjs';
-import catalogHandler from '../api/catalog.mjs';
+import catalogHandler from './catalog-api.mjs';
 
 const product={productId:'fixture-1',productCategory:'esim_realtime',providerName:'Test provider',retailPrice:8.99,wholesalePrice:7.6,currencyCode:'USD',countries:['AL','IT'],regions:['Europe'],productDetails:[{name:'PLAN_VALIDITY',value:'360'},{name:'PLAN_DATA_UNIT',value:'MB'},{name:'PLAN_TITLE',value:'Test plan'},{name:'PLAN_DATA_LIMIT',value:'500'},{name:'PLAN_DETAILS',value:JSON.stringify({description:'500 MB total',items:['Activation on installation']})}]};
 test('provider logos allow HTTPS only and tolerate missing or invalid URLs',()=>{

@@ -1,5 +1,6 @@
 import {publicCatalog,shareable,WARM_AGE,RECHECK_AGE} from '../scripts/public-catalog.mjs';
 import {createStorefront,routeFromPath,routeFromQuery} from '../scripts/storefront-pages.mjs';
+import catalogApi from '../scripts/catalog-api.mjs';
 
 // The storefront pages and /sitemap.xml (vercel.json rewrites /esim/... and /sq|it/esim/... here). They are built from the
 // same catalog and prices as /api/catalog, and checkout refuses a price other than the one the plan page showed. The CDN
@@ -9,6 +10,8 @@ let storefront;
 // Shown when the page code itself cannot load (e.g. a file missing from includeFiles): no catalog, no copy tables.
 const broken='<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>MOBIALO</title></head><body style="font:16px/1.5 system-ui,sans-serif;margin:40px 16px;color:#262321;background:#fff5ed"><h1>MOBIALO</h1><p lang="en">This page is temporarily unavailable. Please try again in a minute.</p><p lang="sq">Kjo faqe nuk është e disponueshme për momentin. Provo përsëri pas një minute.</p><p lang="it">Questa pagina non è momentaneamente disponibile. Riprova tra un minuto.</p><p><a href="/">mobialo.eu</a></p></body></html>\n';
 export default async function handler(req,res,deps={}){
+  // /api/catalog is served here too (vercel.json rewrite): the Vercel Hobby plan allows at most 12 functions.
+  if((req.query?.page??new URL(req.url||'/','https://www.mobialo.eu').searchParams.get('page'))==='catalog')return catalogApi(req,res,deps);
   res.setHeader('Cache-Control','no-store');
   if(req.method!=='GET'&&req.method!=='HEAD'){res.statusCode=405;res.setHeader('Allow','GET, HEAD');return res.end();}
   const url=new URL(req.url||'/','https://www.mobialo.eu');

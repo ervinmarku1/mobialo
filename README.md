@@ -45,9 +45,12 @@ Vercel deploys every push to `main` straight to production.
 Checkout, delivery, the webhook, the worker, monitoring and the database migration order
 are documented in [supabase/DELIVERY-SETUP.md](supabase/DELIVERY-SETUP.md).
 
+The Vercel Hobby plan deploys at most 12 functions (files under `api/`); a 13th makes the deployment fail.
+There are 12, so new endpoints go into an existing function behind a rewrite (as `/api/catalog` does).
+
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/catalog` | New-eSIM catalog with server-side EUR prices (CDN 60 s, then 10 min stale while it refreshes) |
+| `GET /api/catalog` | New-eSIM catalog with server-side EUR prices (CDN 60 s, then 10 min stale while it refreshes); rewritten to `api/store.mjs?page=catalog` |
 | `GET /api/store` | Storefront pages and `/sitemap.xml` through the `/esim` rewrites (CDN 5 min, then 10 min stale; 404 1 min); `?page=warm` is the pg_cron warm-up (204, no-store) |
 | `GET /api/auth-config` | Supabase URL and publishable key for browser sign-in |
 | `GET /api/locale` | Site and email language from the Vercel IP country |

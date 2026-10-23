@@ -20,6 +20,7 @@
     {"source": "/", "has": [{"type": "query", "key": "plan", "value": "(?<plan>[^&]{1,100})"}], "destination": "/api/store?page=legacy&product=:plan", "permanent": false}
   ],
   "rewrites": [
+    {"source": "/api/catalog", "destination": "/api/store?page=catalog"},
     {"source": "/admin", "destination": "/admin.html"},
     {"source": "/admin/orders/:id", "destination": "/admin.html"},
     {"source": "/join", "destination": "/auth.html"},

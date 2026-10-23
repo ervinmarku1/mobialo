@@ -1,5 +1,6 @@
-import {CatalogError} from '../scripts/mobimatter.mjs';
-import {publicCatalog,shareable} from '../scripts/public-catalog.mjs';
+import {CatalogError} from './mobimatter.mjs';
+import {publicCatalog,shareable} from './public-catalog.mjs';
+// GET /api/catalog (vercel.json rewrites it to api/store.mjs, which calls this: the Hobby plan allows 12 functions).
 // The CDN keeps the catalog for a minute (then serves it stale for 10 minutes while it refreshes), the function
 // answers from the last good catalog while MobiMatter is refreshed, and checkout recomputes the charged price.
 // Errors, and prices built without readable settings, stay no-store.

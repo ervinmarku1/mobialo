@@ -324,7 +324,8 @@ test('header: both account labels are in the markup and a <head> snippet marks a
   }
 });
 
-function respond(){const headers={};const res={statusCode:0,body:null,setHeader:(key,value)=>{headers[key]=value;},end(body){res.body=body??null;}};return {res,headers};}
+// Includes Vercel's res.status()/res.json() helpers, which the /api/catalog handler uses.
+function respond(){const headers={};const res={statusCode:0,body:null,setHeader:(key,value)=>{headers[key]=value;},end(body){res.body=body??null;},status(code){res.statusCode=code;return res;},json(value){res.body=JSON.stringify(value);}};return {res,headers};}
 const pricing={markupPercent:20,feePercent:2.5,feeFixed:0.2},live={MOBIMATTER_MERCHANT_ID:'fixture',MOBIMATTER_API_KEY:'fixture'};
 const call=async(url,deps,method='GET')=>{const {res,headers}=respond();await handler({method,url:at(url),query:Object.fromEntries(new URL(at(url),'https://x').searchParams)},res,{storefront:shop,...deps});return {status:res.statusCode,headers,body:res.body};};
 const stock=(extra={})=>({env:live,catalog:async()=>fixture,settings:async()=>({pricing}),...extra});
@@ -537,4 +538,16 @@ test('phones collapse the plan filters before any field is parsed, so no frame s
   const html=page('/sq/esim/japan',fixture).body;
   const collapse=html.indexOf("document.getElementById('plan-filters').open=false"),summary=html.indexOf('</summary>',html.indexOf('id="plan-filters"')),select=html.indexOf('<select',html.indexOf('id="plan-filters"'));
   assert.ok(summary>0&&collapse>summary&&collapse<select,'collapse script sits between the summary and the first field');
+});
+
+test('the deployment stays within the Vercel Hobby limit of 12 functions, and /api/catalog is served by api/store.mjs',async()=>{
+  const {readdir}=await import('node:fs/promises');
+  const walk=async dir=>(await Promise.all((await readdir(new URL('../'+dir,import.meta.url),{withFileTypes:true})).map(entry=>entry.isDirectory()?walk(dir+'/'+entry.name):[dir+'/'+entry.name]))).flat();
+  const functions=(await walk('api')).filter(file=>/\.(m?js|ts)$/.test(file));
+  assert.ok(functions.length<=12,functions.length+' functions: '+functions.join(' '));
+  const vercel=JSON.parse(await read('vercel.json'));
+  assert.deepEqual(vercel.rewrites[0],{source:'/api/catalog',destination:'/api/store?page=catalog'});
+  const result=await call('/api/store?page=catalog',stock());
+  assert.equal(result.status,200);assert.ok(JSON.parse(result.body).products.length>0);
+  assert.equal(result.headers['Vercel-CDN-Cache-Control'],'s-maxage=60, stale-while-revalidate=600');
 });
