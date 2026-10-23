@@ -43,3 +43,17 @@ test('the stored terms version is escaped, and demonstration emails carry no con
  const demo=render({language:'en',terms_version:'v1.0-2026-10-22',terms_accepted_at:'2026-10-22T14:03:12Z'},{test:true});
  assert.doesNotMatch(demo.html+demo.text,/You accepted the Terms|Time of acceptance/);
 });
+
+test('the eSIM email offers one-tap installation on iPhone with the same LPA string as the QR, never in test emails',()=>{
+  const fields=new Map([['SMDP_ADDRESS','rsp.example.com'],['ACTIVATION_CODE','ABC-123-XYZ']]);
+  for(const [language,label] of [['sq','Instalo direkt në iPhone'],['en','Install directly on iPhone'],['it','Installa direttamente su iPhone']]){
+    const email=renderDelivery({language},{orderLineItem:{title:'Plan'}},fields);
+    assert.ok(email.html.includes('href="https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=LPA:1$rsp.example.com$ABC-123-XYZ"'),language);
+    assert.ok(email.html.includes(label)&&email.text.includes(label+': https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=LPA:1$rsp.example.com$ABC-123-XYZ'),language);
+  }
+  // A full LPA activation code is used as it is.
+  assert.ok(renderDelivery({language:'en'},{orderLineItem:{title:'Plan'}},new Map([['ACTIVATION_CODE','LPA:1$smdp.example.net$CODE1']])).html.includes('carddata=LPA:1$smdp.example.net$CODE1"'));
+  // Demonstration codes, missing parts and unexpected characters give no link.
+  for(const [map,options] of [[fields,{test:true}],[new Map([['SMDP_ADDRESS','rsp.example.com']]),{}],[new Map([['SMDP_ADDRESS','x" onmouseover="1'],['ACTIVATION_CODE','A']]),{}]])
+    assert.doesNotMatch(renderDelivery({language:'en'},{orderLineItem:{title:'Plan'}},map,options).html,/esimsetup\.apple\.com/);
+});

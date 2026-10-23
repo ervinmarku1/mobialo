@@ -6,6 +6,8 @@ import {createLiveOrder,captureLiveOrder,paypalFailure} from './live-checkout.mj
 import {loadSettings,workerFresh} from './app-settings.mjs';
 import {checkGuestLimits,clientIpHash} from './checkout-limits.mjs';
 import {TERMS_VERSION} from './terms-version.mjs';
+import {staleAlert,isStale,sendAlert,resendAlert} from './checkout-alerts.mjs';
+import {workerConfig} from './worker-sweep.mjs';
 
 // Version of the Terms and Delivery & refund policy accepted with the checkout consent checkbox.
 export {TERMS_VERSION};
@@ -20,6 +22,8 @@ export function checkoutErrorCode(error){
 
 // The stale-worker warning is logged once per logger, i.e. once per process for console.
 const workerWarned=new WeakSet();
+// The UTC hour in which this instance last emailed that the sweep stopped reporting (Resend drops repeats from others).
+let staleAlerted='';
 
 // Checkout mode comes from the admin settings (app_settings 'checkout', else CHECKOUT_MODE):
 // 'admin' = signed-in administrators with 2FA only (testing);
@@ -29,7 +33,7 @@ const workerWarned=new WeakSet();
 // or, without an owner, by whoever holds its capability (state ID plus PayPal order ID).
 export async function hostedCheckout(action,req,{
   env=process.env,identity=customerIdentity,services=deliveryServices,
-  create=createLiveOrder,capture=captureLiveOrder,settings=loadSettings,limits=checkGuestLimits,log=console
+  create=createLiveOrder,capture=captureLiveOrder,settings=loadSettings,limits=checkGuestLimits,alert,log=console
 }={}){
   const result=(status,body)=>({status,body});
   const fail=(status,error)=>result(status,{error});
@@ -46,6 +50,14 @@ export async function hostedCheckout(action,req,{
   if(mode==='public'&&!workerFresh(loaded.worker)){
     mode='admin';
     if(!workerWarned.has(log)){workerWarned.add(log);log.error('Public checkout limited to administrators: no fresh delivery worker heartbeat');}
+    // A heartbeat older than 10 minutes means the sweep is not running, so it cannot report this itself: the owner is
+    // told once an hour. A recent but unhealthy heartbeat is reported by the sweep (two sweeps in a row).
+    const hour=new Date().toISOString().slice(0,13);
+    if(isStale(loaded.worker)&&staleAlerted!==hour){
+      staleAlerted=hour;
+      // Resend directly (the Vercel key or the Vault one); no payment service is involved.
+      await sendAlert(alert||(async(body,key)=>resendAlert(env.RESEND_API_KEY?.trim()||String((await workerConfig(env))?.resend_api_key??'').trim())(body,key)),staleAlert(loaded.worker),log);
+    }
   }
   // A payment the buyer already approved in PayPal stays capturable after the shop closes (owner or guest capability).
   const ownerCapture=action==='capture'&&mode!=='public';

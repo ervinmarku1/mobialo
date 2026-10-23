@@ -10,7 +10,7 @@ function fixture(overrides={}){
     config:async()=>({worker_secret:secret,resend_api_key:'re_vault'}),
     services:async({configuration})=>{used.push(configuration);return {};},
     recover:async()=>({checked:3,sent:1,waiting:2,review:0,failed:0}),
-    save:async(env,name,value)=>{saved.push([name,value]);},
+    save:async(env,name,value)=>{saved.push([name,value]);},settings:async()=>({}),alert:async()=>assert.fail('No alert without a previous unhealthy heartbeat'),
     log:{log(){},warn(){},error(){}},
     ...overrides
   };

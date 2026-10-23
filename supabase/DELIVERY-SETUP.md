@@ -290,6 +290,10 @@ Monitoring:
 - HTTP results: `select * from net._http_response order by created desc limit 20;`
 - Vercel function logs for `/api/worker/sweep` (counts and internal order IDs only, never
   email addresses or activation credentials) and the heartbeat in Cilësimet.
+- Email to support@mobialo.eu when public checkout closes by itself (scripts/checkout-alerts.mjs), at
+  most once an hour per reason: the sweep reports a problem in two sweeps in a row (with the code), or
+  the heartbeat is older than 10 minutes (sent by the checkout function, since the sweep is not running).
+  Every paid order that stops for manual handling is emailed as well (see "Delivery pipeline").
 
 Retention: job `mobialo-cron-cleanup` (migration 8) deletes `cron.job_run_details` rows
 older than 7 days every day at 03:17 UTC; without it the sweep adds 1440 rows a day.

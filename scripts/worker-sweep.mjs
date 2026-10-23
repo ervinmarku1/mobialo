@@ -1,8 +1,9 @@
 import {createHash,timingSafeEqual} from 'node:crypto';
 import {deliveryServices} from './esim-delivery.mjs';
 import {recoverDeliveries,recoveryErrorCode} from './delivery-worker.mjs';
-import {saveSetting} from './app-settings.mjs';
+import {saveSetting,loadSettings} from './app-settings.mjs';
 import {legalDocumentsReady} from './legal-documents.mjs';
+import {unhealthyAlert,sendAlert,resendAlert} from './checkout-alerts.mjs';
 
 // Supabase pg_cron calls POST /api/worker/sweep every minute, replacing a separately hosted
 // worker process. Secrets come from Supabase Vault through a service_role-only RPC, so Vercel
@@ -31,7 +32,7 @@ async function cachedConfig(env,config,now){
 const configErrorCode=error=>/^[A-Z][A-Z0-9_]{0,40}$/.test(error?.message||'')?error.message:error?.name==='TimeoutError'?'UPSTREAM_TIMEOUT':'WORKER_CONFIG_FAILED';
 
 const digest=value=>createHash('sha256').update(String(value)).digest();
-export async function workerSweep(req,{env=process.env,config=workerConfig,services=deliveryServices,recover=recoverDeliveries,save=saveSetting,documents=legalDocumentsReady,budgetMs=45000,log=console,now=Date.now()}={}){
+export async function workerSweep(req,{env=process.env,config=workerConfig,services=deliveryServices,recover=recoverDeliveries,save=saveSetting,settings=loadSettings,alert,documents=legalDocumentsReady,budgetMs=45000,log=console,now=Date.now()}={}){
   const reply=(status,body)=>({status,body});
   if(req.method!=='POST')return reply(405,{error:'METHOD_NOT_ALLOWED'});
   const presented=req.headers['x-worker-secret'];
@@ -62,7 +63,12 @@ export async function workerSweep(req,{env=process.env,config=workerConfig,servi
   // documents: whether this deployment attaches the accepted Terms and Delivery & refund policy, of the version
   // checkout records now, to order confirmations (vercel.json includeFiles, fingerprints). Shown in Cilësimet; a
   // confirmation without them still goes out.
-  try{await save(env,'worker',{at:new Date().toISOString(),ok:!code&&deliveryFailed===0&&!stalled,...counts,email,documents:documents(),source:'cron',...(code?{code}:{}),...(failure?{failure}:{})},null);}
+  const beat={at:new Date().toISOString(),ok:!code&&deliveryFailed===0&&!stalled,...counts,email,documents:documents(),source:'cron',...(code?{code}:{}),...(failure?{failure}:{})};
+  // An unhealthy sweep reads the previous heartbeat (before replacing it) to see whether the problem lasts.
+  let previous=null;if(!beat.ok){try{previous=(await settings(env))?.worker||null;}catch{}}
+  try{await save(env,'worker',beat,null);}
   catch(error){log.warn('Worker heartbeat not saved',JSON.stringify({code:/^[A-Z_]{1,40}$/.test(error?.message||'')?error.message:'HEARTBEAT_FAILED'}));}
+  // Public checkout is now closed (workerFresh needs ok): tell the owner when it has lasted two sweeps in a row.
+  if(!beat.ok&&previous?.ok===false&&Date.now()-Date.parse(previous.at)<300000)await sendAlert(alert||resendAlert(configuration.RESEND_API_KEY),unhealthyAlert(beat),log);
   return code?reply(503,{error:'SWEEP_FAILED',code}):reply(200,{...counts,email});
 }

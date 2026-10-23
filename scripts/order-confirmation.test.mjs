@@ -193,7 +193,7 @@ test('a confirmation that ends close to the sweep deadline defers the purchase t
 test('the sweep heartbeat says whether the legal documents can be attached, and the deployment ships them',async()=>{
   const secret='s'.repeat(64),saved=[];
   const deps={env:{SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'key'},config:async()=>({worker_secret:secret}),services:async()=>({}),
-    recover:async()=>({checked:0,sent:0,waiting:0,review:0,failed:0}),save:async(env,name,value)=>{saved.push(value);},log:{log(){},warn(){},error(){}}};
+    recover:async()=>({checked:0,sent:0,waiting:0,review:0,failed:0}),save:async(env,name,value)=>{saved.push(value);},settings:async()=>({}),alert:async()=>assert.fail('No alert without a previous unhealthy heartbeat'),log:{log(){},warn(){},error(){}}};
   await workerSweep({method:'POST',headers:{'x-worker-secret':secret}},deps);
   await workerSweep({method:'POST',headers:{'x-worker-secret':secret}},{...deps,documents:()=>false});
   assert.deepEqual(saved.map(beat=>[beat.documents,beat.ok]),[[true,true],[false,true]]);
