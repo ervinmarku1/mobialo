@@ -20,9 +20,13 @@ test('invalid email, test plans and identity verification products cannot create
 });
 test('verified customer ownership is persisted before PayPal is called',async()=>{
  let row;
- const services={store:{insert:async value=>{row=value;},transition:async()=>row},paypal:async()=>{assert.equal(row.user_id,'verified-user');return {id:'remote'};}};
- await createLiveOrder({productId:'plan',email:'customer@example.com',userId:'verified-user'},services,[product]);
- assert.equal(row.product_title,'Europe 1 GB');assert.equal(row.client_ip_hash,undefined);
+ // Account rows are inserted by the locking reservation, which checks the account's limit in the same transaction.
+ const services={store:{insert:()=>assert.fail('Account rows go through the locking reservation'),reserveGuest:()=>assert.fail('Not a guest'),reserveAccount:async value=>{row=value;return value;},transition:async()=>row},paypal:async()=>{assert.equal(row.user_id,'verified-user');return {id:'remote'};}};
+ await createLiveOrder({productId:'plan',email:'customer@example.com',userId:'verified-user',termsVersion:'v1.0-2026-10-22'},services,[product]);
+ assert.equal(row.product_title,'Europe 1 GB');assert.equal(row.client_ip_hash,undefined);assert.equal(row.terms_version,'v1.0-2026-10-22');
+ // A signed-in buyer never uses the guest reservation, even when an address hash is passed.
+ await createLiveOrder({productId:'plan',email:'customer@example.com',userId:'verified-user',clientIpHash:'a'.repeat(64)},services,[product]);
+ assert.equal(row.user_id,'verified-user');
 });
 test('a guest order has no owner and stores the consent and the client address hash before PayPal is called',async()=>{
  let row,seen,via;const hash='a'.repeat(64);
@@ -39,14 +43,14 @@ test('a guest order has no owner and stores the consent and the client address h
  for(const column of ['terms_accepted_at','terms_version','client_ip_hash','user_id'])assert.equal(column in seen,false);
 });
 test('the price the page showed must be the charged one: a different price is refused before anything is stored or sent to PayPal',async()=>{
- const calls=[];const services={store:{openOrders:async()=>{calls.push('limit');return 0;},insert:async()=>{calls.push('save');},reserveGuest:async()=>{calls.push('save');},transition:async()=>({})},paypal:async(id,method,body)=>{calls.push('paypal:'+body.purchase_units[0].amount.value);return {id:'remote'};}};
+ const calls=[];const services={store:{reserveAccount:async()=>{calls.push('save');},insert:async()=>{calls.push('save');},reserveGuest:async()=>{calls.push('save');},transition:async()=>({})},paypal:async(id,method,body)=>{calls.push('paypal:'+body.purchase_units[0].amount.value);return {id:'remote'};}};
  const order=extra=>createLiveOrder({productId:'plan',email:'customer@example.com',userId:'user',...extra},services,[product]);
  await assert.rejects(order({expectedPrice:'3.99'}),error=>error.message==='PRICE_CHANGED'&&error.price==='4.19');
  await assert.rejects(order({expectedPrice:'4.2'}),error=>error.message==='PRICE_CHANGED'&&error.price==='4.19');
  assert.deepEqual(calls,[]);
- await order({expectedPrice:'4.19'});assert.deepEqual(calls,['limit','save','paypal:4.19']);
+ await order({expectedPrice:'4.19'});assert.deepEqual(calls,['save','paypal:4.19']);
  // Without expectedPrice (local development server) the current price applies, as before.
- calls.length=0;await order({});assert.deepEqual(calls,['limit','save','paypal:4.19']);
+ calls.length=0;await order({});assert.deepEqual(calls,['save','paypal:4.19']);
  // An unknown product is still INVALID_PRODUCT, whatever price was sent.
  await assert.rejects(order({productId:'other',expectedPrice:'4.19'}),/INVALID_PRODUCT/);
 });
@@ -94,8 +98,13 @@ test('capture that still needs the payer is reported as not approved, not as an 
  }
 });
 test('customers with too many unpaid orders cannot create more',async()=>{
- const services={store:{openOrders:async(userId,since)=>{assert.equal(userId,'user');assert.ok(Date.parse(since)<Date.now());return 10;},insert:()=>assert.fail('Must not insert')},paypal:()=>assert.fail('Must not call PayPal')};
- await assert.rejects(createLiveOrder({productId:'plan',email:'customer@example.com',userId:'user'},services,[product]),/TOO_MANY_OPEN_ORDERS/);
+ // The reservation refuses inside the database transaction: nothing is inserted and PayPal is never called.
+ let asked;const services={store:{reserveAccount:async row=>{asked=row;throw Error('TOO_MANY_OPEN_ORDERS');},insert:()=>assert.fail('Must not insert')},paypal:()=>assert.fail('Must not call PayPal')};
+ await assert.rejects(createLiveOrder({productId:'plan',email:'customer@example.com',userId:'user'},services,[product]),/^Error: TOO_MANY_OPEN_ORDERS$/);
+ assert.equal(asked.user_id,'user');assert.equal(asked.state,'awaiting_payment');
+ // A failed reservation (missing function, outage) refuses the order too.
+ services.store.reserveAccount=async()=>{throw Error('ORDER_LIMIT_UNAVAILABLE');};
+ await assert.rejects(createLiveOrder({productId:'plan',email:'customer@example.com',userId:'user'},services,[product]),/^Error: ORDER_LIMIT_UNAVAILABLE$/);
 });
 test('declined capture is a definite refusal, not an unverified payment',async()=>{
  for(const status of ['DECLINED','FAILED']){

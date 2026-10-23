@@ -3,7 +3,7 @@ import {legalDocuments} from './legal-documents.mjs';
 import {readFile} from 'node:fs/promises';
 import {parseEnv} from 'node:util';
 import {createHash} from 'node:crypto';
-import {MAX_OPEN_ORDERS_PER_IP,MAX_GUEST_ORDERS_PER_HOUR} from './checkout-limits.mjs';
+import {MAX_OPEN_ORDERS_PER_IP,MAX_GUEST_ORDERS_PER_HOUR,MAX_OPEN_ORDERS_PER_ACCOUNT} from './checkout-limits.mjs';
 
 // The accepted Terms and Delivery & refund policy travel as plain-text attachments. If this deployment cannot read
 // them, the confirmation still goes out (consent, seller, plan, total and links) and the reason is logged.
@@ -219,6 +219,14 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
   }
   const dbHeaders={apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY,'Content-Type':'application/json',Prefer:'return=representation'};
   const db=env.SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/esim_deliveries';
+  // The locking reservations count and insert in one transaction. Their limit refusal keeps its code; anything else
+  // (missing function, outage) refuses the order without counting as a limit.
+  const reserve=async(name,body)=>{
+    const response=await fetcher(env.SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/rpc/'+name,{method:'POST',redirect:'error',headers:dbHeaders,signal:own(),body:JSON.stringify(body)});
+    if(!response.ok)throw Error((await response.json().catch(()=>({}))).message==='TOO_MANY_OPEN_ORDERS'?'TOO_MANY_OPEN_ORDERS':'ORDER_LIMIT_UNAVAILABLE');
+    const saved=await response.json();
+    return Array.isArray(saved)?saved[0]:saved;
+  };
   let verified=false;
   return {
     // Credential check for the admin status panel: obtains an OAuth token, moves no money.
@@ -230,14 +238,13 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
       byPayPal:async id=>(await request(db+'?paypal_order_id=eq.'+encodeURIComponent(id),'GET',dbHeaders))[0],
       byCapture:async id=>(await request(db+'?paypal_capture_id=eq.'+encodeURIComponent(id),'GET',dbHeaders))[0],
       // Guest rows are counted and inserted under one database lock, so parallel requests cannot pass the limits.
-      reserveGuest:async row=>{
-        const response=await fetcher(env.SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/rpc/reserve_guest_order',{method:'POST',redirect:'error',headers:dbHeaders,signal:own(),body:JSON.stringify({
-          p_id:row.id,p_product_id:row.product_id,p_product_title:row.product_title,p_amount:row.amount,p_customer_email:row.customer_email,p_language:row.language,
-          p_client_ip_hash:row.client_ip_hash,p_terms_accepted_at:row.terms_accepted_at,p_terms_version:row.terms_version,p_max_per_address:MAX_OPEN_ORDERS_PER_IP,p_max_total:MAX_GUEST_ORDERS_PER_HOUR})});
-        if(!response.ok)throw Error((await response.json().catch(()=>({}))).message==='TOO_MANY_OPEN_ORDERS'?'TOO_MANY_OPEN_ORDERS':'ORDER_LIMIT_UNAVAILABLE');
-        const saved=await response.json();
-        return Array.isArray(saved)?saved[0]:saved;
-      },
+      reserveGuest:row=>reserve('reserve_guest_order',{
+        p_id:row.id,p_product_id:row.product_id,p_product_title:row.product_title,p_amount:row.amount,p_customer_email:row.customer_email,p_language:row.language,
+        p_client_ip_hash:row.client_ip_hash,p_terms_accepted_at:row.terms_accepted_at,p_terms_version:row.terms_version,p_max_per_address:MAX_OPEN_ORDERS_PER_IP,p_max_total:MAX_GUEST_ORDERS_PER_HOUR}),
+      // Rows of signed-in customers likewise, under a lock per account.
+      reserveAccount:row=>reserve('reserve_account_order',{
+        p_id:row.id,p_user_id:row.user_id,p_product_id:row.product_id,p_product_title:row.product_title,p_amount:row.amount,p_customer_email:row.customer_email,p_language:row.language,
+        p_terms_accepted_at:row.terms_accepted_at??null,p_terms_version:row.terms_version??null,p_max_open:MAX_OPEN_ORDERS_PER_ACCOUNT}),
       // Claims and result recordings are never cut short by the sweep budget. A 'clean' claim also
       // requires that no refund, reversal, denial or dispute has been recorded.
       transition:async(id,state,patch,{clean=false}={})=>(await request(db+'?id=eq.'+encodeURIComponent(id)+'&state=eq.'+state+(clean?'&or=(payment_status.is.null,payment_status.in.(pending,completed))':''),'PATCH',dbHeaders,patch,own()))[0],
@@ -245,7 +252,6 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
       settle:async id=>(await request(db+'?id=eq.'+encodeURIComponent(id)+'&payment_status=eq.pending','PATCH',dbHeaders,{payment_status:'completed',payment_updated_at:new Date().toISOString()},own()))[0],
       // Payment flags are written only while the row keeps the state and payment version they were computed from.
       payment:async(id,state,version,patch)=>(await request(db+'?'+new URLSearchParams({id:'eq.'+id,state:'eq.'+state,payment_updated_at:version?'eq.'+version:'is.null'}),'PATCH',dbHeaders,patch,own()))[0],
-      openOrders:async(userId,since)=>(await request(db+'?'+new URLSearchParams({select:'id',user_id:'eq.'+userId,state:'eq.awaiting_payment',created_at:'gte.'+since,limit:'50'}),'GET',dbHeaders)).length,
       recoveryPage:async(phase,after,now=Date.now())=>{
         // 'work' rows (paid, not yet delivered) come oldest first. Unpaid checkouts are polled newest
         // first for 6 hours, or while a recorded capture is PENDING; the capture endpoint and the

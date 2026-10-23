@@ -3,7 +3,6 @@ import {getCatalog} from './mobimatter.mjs';
 import {deliveryServices,fulfillDelivery} from './esim-delivery.mjs';
 import {validCapture} from './paypal.mjs';
 
-const MAX_OPEN_ORDERS_PER_HOUR=10;
 const safeCode=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(value)?value:undefined;
 // The payer can choose another funding source in the same order.
 const RESTART_ISSUES=['INSTRUMENT_DECLINED','REDIRECT_PAYER_FOR_ALTERNATE_FUNDING'];
@@ -36,15 +35,14 @@ export async function createLiveOrder(input,services,products,catalog=getCatalog
   if(!products&&differs(product))product=pick((await catalog({maxAge:60000})).products);
   const amount=product.price.toFixed(2);
   if(differs(product))throw Object.assign(Error('PRICE_CHANGED'),{price:amount});
-  // Each unpaid order is polled by the worker; cap them per customer to protect PayPal rate limits.
-  if(input.userId&&services.store.openOrders&&await services.store.openOrders(input.userId,new Date(Date.now()-3600000).toISOString())>=MAX_OPEN_ORDERS_PER_HOUR)throw Error('TOO_MANY_OPEN_ORDERS');
   const id=randomUUID();
-  // Guest orders have no user_id; their client address is kept only as a keyed hash for the abuse limits,
-  // which the locking reservation checks in the same transaction as the insert.
+  // Guest orders have no user_id; their client address is kept only as a keyed hash for the abuse limits.
+  // Each unpaid order is polled by the worker, so the locking reservations cap them per account and per guest
+  // address, counting and inserting in one transaction (scripts/checkout-limits.mjs).
   const row={id,paypal_order_id:'pending-'+id,product_id:product.id,product_title:product.title,amount,currency:'EUR',customer_email:email,language:['en','sq','it'].includes(input.language)?input.language:'en',state:'awaiting_payment',
     ...(input.userId?{user_id:input.userId}:{}),...(input.clientIpHash?{client_ip_hash:input.clientIpHash}:{}),
     ...(input.termsVersion?{terms_accepted_at:new Date().toISOString(),terms_version:input.termsVersion}:{})};
-  await (row.client_ip_hash&&!row.user_id?services.store.reserveGuest(row):services.store.insert(row));
+  await (row.user_id?services.store.reserveAccount(row):row.client_ip_hash?services.store.reserveGuest(row):services.store.insert(row));
   const payment=await services.paypal('','POST',{intent:'CAPTURE',purchase_units:[{custom_id:id,description:('MOBIALO '+product.title).slice(0,127),amount:{currency_code:'EUR',value:amount}}],application_context:{brand_name:'MOBIALO',shipping_preference:'NO_SHIPPING',user_action:'PAY_NOW'}},id);
   if(!payment.id)throw Error('PAYPAL_REQUEST_FAILED');
   // The plan's main characteristics as sold, for the order confirmation (the catalog may change before payment).

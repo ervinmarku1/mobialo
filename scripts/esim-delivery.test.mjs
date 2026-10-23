@@ -87,3 +87,17 @@ test('guest rows are reserved through the locking database function, which maps 
  for(const failure of [{ok:false,status:404,json:async()=>({code:'PGRST202'})},{ok:false,status:503,json:async()=>{throw SyntaxError('html');}}])
   await assert.rejects((await answer(failure)).store.reserveGuest(row),/^Error: ORDER_LIMIT_UNAVAILABLE$/);
 });
+test('rows of signed-in customers are reserved through the locking function with the per-account limit',async()=>{
+ const configuration={SUPABASE_URL:'https://example.supabase.co/',SUPABASE_SERVICE_ROLE_KEY:'key',PAYPAL_CLIENT_ID:'id',PAYPAL_CLIENT_SECRET:'secret',PAYPAL_ENV:'live'};
+ const row={id:'12345678-1234-1234-1234-123456789abc',paypal_order_id:'pending-x',product_id:'plan',product_title:'Europe 1 GB',amount:'4.19',currency:'EUR',customer_email:'customer@example.com',language:'sq',state:'awaiting_payment',user_id:'87654321-4321-4321-4321-cba987654321',terms_accepted_at:'2026-10-22T12:00:00.000Z',terms_version:'v1.0-2026-10-22'};
+ let sent;const answer=response=>deliveryServices({paymentOnly:true,configuration,fetcher:async(url,options)=>{sent={url,options,body:JSON.parse(options.body)};return response;}});
+ assert.deepEqual(await (await answer({ok:true,json:async()=>[{...row}]})).store.reserveAccount(row),row);
+ assert.equal(sent.url,'https://example.supabase.co/rest/v1/rpc/reserve_account_order');assert.equal(sent.options.method,'POST');assert.equal(sent.options.headers.Authorization,'Bearer key');
+ assert.deepEqual(sent.body,{p_id:row.id,p_user_id:row.user_id,p_product_id:'plan',p_product_title:'Europe 1 GB',p_amount:'4.19',p_customer_email:'customer@example.com',p_language:'sq',p_terms_accepted_at:row.terms_accepted_at,p_terms_version:'v1.0-2026-10-22',p_max_open:10});
+ // Without a recorded consent (local server) every argument is still sent, so PostgREST finds the function.
+ const {terms_accepted_at,terms_version,...local}=row;await (await answer({ok:true,json:async()=>({...local})})).store.reserveAccount(local);
+ assert.equal(sent.body.p_terms_accepted_at,null);assert.equal(sent.body.p_terms_version,null);assert.equal(Object.keys(sent.body).length,10);
+ await assert.rejects((await answer({ok:false,status:400,json:async()=>({code:'P0001',message:'TOO_MANY_OPEN_ORDERS'})})).store.reserveAccount(row),/^Error: TOO_MANY_OPEN_ORDERS$/);
+ for(const failure of [{ok:false,status:400,json:async()=>({code:'P0001',message:'ACCOUNT_REQUIRED'})},{ok:false,status:404,json:async()=>({code:'PGRST202'})},{ok:false,status:503,json:async()=>{throw SyntaxError('html');}}])
+  await assert.rejects((await answer(failure)).store.reserveAccount(row),/^Error: ORDER_LIMIT_UNAVAILABLE$/);
+});

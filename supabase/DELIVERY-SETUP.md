@@ -45,6 +45,9 @@ database run all of them; for an existing one, run only the files that are missi
 13. `migrations/20261024110000_default_privileges.sql`: tables, sequences and functions created later in
    `public` are no longer granted to `anon`/`authenticated` by default (the browser's anon key is for Supabase
    Auth only). A new table still needs RLS and its own explicit grants, like the existing ones.
+14. `migrations/20261024120000_account_order_limit.sql`: `reserve_account_order()`, which counts a signed-in
+   customer's unpaid orders and inserts the new one under a lock per account (limits under "Hosted checkout").
+   Apply before deploying the code: without it signed-in customers cannot create orders (503); guests are unaffected.
 
 All files are safe to run again. A null column below means that migration is missing:
 
@@ -61,7 +64,8 @@ select to_regclass('public.esim_deliveries') as m1, to_regclass('public.esim_tes
   (select 1 from information_schema.columns where table_schema='public'
     and table_name='esim_deliveries' and column_name='confirmation_email_id') as m12,
   (select coalesce(bool_and(defaclacl::text not like '%anon=%'),true) from pg_default_acl
-    where defaclnamespace='public'::regnamespace and defaclrole='postgres'::regrole) as m13;
+    where defaclnamespace='public'::regnamespace and defaclrole='postgres'::regrole) as m13,
+  to_regprocedure('public.reserve_account_order(uuid,uuid,text,text,numeric,text,text,timestamptz,text,integer)') as m14;
 select jobname, schedule, active from cron.job;
 ```
 
@@ -107,9 +111,9 @@ has no `user_id` and does not appear in `/account`. Limits (`TOO_MANY_OPEN_ORDER
 10 unpaid orders per hour per account; for guests 10 unpaid orders per hour per client
 address (stored only as a labelled HMAC keyed with the service-role key, IPv6 by its /64,
 cleared after 7 days by the job `mobialo-guest-ip-cleanup`) and 300 unpaid guest orders per
-hour in total. Guest rows are inserted by `reserve_guest_order()`, which counts and inserts
-under one lock, so parallel requests cannot pass the limits. A failing limit query refuses
-the order (503). An attacker with many IPv6 /64 networks can still fill the global cap and
+hour in total. Guest rows are inserted by `reserve_guest_order()` and rows of signed-in customers by
+`reserve_account_order()` (a lock per account), which count and insert under one lock, so parallel
+requests cannot pass the limits. A failing limit query refuses the order (503). An attacker with many IPv6 /64 networks can still fill the global cap and
 pause guest sales for an hour (signed-in buyers are unaffected); a Vercel Firewall rate limit
 on `/api/paypal/create` and `/api/paypal/capture` is the next layer. A Supabase
 Auth outage is never treated as "signed out". Cilësimet only allows switching to public while
@@ -323,9 +327,9 @@ does not start it.
 `Dockerfile.worker` packages only the worker's source files and the two legal documents its order
 confirmation attaches (a test checks the list against the worker's imports); credentials are injected at
 runtime and `.env.local` is excluded from the build. It is a fallback, not used in
-production: build it and confirm the container starts before relying on it. A copy of it was
-found running on Render on 23.10.2026, deploying automatically from `main`; it should be suspended
-and deleted (with its environment variables) unless it is deliberately kept as a fallback.
+production: build it and confirm the container starts before relying on it. A copy of it found
+running on Render, deploying automatically from `main`, was deleted with its environment variables on
+23.10.2026; since then only the pg_cron sweep delivers orders and writes the heartbeat.
 
 ```sh
 docker build -f Dockerfile.worker -t mobialo-worker .

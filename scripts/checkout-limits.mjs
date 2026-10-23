@@ -2,6 +2,9 @@ import {createHmac} from 'node:crypto';
 
 // Abuse limits for orders without an account (no captcha): unpaid orders per client address and guest orders in total.
 export const MAX_OPEN_ORDERS_PER_IP=10,MAX_GUEST_ORDERS_PER_HOUR=300;
+// Unpaid orders per signed-in account in the last hour: the worker polls each one, so they are capped to protect
+// PayPal rate limits. reserve_account_order() counts and inserts under a lock per account.
+export const MAX_OPEN_ORDERS_PER_ACCOUNT=10;
 
 // Vercel sets x-vercel-forwarded-for and x-real-ip and overwrites x-forwarded-for, so they cannot be spoofed there.
 export function clientIp(headers={}){

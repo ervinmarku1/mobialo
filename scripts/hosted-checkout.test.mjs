@@ -156,7 +156,7 @@ test('the shown price travels with the order: a different server price is a 409 
  // Without the field (older page, local server) nothing changes: the create input has no expectedPrice at all.
  const h=fixture();await hostedCheckout('create',{...h.req,body:{...h.req.body,expectedPrice:null}},h.deps);assert.equal('expectedPrice' in h.calls[0],false);
  // Signed-in buyers are checked the same way.
- const s=fixture();s.deps.create=async input=>createLiveOrder(input,{store:{insert:()=>assert.fail('Must not insert'),openOrders:async()=>0}},[product]);
+ const s=fixture();s.deps.create=async input=>createLiveOrder(input,{store:{insert:()=>assert.fail('Must not insert'),reserveAccount:()=>assert.fail('Must not reserve')}},[product]);
  assert.deepEqual(await hostedCheckout('create',{...s.req,body:{...s.req.body,expectedPrice:'9.99'}},s.deps),{status:409,body:{error:'PRICE_CHANGED',price:'4.19'}});
 });
 test('guest limits refuse with 429, and a failed limit check refuses with 503 (fail closed)',async()=>{
