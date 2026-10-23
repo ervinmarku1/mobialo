@@ -13,6 +13,13 @@ test('the live smoke test runs after each production deploy and daily, with read
   assert.match(workflow,/commits\/\$\{\{ github\.sha \}\}\/status/);assert.match(workflow,/run: node scripts\/smoke-test\.mjs/);
 });
 
+test('the smoke test takes the DevTools address Chrome prints, says why Chrome did not start, and annotates failures on GitHub',async()=>{
+  const script=await read('scripts/smoke-test.mjs');
+  assert.match(script,/--remote-debugging-port=0/);assert.match(script,/DevTools listening on ws:/);
+  for(const event of ['error','exit'])assert.match(script,new RegExp(`chrome\\.on\\('${event}'`));
+  assert.match(script,/process\.env\.GITHUB_ACTIONS==='true'/);assert.match(script,/::error title=Smoke test::/);
+});
+
 test('the smoke test only reads: no request other than GET, no sign-in, no order',async()=>{
   const script=await read('scripts/smoke-test.mjs');
   assert.doesNotMatch(script,/method:\s*['"](POST|PUT|PATCH|DELETE)/i);

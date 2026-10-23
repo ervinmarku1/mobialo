@@ -11,7 +11,9 @@ import {setTimeout as delay} from 'node:timers/promises';
 
 const BASE=(process.env.BASE_URL||'https://www.mobialo.eu').replace(/\/$/,'');
 const failures=[],notes=[];
-const fail=message=>{failures.push(message);console.log('FAIL',message);};
+// On GitHub Actions each failure is also an annotation, readable on the run page without opening the log.
+const annotate=process.env.GITHUB_ACTIONS==='true';
+const fail=message=>{failures.push(message);console.log('FAIL',message);if(annotate)console.log('::error title=Smoke test::'+String(message).replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'));};
 const ok=message=>console.log('ok  ',message);
 
 // A check is retried a few times, so a deploy that is still reaching every CDN region does not raise a false alarm.
@@ -62,16 +64,26 @@ const planPath=await retry('a plan link on /sq/esim/albania',async()=>{
 });
 
 // 2. Browser: the pages as a visitor sees them.
-const chromePath=process.env.CHROME_PATH||(process.platform==='win32'?'C:/Program Files/Google/Chrome/Application/chrome.exe':'google-chrome');
+const chromePath=process.env.CHROME_PATH||(process.platform==='win32'?'C:/Program Files/Google/Chrome/Application/chrome.exe'
+  :['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser'].find(path=>existsSync(path))||'google-chrome');
 if(process.platform==='win32'&&!existsSync(chromePath))fail('Chrome not found at '+chromePath);
 const profile=mkdtempSync(join(tmpdir(),'mobialo-smoke-'));
-const port=9300+Math.floor(Math.random()*500);
-const chrome=spawn(chromePath,['--headless=new','--no-first-run','--no-default-browser-check','--disable-gpu','--no-sandbox','--remote-debugging-port='+port,'--user-data-dir='+profile,'about:blank'],{stdio:'ignore'});
+// Port 0: Chrome picks a free port and prints its DevTools address on stderr; the same output explains a failed start.
+const chrome=spawn(chromePath,['--headless=new','--no-first-run','--no-default-browser-check','--disable-gpu','--disable-dev-shm-usage','--no-sandbox','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:['ignore','ignore','pipe']});
+let chromeLog='';
+const devtools=new Promise((resolve,reject)=>{
+  chrome.stderr.on('data',chunk=>{chromeLog=(chromeLog+chunk).slice(-4000);const match=/DevTools listening on ws:\/\/([^/\s]+)\//.exec(chromeLog);if(match)resolve('http://'+match[1]);});
+  chrome.on('error',error=>reject(Error(`Chrome could not be started (${error.code}) from ${chromePath}`)));
+  chrome.on('exit',(code,signal)=>reject(Error(`Chrome stopped (${signal||code}) before DevTools answered: `+chromeLog.trim().split('\n').slice(-3).join(' | ').slice(0,300))));
+  setTimeout(()=>reject(Error('Chrome did not open DevTools within 30 s')),30000).unref();
+});
 try{
-  let targets;for(let i=0;i<60&&!targets;i++){try{targets=await (await fetch(`http://127.0.0.1:${port}/json`)).json();}catch{await delay(250);}}
-  if(!targets)throw Error('Chrome did not start');
-  const ws=new WebSocket(targets.find(target=>target.type==='page').webSocketDebuggerUrl);
-  await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',reject,{once:true});});
+  const address=await devtools;
+  // The first tab can appear a moment after DevTools answers.
+  let page;for(let i=0;i<40&&!page;i++){page=await fetch(address+'/json/list').then(response=>response.json()).then(targets=>Array.isArray(targets)?targets.find(target=>target.type==='page'):null,()=>null);if(!page)await delay(250);}
+  if(!page)throw Error('Chrome opened no page');
+  const ws=new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',()=>reject(Error('DevTools connection failed')),{once:true});});
   let seq=0;const pending=new Map();let requests=[],problems=[];
   ws.addEventListener('message',event=>{
     const message=JSON.parse(event.data);
@@ -110,7 +122,7 @@ try{
   await visit('sign-in page','/sign-in',{ready:{expression:"!!document.querySelector('#auth-form #email')",seconds:15,message:'sign-in form missing'}});
   ws.close();
 }catch(error){fail('browser checks: '+(error?.message||error));}
-finally{chrome.kill();try{rmSync(profile,{recursive:true,force:true});}catch{}}
+finally{chrome.kill();chrome.stderr.destroy();try{rmSync(profile,{recursive:true,force:true});}catch{}}
 
 for(const note of notes)console.log('note',note);
 if(catalog)console.log(`catalog: ${catalog.products.length} products`);
