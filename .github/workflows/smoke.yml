@@ -1,0 +1,53 @@
+# Read-only smoke test of www.mobialo.eu (scripts/smoke-test.mjs). After each push to main it waits for Vercel's
+# production deployment of that commit, then checks the live pages in headless Chrome; it also runs daily and on
+# demand. It never creates an order or signs in. A failure is emailed by GitHub to the person who pushed (for the
+# daily run, to whoever last changed this file).
+name: Smoke test
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: read
+
+concurrency:
+  group: smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Wait for the Vercel production deployment of this commit
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS_URL: https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/status
+        run: |
+          for i in $(seq 1 60); do
+            state=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$STATUS_URL" \
+              | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const s=(JSON.parse(d).statuses||[]).find(x=>/vercel/i.test(x.context));console.log(s?s.state:'none')})" || echo none)
+            echo "Vercel: $state"
+            case "$state" in
+              success) exit 0 ;;
+              failure|error) echo "::error::The Vercel deployment of this commit failed"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::No finished Vercel deployment for this commit after 15 minutes"; exit 1
+      - name: Smoke test of the live shop
+        run: node scripts/smoke-test.mjs
+        env:
+          BASE_URL: https://www.mobialo.eu

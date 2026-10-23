@@ -108,12 +108,20 @@ npm test              # node --test "scripts/*.test.mjs" (offline, no real payme
 npm run check         # syntax of every script, JSON files, .env.example and migration docs, then the tests
 npm run build:auth    # rebuild dist/auth.js, dist/customer-session.js and dist/admin.js from src/
 npm run dev           # local server on http://localhost:3000 (PORT to change it)
+npm run smoke         # read-only check of the live shop in headless Chrome (BASE_URL to change the site)
 ```
 
 GitHub Actions (`.github/workflows/ci.yml`) runs `npm ci`, `node scripts/check-build.mjs`,
 the tests and a bundle drift check on every push and pull request to `main`. Vercel deploys
 `main` whether or not CI passes; to make CI a gate, merge through pull requests with the
 check required (and use Vercel preview deployments to try changes).
+
+`.github/workflows/smoke.yml` runs `scripts/smoke-test.mjs` against https://www.mobialo.eu after
+Vercel has deployed each push to `main`, every day at 06:17 UTC and on demand: the main pages answer,
+the catalog and checkout configuration load, the home page shows destinations, a plan page mounts
+the PayPal buttons (when checkout is open), and no page throws, logs an error, loads Google Fonts or
+shows broken characters. It never creates an order or signs in. GitHub emails a failure to whoever
+pushed (for the daily run, to whoever last changed the workflow file).
 
 ### Local development uses whatever `.env.local` points at
 
