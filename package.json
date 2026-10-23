@@ -8,7 +8,8 @@
     "worker:delivery": "node scripts/delivery-worker.mjs",
     "test": "node --test \"scripts/*.test.mjs\"",
     "check": "node scripts/check-build.mjs && npm test",
-    "build:auth": "node scripts/build-auth.mjs"
+    "build:auth": "node scripts/build-auth.mjs",
+    "build:devices": "node scripts/build-devices.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0"

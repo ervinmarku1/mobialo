@@ -1,24 +1,14 @@
-import {getCatalog,CatalogError,priceIncludingProcessing,isHiddenTestProduct} from '../scripts/mobimatter.mjs';
-import {DEFAULT_PRICING,loadSettings} from '../scripts/app-settings.mjs';
-import {readFile} from 'node:fs/promises';
-// The same for every visitor, so the Vercel CDN may serve it for a minute; browsers always revalidate,
-// and checkout recomputes the charged price. Errors, and prices built without readable settings, stay no-store.
-const cached=res=>{res.setHeader('Cache-Control','public, max-age=0, must-revalidate');res.setHeader('Vercel-CDN-Cache-Control','s-maxage=60, stale-while-revalidate=60');};
-export default async function handler(req,res,{env=process.env,settings=loadSettings,catalog=getCatalog}={}){
+import {CatalogError} from '../scripts/mobimatter.mjs';
+import {publicCatalog,shareable} from '../scripts/public-catalog.mjs';
+// The CDN keeps the catalog for a minute (then serves it stale for 10 minutes while it refreshes), the function
+// answers from the last good catalog while MobiMatter is refreshed, and checkout recomputes the charged price.
+// Errors, and prices built without readable settings, stay no-store.
+export default async function handler(req,res,deps={}){
   res.setHeader('Cache-Control','no-store');
   if(req.method!=='GET')return res.status(405).json({error:'METHOD_NOT_ALLOWED'});
   try{
-    if(!env.MOBIMATTER_MERCHANT_ID||!env.MOBIMATTER_API_KEY){
-      const snapshot=JSON.parse(await readFile(new URL('../dist/catalog-preview.json',import.meta.url),'utf8'));
-      // The checked-in snapshot stores prices with the default markup; rescale for the configured one.
-      const {pricing}=await settings(env);
-      const markup=(100+pricing.markupPercent)/(100+DEFAULT_PRICING.markupPercent);
-      snapshot.products=snapshot.products.filter(product=>!isHiddenTestProduct(product.id)).map(product=>({...product,price:priceIncludingProcessing(product.price*markup,pricing)}));
-      cached(res);
-      return res.status(200).json(snapshot);
-    }
-    const body=await catalog();
-    if(!(await settings(env)).unavailable)cached(res);
+    const {body,shareable:cacheable}=await publicCatalog(deps);
+    if(cacheable)shareable(res,60);
     return res.status(200).json(body);
   }catch(error){return res.status(error instanceof CatalogError?error.status:503).json({error:'CATALOG_UNAVAILABLE'});}
 }

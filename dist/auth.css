@@ -8,3 +8,5 @@
 .auth-layout{min-height:100vh}@media(max-width:600px){.auth-page header.header .header-actions{width:100%;justify-content:space-between;margin-left:0}}
 /* Account shell: the Destinations entry is a link to the main catalog, styled like the tabs; order icons sit on the title line. */
 .customer-sidebar nav a{display:block;border-radius:9px;padding:13px;font-size:13px;color:#666}@media(hover:hover){.customer-sidebar nav a:hover{color:var(--accent)}}.customer-page .customer-order{align-items:flex-start}.customer-page .customer-order-icon{margin-top:2px}@media(max-width:700px){.customer-sidebar nav a{display:flex;align-items:center;justify-content:center;padding:10px 5px;font-size:11px;text-align:center;background:#fff;border:1px solid #eee;min-height:44px}}
+/* Header search icon (as on the store pages): on phones it sits beside the language menu, the back link keeps the left. */
+@media(max-width:600px){.auth-page header.header .header-search{margin-left:auto}}

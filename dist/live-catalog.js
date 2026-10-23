@@ -1,58 +1,7 @@
-const supplierText = value => globalThis.MobialoPlanText(value, lang);
-// Only the local server talks to MobiMatter. This file never receives credentials.
-const escapeText = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+// Only the server talks to MobiMatter. This file never receives credentials.
 let liveProducts = [];
 let catalogState = 'loading';
-const countryNames = {it:new Intl.DisplayNames(['it'],{type:'region'}),en:new Intl.DisplayNames(['en'],{type:'region'}),sq:{of:code=>albanianCountries[code] || code}};
-const priceFor = plan => currencyFormat(lang==='it'?'it-IT':lang==='sq'?'sq-AL':'en-US',plan.currency).format(plan.price);
-// Only instant eSIMs without identity checks can be bought online, so only they are listed and counted.
-const purchasable = product => product.category==='esim_realtime'&&!product.requiresIdentityVerification;
-const dataFor = plan => plan.dataAmount && plan.dataUnit ? `${plan.dataAmount} ${plan.dataUnit}` : ((lang==='it'?"Vedi dettagli":lang==='sq'?'Shiko detajet':'See details'));
-const durationFor = plan => plan.validityHours ? `${plan.validityHours%24===0?plan.validityHours/24:plan.validityHours} ${plan.validityHours%24===0?t('days'):((lang==='it'?"ore":lang==='sq'?'orë':'hours'))}` : ((lang==='it'?"Vedi dettagli":lang==='sq'?'Shiko detajet':'See details'));
-const livePlansFor = destination => destination.plans;
-function planFeatures(plan){
- const label=(sq,en,it)=>lang==='sq'?sq:lang==='it'?it:en;
- const f=plan.features||{};
- const unknown=label('Nuk specifikohet','Not specified','Non specificato');
- const yesno=value=>value===true?label('Përfshihet','Included','Incluso'):value===false?label('Nuk përfshihet','Not included','Non incluso'):unknown;
- const type=f.data===true&&f.calls===false&&f.sms===false?label('Internet · pa thirrje/SMS','Data · no calls/SMS','Dati · senza chiamate/SMS'):label('Shiko shërbimet më poshtë','See included services below','Vedi i servizi inclusi');
- const items=[[label('Lloji i eSIM-it','eSIM type','Tipo di eSIM'),type],[label('Rrjeti · 4G / 5G','Network · 4G / 5G','Rete · 4G / 5G'),f.network||unknown],[label('Internet','Data','Dati'),yesno(f.data)],[label('Thirrje','Calls','Chiamate'),yesno(f.calls)],['SMS',yesno(f.sms)],['Hotspot',yesno(f.hotspot)],[label('Shpejtësia','Speed','Velocità'),supplierText(f.speed)||unknown],[label('Aktivizimi','Activation','Attivazione'),supplierText(f.activation)||unknown]];
- return `<section class="purchase-features"><h3>${label('Detajet e eSIM-it','eSIM details','Dettagli eSIM')}</h3><dl class="purchase-feature-grid">${items.map(([key,value])=>`<div><dt>${escapeText(key)}</dt><dd>${escapeText(value)}</dd></div>`).join('')}</dl><p class="modal-note">${label('4G/5G tregon teknologjinë e rrjetit, jo shpejtësi të garantuar. Disponueshmëria varet nga vendndodhja, pajisja dhe operatori.','4G/5G indicates network technology, not guaranteed speed. Availability depends on location, device and operator.','4G/5G indica la tecnologia di rete, non una velocità garantita. La disponibilità dipende da posizione, dispositivo e operatore.')}</p></section>`;
-}
-
-const regionNames={
-  sq:{Europe:'Evropë',Asia:'Azi',Africa:'Afrikë',America:'Amerika','North America':'Amerika e Veriut','South America':'Amerika e Jugut','Middle East':'Lindja e Mesme',Oceania:'Oqeania',Global:'Globale','Multi-country':'Disa shtete'},
-  it:{Europe:'Europa',Asia:'Asia',Africa:'Africa',America:'America','North America':'America del Nord','South America':'America del Sud','Middle East':'Medio Oriente',Oceania:'Oceania',Global:'Globale','Multi-country':'Più paesi'}
-};
-
-function buildDestinations(products) {
-  const countries=new Map(),regions=new Map(),globalPlans=[];
-  for (const product of products) {
-    if(!purchasable(product))continue;
-    for (const code of product.countries) {
-      if(!countries.has(code)) countries.set(code,[]);
-      countries.get(code).push(product);
-    }
-    if(product.countries.length>1) {
-      // MobiMatter lists continents in regions, even for World/Global plans.
-      if (/\b(global|world|worldwide)\b/i.test(product.title) || product.regions.some(region=>/\b(global|world|worldwide)\b/i.test(region))) globalPlans.push(product);
-      // MobiMatter uses both 'America' and 'Americas'; a product carrying both is listed once.
-      const labels=new Set((product.regions.length?product.regions:['Multi-country']).map(label=>label==='Americas'?'America':label));
-      for(const label of labels){if(!regions.has(label))regions.set(label,[]);regions.get(label).push(product);}
-    }
-  }
-  const sorted=items=>[...items].sort((a,b)=>a.price-b.price || a.title.localeCompare(b.title));
-  // A country's 'from' price uses the plans for that country alone; without one, its cheapest regional plan, flagged.
-  const fromPrice=items=>{const own=items.filter(p=>p.countries.length===1);return {price:Math.min(...(own.length?own:items).map(p=>p.price)),regionalPrice:!own.length};};
-  const destinations=[...countries].map(([code,items])=>({id:code.toLowerCase(),en:countryNames.en.of(code),it:countryNames.it.of(code),sq:countryNames.sq.of(code),aliases:code==='US'?'USA America':code==='GB'?'UK England Angli':code==='AE'?'Dubai UAE':'',type:'local',...fromPrice(items),plans:sorted(items)}));
-  const preferred=['al','tr','us','it','de','jp','gb','fr','ae'];
-  destinations.sort((a,b)=>{const ai=preferred.indexOf(a.id),bi=preferred.indexOf(b.id);return (ai<0?999:ai)-(bi<0?999:bi)||a.en.localeCompare(b.en);});
-  [...regions].forEach(([label,items],index)=>{
-    destinations.push({id:`region-${index}`,en:escapeText(label),it:escapeText(regionNames.it[label]||label),sq:escapeText(regionNames.sq[label]||label),symbol:'◎',type:/global|world/i.test(label)?'global':'regional',price:Math.min(...items.map(p=>p.price)),plans:sorted(items)});
-  });
-  if(globalPlans.length) destinations.push({id:'global',en:'Global',it:'Globale',sq:'Globale',aliases:'World Worldwide',symbol:'\u25ce',type:'global',price:Math.min(...globalPlans.map(p=>p.price)),plans:sorted(globalPlans)});
-  return destinations;
-}
+const purchasable = S.purchasable;
 
 const baseRenderCatalog=renderCatalog;
 renderCatalog=function(){
@@ -61,46 +10,63 @@ renderCatalog=function(){
   if(summary)summary.textContent=catalogState==='ready'?`${liveProducts.length} ${lang==='sq'?'paketa në katalog':lang==='it'?'piani nel catalogo':'plans in the catalog'}`:'';
   const grid=$('#destination-grid');
   grid.classList.toggle('is-error',catalogState==='error');
-  if(catalogState==='ready'){if(!catalog.length)grid.innerHTML=`<div class="empty-state"><p>${t('noResults')}</p></div>`;return;}
+  if(catalogState==='ready'){if(!catalog.length)grid.innerHTML=gridMarkup=`<div class="empty-state"><p>${t('noResults')}</p></div>`;return;}
   const text=catalogState==='loading'?(lang==='sq'?'Po ngarkohen paketat…':lang==='it'?'Caricamento dei piani…':'Loading plans…'):((lang==='it'?"Impossibile caricare il catalogo. Riprova.":lang==='sq'?'Katalogu nuk u ngarkua. Provo përsëri.':'The catalog could not be loaded. Please retry.'));
   // Loading and error keep the nine placeholder cards, so the panel never changes height; the error sits over them.
-  grid.innerHTML=skeletonCards()+(catalogState==='loading'?`<p class="visually-hidden" role="status">${text}</p>`:`<div class="empty-state catalog-error" role="status"><p>${text}</p><button class="button" id="retry-catalog">${(lang==='it'?"Riprova":lang==='sq'?'Provo përsëri':'Retry')}</button></div>`);
+  grid.innerHTML=gridMarkup=skeletonCards()+(catalogState==='loading'?`<p class="visually-hidden" role="status">${text}</p>`:`<div class="empty-state catalog-error" role="status"><p>${text}</p><button class="button" id="retry-catalog">${(lang==='it'?"Riprova":lang==='sq'?'Provo përsëri':'Retry')}</button></div>`);
   $('#results-status').textContent='';
+  // Without a catalog there is no count, so the hero eyebrow gives up the width it kept for one.
+  $('.hero .eyebrow-count').hidden=catalogState==='error';
 };
 
-const baseRenderModal=renderModal;
-renderModal=function(){
-  if(modalView==='device'){baseRenderModal();return;}
-  $('#modal').classList.remove('device-dialog');
-  const plans=livePlansFor(selectedDestination);
-  if(!plans?.length) return;
-  selectedPlan=Math.min(selectedPlan,plans.length-1);
-  const plan=plans[selectedPlan];
-  const kyc=p=>p.requiresIdentityVerification?`<small class="kyc-note">${(lang==='it'?"Verifica dell’identità richiesta":lang==='sq'?'Kërkon verifikim identiteti':'Identity verification required')}</small>`:'';
-  if(modalView==='plans'){
-    $('#modal-content').innerHTML=`<div class="modal-eyebrow">${t('demoPrices')}</div><div class="modal-heading">${flag(selectedDestination)}<h2 id="modal-title">${selectedDestination[lang]} eSIM</h2></div><p class="modal-subtitle">${plans.length} ${(lang==='it'?"piani disponibili":lang==='sq'?'paketa të disponueshme':'available plans')}</p><div class="plan-list live-plan-list" role="radiogroup" aria-label="${t('choosePlan')}">${plans.map((p,index)=>`<label class="plan-option"><input type="radio" name="plan" value="${index}" ${selectedPlan===index?'checked':''}><span><strong>${escapeText(p.title)}</strong><small>${escapeText(p.provider)} · ${escapeText(dataFor(p))} · ${escapeText(durationFor(p))}</small>${kyc(p)}</span><b>${escapeText(priceFor(p))}</b></label>`).join('')}</div><p class="modal-note">${t('previewNote')}</p><button class="button modal-action" id="review-plan">${t('review')} →</button>`;
-  }else{
-    const details=plan.details;
-    $('#modal-content').innerHTML=`<div class="modal-eyebrow">${escapeText(plan.provider)}</div><h2 id="modal-title">${escapeText(plan.title)}</h2>${kyc(plan)}<div class="review-row"><span>${t('data')}</span><strong>${escapeText(dataFor(plan))}</strong></div><div class="review-row"><span>${t('duration')}</span><strong>${escapeText(durationFor(plan))}</strong></div><div class="review-row"><span>${t('total')}</span><strong>${escapeText(priceFor(plan))}</strong></div>${planFeatures(plan)}<details class="plan-coverage" open><summary>${(lang==='it'?"Paesi coperti":lang==='sq'?'Shtetet e mbuluara':'Covered countries')} (${plan.countries.length})</summary><ul class="purchase-country-grid">${plan.countries.map(code=>`<li>${escapeText(countryNames[lang].of(code))}</li>`).join('')}</ul></details><div class="provider-details"><h3>${escapeText(supplierText(details.heading))}</h3><p>${escapeText(supplierText(details.description))}</p><ul>${details.items.map(item=>`<li>${escapeText(supplierText(item))}</li>`).join('')}</ul></div><p class="modal-note">${t('notLive')}</p><button class="button modal-action" id="paypal-checkout">PayPal</button><p id="paypal-status" role="status"></p><button class="text-link" style="margin-top:18px" id="back-to-plans">${t('back')}</button>`;
-  }
-  $('#modal').setAttribute('aria-labelledby','modal-title');
-};
+// Old links (/?plan={id}, from before the plan pages) open the plan's own page in the visitor's language. index.html keeps
+// the homepage hidden meanwhile (html.plan-redirect); an unknown plan just shows the homepage without the parameter.
+const requestedPlan=new URLSearchParams(location.search).get('plan');
+// A plan missing from the saved copy waits for the fresh catalog (final) before the homepage is shown; so does every plan
+// while the saved copy is more than a day old (trusted false), as the plan may have gone since.
+function openRequestedPlan(final,trusted=final){
+  if(!requestedPlan)return false;
+  const product=trusted&&liveProducts.find(p=>p.id===requestedPlan),destination=product&&S.primaryDestination(product,catalog);
+  if(destination){location.replace(S.planPath(lang,destination,product));return true;}
+  if(!final)return false;
+  const url=new URL(location.href);url.searchParams.delete('plan');history.replaceState(null,'',url);
+  document.documentElement.classList.remove('plan-redirect');
+  return false;
+}
 
+function applyCatalog(text,final,trusted=final){
+  const data=JSON.parse(text);
+  if(!Array.isArray(data.products)||data.products.some(p=>p.currency!=='EUR'))throw new Error('Unsupported catalog');
+  // The checked-in snapshot (served without MobiMatter credentials) cannot be bought from.
+  if(data.source==='preview'){if(translations.it){translations.it.demoPrices='Catalogo salvato · EUR';translations.it.previewNote='Prezzi da un catalogo salvato. Il catalogo aggiornato non è disponibile al momento.';}translations.en.demoPrices='Saved catalog · EUR';translations.sq.demoPrices='Katalog i ruajtur · EUR';translations.en.previewNote='Prices from a saved catalog. The live catalog is temporarily unavailable.';translations.sq.previewNote='Çmime nga një katalog i ruajtur. Katalogu i përditësuar nuk është i disponueshëm për momentin.';}
+  liveProducts=data.products.filter(purchasable);catalog=S.buildDestinations(liveProducts);catalogState='ready';
+  if(openRequestedPlan(final,trusted))return;
+  setLanguage(lang);
+  if(document.activeElement===$('#search'))renderSuggestions();
+}
+// The last catalog is kept in the Cache Storage API, so a returning visitor sees the destinations at once while the
+// fresh copy loads; it replaces the cards only when it differs. Prices here are for browsing: every plan page and
+// checkout price comes from the server. A copy is shown for 72 hours after it was saved (X-Saved-At; one without the
+// time is too old), opens old /?plan= links only within 24 hours, and is saved again when it differs or is an hour old.
+const CATALOG_CACHE='mobialo-catalog-v1',HOUR=3600e3;
+async function savedCatalog(){try{const cache=await caches.open(CATALOG_CACHE),response=await cache.match('/api/catalog');if(!response)return null;const age=Date.now()-Number(response.headers.get('X-Saved-At'));return age>=0&&age<72*HOUR?{text:await response.text(),age}:null;}catch{return null;}}
+async function saveCatalog(text){try{await (await caches.open(CATALOG_CACHE)).put('/api/catalog',new Response(text,{headers:{'Content-Type':'application/json','X-Saved-At':String(Date.now())}}));}catch{}}
 async function loadLiveCatalog(){
   catalogState='loading';renderCatalog();
+  // Default caching lets the edge serve the catalog and reuses the <head> preload.
+  const fresh=fetch('/api/catalog',{signal:AbortSignal.timeout(20000)}).then(response=>{if(!response.ok)throw new Error('Catalog unavailable');return response.text();});
+  fresh.catch(()=>{});
+  let shown=null;
+  const saved=await savedCatalog(),trusted=!!saved&&saved.age<24*HOUR;
+  if(saved)try{applyCatalog(saved.text,false,trusted);shown=saved.text;}catch{}
   try{
-    // Default caching lets the edge serve the catalog and reuses a <head> preload; the charged price is always recomputed on the server.
-    const response=await fetch('/api/catalog',{signal:AbortSignal.timeout(20000)});
-    if(!response.ok)throw new Error('Catalog unavailable');
-    const data=await response.json();
-    if(!Array.isArray(data.products)||data.products.some(p=>p.currency!=='EUR'))throw new Error('Unsupported catalog');
-    // The checked-in snapshot (served without MobiMatter credentials) cannot be bought from.
-    if(data.source==='preview'){if(translations.it){translations.it.demoPrices='Catalogo salvato · EUR';translations.it.previewNote='Prezzi da un catalogo salvato. Il catalogo aggiornato non è disponibile al momento.';translations.it.notLive='Gli acquisti sono temporaneamente non disponibili. Riprova tra qualche minuto.';}translations.en.demoPrices='Saved catalog · EUR';translations.sq.demoPrices='Katalog i ruajtur · EUR';translations.en.previewNote='Prices from a saved catalog. The live catalog is temporarily unavailable.';translations.sq.previewNote='Çmime nga një katalog i ruajtur. Katalogu i përditësuar nuk është i disponueshëm për momentin.';translations.en.notLive='Purchases are temporarily unavailable. Please try again in a few minutes.';translations.sq.notLive='Blerjet janë përkohësisht të padisponueshme. Provo përsëri pas pak minutash.';}
-    liveProducts=data.products.filter(purchasable);catalog=buildDestinations(liveProducts);catalogState='ready';
-    document.querySelectorAll('[data-search]').forEach(button=>{button.disabled=!catalog.some(item=>item.en===button.dataset.search);});
-    setLanguage(lang);
-    if(document.activeElement===$('#search')) renderSuggestions();
-  }catch{catalogState='error';catalog=[];renderCatalog();closeSuggestions();}
+    const text=await fresh;
+    if(text!==shown)applyCatalog(text,true);else openRequestedPlan(true);
+    if(text!==shown||saved.age>HOUR)saveCatalog(text);
+  }catch{
+    if(shown){openRequestedPlan(true,trusted);return;}
+    catalogState='error';catalog=[];renderCatalog();closeSuggestions();document.documentElement.classList.remove('plan-redirect');
+  }
 }
 $('#destination-grid').addEventListener('click',event=>{if(event.target.closest('#retry-catalog'))loadLiveCatalog();});
 setLanguage(lang);

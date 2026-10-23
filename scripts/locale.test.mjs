@@ -23,7 +23,7 @@ test('Italian storefront covers all English dictionary keys',async()=>{
   const app=await readFile(new URL('../dist/app.js',import.meta.url),'utf8');
   const italian=await readFile(new URL('../dist/italian.js',import.meta.url),'utf8');
   const context={};vm.createContext(context);
-  vm.runInContext(app.split('// Demonstration data')[0]+italian.split('const italianDeviceNotes')[0]+';globalThis.keys=[Object.keys(translations.en),Object.keys(translations.it)];',context);
+  vm.runInContext(app.split('// Demonstration data')[0]+italian.split('// Loaded right after app.js')[0]+';globalThis.keys=[Object.keys(translations.en),Object.keys(translations.it)];',context);
   assert.deepEqual(Array.from(context.keys[0]).sort(),Array.from(context.keys[1]).sort());
 });
 

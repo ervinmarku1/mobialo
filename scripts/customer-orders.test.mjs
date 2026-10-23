@@ -23,3 +23,28 @@ test('unconfirmed account cannot read orders',async()=>{
 test('missing ownership migration is unavailable, never an empty successful result',async()=>{
  const r=await customerOrders({method:'GET',headers:{authorization:'Bearer token'}},async url=>url.endsWith('/user')?Response.json({id,email_confirmed_at:'yes'}):new Response('{}',{status:400}),env);assert.equal(r.status,503);
 });
+// ?id= (an order older than the latest 100, for /account/orders/{id}) stays bound to the verified user.
+const ORDER='6f1c2a0e-1b7d-4c55-9a51-0d2f3e4a5b61';
+test('one order by ID: still filtered by the verified user, so another buyer\'s order ID returns nothing',async()=>{
+ const seen=[];
+ const fetcher=async(url,options)=>{
+  if(url.endsWith('/auth/v1/user'))return Response.json({id,email_confirmed_at:'2026-01-01'});
+  const params=new URL(url).searchParams;seen.push(params);
+  assert.equal(params.get('user_id'),'eq.'+id);assert.equal(params.get('id'),'eq.'+ORDER);assert.equal(params.get('limit'),'1');
+  assert.equal(options.headers.Authorization,'Bearer server-only');
+  // The database applies both filters: the order exists, but belongs to someone else.
+  return Response.json([]);
+ };
+ const other=await customerOrders({method:'GET',url:'/api/account/orders?id='+ORDER.toUpperCase()+'&user_id=eq.someone-else',headers:{authorization:'Bearer user-token'}},fetcher,env);
+ assert.deepEqual([other.status,other.body],[200,{orders:[],limit:1}]);assert.equal(seen.length,1);assert.deepEqual(seen[0].getAll('user_id'),['eq.'+id]);
+ const own=await customerOrders({method:'GET',url:'/api/account/orders?id='+ORDER,headers:{authorization:'Bearer user-token'}},async url=>url.endsWith('/auth/v1/user')?Response.json({id,email_confirmed_at:'2026-01-01'}):Response.json([{id:ORDER,paypal_order_id:'pending-x',product_id:'plan',product_title:'Japan 5GB',amount:'5.74',currency:'EUR',state:'awaiting_payment',created_at:'2025-01-01',customer_email:'private'}]),env);
+ assert.equal(own.status,200);assert.deepEqual(own.body.orders,[{id:ORDER,reference:null,productId:'plan',title:'Japan 5GB',amount:'5.74',currency:'EUR',state:'awaiting_payment',createdAt:'2025-01-01'}]);
+});
+test('one order by ID: anything but a UUID is refused after the sign-in check and never reaches the database',async()=>{
+ for(const bad of ['','x','*',ORDER+',user_id.neq.x','eq.'+ORDER,ORDER.slice(0,35)]){
+  let calls=0;
+  const r=await customerOrders({method:'GET',url:'/api/account/orders?id='+encodeURIComponent(bad),headers:{authorization:'Bearer token'}},async()=>{calls++;return Response.json({id,email_confirmed_at:'yes'});},env);
+  assert.deepEqual([r.status,r.body.error,calls],[400,'INVALID_ORDER_ID',1],bad);
+ }
+ assert.equal((await customerOrders({method:'GET',url:'/api/account/orders?id='+ORDER,headers:{}},()=>assert.fail('No network expected'),env)).status,401);
+});

@@ -90,6 +90,8 @@ export async function hostedCheckout(action,req,{
       // Default pricing may differ from the owner's: never charge while the settings are unreadable.
       if(loaded?.unavailable===true)return unavailable('SETTINGS_UNAVAILABLE');
       if(typeof body.productId!=='string'||body.productId.length>200)return fail(400,'INVALID_PRODUCT');
+      // The price the plan page showed ('4.51'); createLiveOrder refuses a different current price (409 PRICE_CHANGED).
+      if(body.expectedPrice!=null&&(typeof body.expectedPrice!=='string'||!/^\d{1,6}\.\d{2}$/.test(body.expectedPrice)))return fail(400,'INVALID_REQUEST');
       if(body.consent!==true)return fail(400,'CONSENT_REQUIRED');
       // Guests have no per-account limit; theirs are checked before any payment service is used.
       const ipHash=user?undefined:clientIpHash(req.headers,env.SUPABASE_SERVICE_ROLE_KEY);
@@ -97,7 +99,7 @@ export async function hostedCheckout(action,req,{
       const deps=await services({paymentOnly:true});
       // Without a typed address the eSIM goes to the verified account email; guests must type one.
       const email=typeof body.email==='string'&&body.email.trim()?body.email:user?.email;
-      return result(200,await create({productId:body.productId,email,language:body.language,userId:user?.id,clientIpHash:ipHash,termsVersion:TERMS_VERSION},deps));
+      return result(200,await create({productId:body.productId,...(body.expectedPrice!=null?{expectedPrice:body.expectedPrice}:{}),email,language:body.language,userId:user?.id,clientIpHash:ipHash,termsVersion:TERMS_VERSION},deps));
     }
     if(action!=='capture'||!/^[a-f0-9-]{36}$/i.test(body.state||'')||typeof body.token!=='string'||body.token.length>100)return fail(400,'INVALID_ORDER');
     const deps=await services({paymentOnly:true});
@@ -116,6 +118,8 @@ export async function hostedCheckout(action,req,{
       return result(failure.status,failure.body);
     }
     if(error.message==='TOO_MANY_OPEN_ORDERS')return fail(429,error.message);
+    // Nothing was stored or sent to PayPal; the page shows the current price and asks again.
+    if(error.message==='PRICE_CHANGED'&&/^\d+\.\d{2}$/.test(error.price))return result(409,{error:'PRICE_CHANGED',price:error.price});
     if(['EMAIL_REQUIRED','INVALID_PRODUCT','INVALID_ORDER','PAYMENT_APPROVAL_REQUIRED','PAYMENT_NOT_COMPLETED'].includes(error.message))return fail(400,error.message);
     // Configuration and upstream failures were previously silent; log the code for Vercel Logs.
     return unavailable(checkoutErrorCode(error));

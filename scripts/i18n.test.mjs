@@ -112,10 +112,28 @@ test('no stale Sandbox / preview / Draft / not-yet customer copy remains in the 
   assert.deepEqual(offenders,[]);
 });
 
+// The storefront pages' copy (dist/storefront-core.js), shared by the server renderer and the browser.
+async function storefrontCopy(){
+  const context=vm.createContext({});vm.runInContext(await read('dist/storefront-core.js'),context);
+  return JSON.parse(JSON.stringify(context.MobialoStorefront.COPY));
+}
+test('storefront page copy covers every key in SQ, EN and IT and names the eSIM in every title',async()=>{
+  const {en,sq,it}=await storefrontCopy();
+  assert.deepEqual(Object.keys(sq).sort(),Object.keys(en).sort());assert.deepEqual(Object.keys(it).sort(),Object.keys(en).sort());
+  for(const copy of [en,sq,it]){
+    for(const [key,value] of Object.entries(copy))assert.ok(typeof value==='string'&&value.trim(),key);
+    for(const key of ['hubTitle','countryTitle','planTitle','countryHeading','hubDescription','countryDescription'])assert.match(copy[key],/eSIM/,key);
+    assert.match(copy.countryTitle,/\{name\}/);assert.match(copy.plans,/\{n\}/);assert.match(copy.alsoIn,/→$/);
+  }
+  assert.deepEqual([en.showMore,sq.showMore,it.showMore],['Show more','Shfaq më shumë','Mostra di più']);
+  // The shared text for a closed checkout, as paypal-checkout.js shows it.
+  assert.deepEqual([sq.closed,en.closed,it.closed],closedCheckout);
+});
+
 async function dictionaries(){
   const app=await read('dist/app.js'),italian=await read('dist/italian.js');
   const context=vm.createContext({});
-  vm.runInContext(app.split('// Demonstration data')[0]+italian.split('const italianDeviceNotes')[0]+';globalThis.dictionaries=JSON.stringify(translations);',context);
+  vm.runInContext(app.split('// Demonstration data')[0]+italian.split('// Loaded right after app.js')[0]+';globalThis.dictionaries=JSON.stringify(translations);',context);
   return JSON.parse(context.dictionaries);
 }
 
@@ -123,12 +141,12 @@ test('storefront copy is live in all three languages and Italian covers every ke
   const {en,sq,it}=await dictionaries();
   assert.deepEqual(Object.keys(it).sort(),Object.keys(en).sort());
   assert.deepEqual(Object.keys(sq).sort(),Object.keys(en).sort());
-  for(const key of ['getEsim','demoPrices','previewNote','questions','previewStore','operator','noResults','dataOnly','planNote','review','reviewIntro','total','notLive','checkout','fromRegional','trustPay','trustQr','trustPolicy'])
+  for(const key of ['getEsim','demoPrices','previewNote','questions','previewStore','operator','noResults','allDestinations','compatible','trustPay','trustQr','trustPolicy'])
     for(const [language,copy] of Object.entries({en,sq,it}))assert.ok(typeof copy[key]==='string'&&copy[key].trim(),language+'.'+key);
   for(const copy of [en,sq,it]){
     assert.equal(copy.faq.length,6);assert.match(copy.faq[4][1],/PayPal/);assert.match(copy.faq[4][1],/QR/);assert.match(copy.faq[5][1],/href="\/delivery-refunds\.html"/);
     assert.match(copy.questions,/ <br>/); // the <br> is hidden on phones, so the sentences keep a space
-    assert.doesNotMatch(copy.notLive+copy.previewNote+copy.checkout,/Sandbox|prova|preview|anteprima|demonstr/i);
+    assert.doesNotMatch(copy.previewNote,/Sandbox|prova|preview|anteprima|demonstr/i);
     // The hero says what is sold, how it arrives, that EUR prices include processing costs and that no account is needed.
     assert.match(copy.headline,/eSIM/);assert.match(copy.intro,/PayPal/);assert.match(copy.intro,/QR/);assert.match(copy.intro,/EUR/);
     assert.match(copy.pageTitle,/^MOBIALO — .*eSIM/);assert.match(copy.metaDescription,/eSIM/);
@@ -140,9 +158,12 @@ test('storefront copy is live in all three languages and Italian covers every ke
   assert.match(en.intro,/No account needed/);assert.match(sq.intro,/Nuk të duhet llogari/);assert.match(it.intro,/Non serve un account/);
   assert.equal(en.getEsim,'Find your eSIM');assert.equal(sq.getEsim,'Gjej eSIM');assert.equal(it.getEsim,'Trova la tua eSIM');
   assert.match(it.why,/^Perché/);assert.match(it.faq[0][0],/cos’è/);
-  // One word per idea in each language: validity, data and the masculine 'eSIM-i' of the checkout consent in Albanian.
-  assert.deepEqual([en.duration,sq.duration,it.duration],['Validity','Vlefshmëria','Validità']);
-  assert.doesNotMatch(Object.values(sq).flat(2).join(' '),/eSIM (?:tënde|e udhëtimit)|Kohëzgjatja|kohëzgjatj/);
+  // The homepage links to the destinations page instead of expanding an inner list.
+  assert.deepEqual([en.allDestinations,sq.allDestinations,it.allDestinations],['Show all destinations <span>→</span>','Shfaq të gjitha destinacionet <span>→</span>','Mostra tutte le destinazioni <span>→</span>']);
+  // One word per idea in each language (the storefront pages' copy too): validity, data and the masculine 'eSIM-i' of the checkout consent in Albanian.
+  const pages=await storefrontCopy();
+  assert.deepEqual([pages.en.validity,pages.sq.validity,pages.it.validity],['Validity','Vlefshmëria','Validità']);
+  assert.doesNotMatch([...Object.values(sq).flat(2),...Object.values(pages.sq)].join(' '),/eSIM (?:tënde|e udhëtimit)|Kohëzgjatja|kohëzgjatj/);
 });
 
 // The elements of index.html that app.js translates, with their static (no-JavaScript) content.
@@ -198,9 +219,9 @@ async function storefront(products){
     window:{MobialoLocale:{current:'en',emailLanguage:'en',ready:new Promise(()=>{}),choose(){},syncSelect(){}}},
     document:dom,history:dom,matchMedia:dom,location:{search:'',href:'https://www.mobialo.eu/'},
     AbortSignal,URLSearchParams,Intl,console,queueMicrotask,setTimeout,
-    fetch:async(path,options)=>{requests.push({path,options});return {ok:true,json:async()=>({products})};}
+    fetch:async(path,options)=>{requests.push({path,options});return {ok:true,text:async()=>JSON.stringify({products})};}
   });
-  for(const file of ['dist/devices.js','dist/app.js','dist/country-names.js','dist/plan-translations.js','dist/live-catalog.js','dist/catalog-filters.js','dist/catalog-shop.js','dist/italian.js'])vm.runInContext(await read(file),context,{filename:file});
+  for(const file of ['dist/country-names.js','dist/storefront-core.js','dist/app.js','dist/live-catalog.js','dist/italian.js'])vm.runInContext(await read(file),context,{filename:file});
   for(let i=0;i<50&&vm.runInContext('catalogState',context)!=='ready';i++)await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(vm.runInContext('catalogState',context),'ready');
   return {run:code=>JSON.parse(vm.runInContext('JSON.stringify('+code+')',context)),requests,writes};
@@ -223,14 +244,19 @@ test('only plans that can be bought online are listed and counted; America and A
   assert.equal(shop.requests[0].path,'/api/catalog');assert.equal(shop.requests[0].options.cache,undefined);
 });
 
-test('search ranks prefix matches in the current language first and reuses number formats',async()=>{
+test('search ranks prefix matches in the current language first; prices and counts read as on the destination pages',async()=>{
   const shop=await storefront([product('al')]);
   shop.run("(catalog=[{id:'sa',en:'Saudi Arabia',sq:'Arabia Saudite',it:'Arabia Saudita',price:5},{id:'vg',en:'British Virgin Islands',sq:'Ishujt e Virgjër Britanikë',it:'Isole Vergini Britanniche',price:5},{id:'ae',en:'United Arab Emirates',sq:'Emiratet e Bashkuara Arabe',it:'Emirati Arabi Uniti',price:5},{id:'it',en:'Italy',sq:'Itali',it:'Italia',price:5}],0)");
   assert.deepEqual(shop.run("searchMatches('ita').map(d=>d.id)"),['it','sa','vg']);
   assert.deepEqual(shop.run("searchMatches('arab').map(d=>d.id)"),['sa','ae']);
   assert.deepEqual(shop.run("(setLanguage('sq'),searchMatches('emir').map(d=>d.id))"),['ae']);
-  assert.equal(shop.run("currencyFormat('en-IE','EUR')===currencyFormat('en-IE','EUR')"),true);
+  // The homepage formats with the shared helper (storefront-core.js), so Albanian prices do not depend on the browser's ICU data.
   assert.equal(shop.run("(setLanguage('en'),money(4.5))"),'€4.50');
+  assert.equal(shop.run("(setLanguage('sq'),money(4.51))"),'4,51 €');assert.equal(shop.run("(setLanguage('it'),money(4.51))"),'4,51 €');
+  assert.equal(shop.run("(setLanguage('sq'),money(1234.5))"),shop.run("MobialoStorefront.money(1234.5,'sq')"));
+  assert.doesNotMatch(await read('dist/app.js'),/Intl\.NumberFormat|sq-AL/);
+  // One match is one destination, in every language (status line and screen-reader announcement).
+  assert.deepEqual(shop.run("['en','sq','it'].map(code=>(setLanguage(code),[resultsText(1),resultsText(3)]))"),[['1 matching destination','3 matching destinations'],['1 destinacion i gjetur','3 destinacione të gjetura'],['1 destinazione trovata','3 destinazioni trovate']]);
 });
 
 test('a country shows the price of its own cheapest plan, or its cheapest regional plan labelled as regional',async()=>{
@@ -249,16 +275,24 @@ test('a country shows the price of its own cheapest plan, or its cheapest region
 
 test('the hero counts destinations from the live catalog and every page title names the eSIM',async()=>{
   const shop=await storefront([product('europe',{countries:['AL','IT','FR'],regions:['Europe']}),product('japan',{countries:['JP']})]);
-  // The count is appended to the unchanged pre-catalog prefix, so no word changes after the first paint.
-  const texts=()=>shop.writes.filter(([key])=>key==='innerHTML').map(([,value])=>value);
-  const eyebrow=(prefix,count)=>prefix+'<span class="eyebrow-count">'+count+'</span>';
-  assert.ok(texts().includes(eyebrow('TRAVEL eSIM',' · 4 DESTINATIONS')),texts().join(' | '));
-  shop.run("(setLanguage('sq'),0)");assert.ok(texts().includes(eyebrow('eSIM UDHËTIMI',' · 4 DESTINACIONE')));
-  shop.run("(setLanguage('it'),0)");assert.ok(texts().includes(eyebrow('eSIM DA VIAGGIO',' · 4 DESTINAZIONI')));
+  // The prefix keeps its pre-catalog text and the count fills its own slot after it (its width is kept from the first paint,
+  // styles.css), so no word changes or moves after the first paint.
+  const written=key=>shop.writes.filter(([name])=>name===key).map(([,value])=>value);
+  for(const [code,prefix,count] of [['en','TRAVEL eSIM',' · 4 DESTINATIONS'],['sq','eSIM UDHËTIMI',' · 4 DESTINACIONE'],['it','eSIM DA VIAGGIO',' · 4 DESTINAZIONI']]){
+    shop.run(`(setLanguage('${code}'),0)`);
+    assert.equal(shop.run(`translations.${code}.eyebrow`),prefix);assert.ok(written('textContent').includes(count),code);
+    assert.ok(!written('innerHTML').some(value=>String(value).includes(count.trim())),code);
+  }
+  assert.doesNotMatch(await read('dist/app.js'),/innerHTML = `\$\{t\('eyebrow'\)\}/);
   const titles=shop.writes.filter(([key])=>key==='title').map(([,value])=>value);
   assert.deepEqual([...new Set(titles)],['MOBIALO — Travel eSIM plans for your next adventure','MOBIALO — Paketa eSIM udhëtimi për aventurën tënde të radhës','MOBIALO — Piani eSIM da viaggio per la tua prossima avventura']);
 });
 
+// /sitemap.xml is rendered by api/store.mjs from the catalog (here the checked-in snapshot).
+async function renderedSitemap(){
+  const {createStorefront}=await import('./storefront-pages.mjs');
+  return createStorefront().render({page:'sitemap',lang:'en'},JSON.parse(await read('dist/catalog-preview.json'))).body;
+}
 // Legal pages: the checkout consent records TERMS_VERSION, so the published Terms and Delivery & refund policy carry that version.
 async function legalCopy(file){
   const context=vm.createContext({window:{MobialoLocale:{ready:new Promise(()=>{})}}});
@@ -268,7 +302,7 @@ async function legalCopy(file){
 test('legal pages are indexable, listed in the sitemap, versioned like the checkout consent and complete in SQ, EN and IT',async()=>{
   const version=(await read('scripts/hosted-checkout.mjs')).match(/TERMS_VERSION='v(\d+\.\d+)-(\d{4})-(\d{2})-(\d{2})'/);
   assert.ok(version,'TERMS_VERSION');
-  const sitemap=await read('dist/sitemap.xml');
+  const sitemap=await renderedSitemap();
   for(const page of ['terms','delivery-refunds','privacy','about']){
     const html=await read(`dist/${page}.html`);
     assert.doesNotMatch(html,/noindex/,page);assert.match(sitemap,new RegExp(`<loc>https://www\\.mobialo\\.eu/${page}\\.html</loc>`),page);

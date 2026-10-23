@@ -141,6 +141,24 @@ test('every order needs the checkout consent, before any limit, payment service 
  assert.equal((await hostedCheckout('create',{...f.req,headers:{...f.req.headers,'x-vercel-forwarded-for':ip}},f.deps)).status,200);
  assert.deepEqual(f.calls,[{productId:'plan',email:'buyer@example.com',language:undefined,userId:'customer',clientIpHash:undefined,termsVersion:TERMS_VERSION}]);
 });
+test('the shown price travels with the order: a different server price is a 409 with the current price, before any order or PayPal call',async()=>{
+ const f=guestFixture();let paypal=0;f.deps.services=async()=>({store:f.store,paypal:async()=>{paypal++;return {id:'remote'};}});
+ const changed=await hostedCheckout('create',{...f.req,body:{...f.req.body,expectedPrice:'3.99'}},f.deps);
+ assert.deepEqual(changed,{status:409,body:{error:'PRICE_CHANGED',price:'4.19'}});assert.equal(f.rows.length,0);assert.equal(paypal,0);
+ assert.equal(f.calls[0].expectedPrice,'3.99');
+ const same=await hostedCheckout('create',{...f.req,body:{...f.req.body,expectedPrice:'4.19'}},f.deps);
+ assert.equal(same.status,200);assert.equal(f.rows.length,1);assert.equal(f.rows[0].amount,'4.19');assert.equal(paypal,1);
+ // A malformed price is refused like any malformed request, before the consent, the limits or a payment service.
+ for(const expectedPrice of [4.19,'4.190','4,19','€4.19','',' 4.19',{},['4.19'],'1234567.00']){
+  const g=guestFixture();g.deps.limits=()=>assert.fail('Must not check limits');g.deps.services=()=>assert.fail('Must not touch payments');
+  assert.deepEqual(await hostedCheckout('create',{...g.req,body:{...g.req.body,expectedPrice,consent:false}},g.deps),{status:400,body:{error:'INVALID_REQUEST'}},JSON.stringify(expectedPrice));
+ }
+ // Without the field (older page, local server) nothing changes: the create input has no expectedPrice at all.
+ const h=fixture();await hostedCheckout('create',{...h.req,body:{...h.req.body,expectedPrice:null}},h.deps);assert.equal('expectedPrice' in h.calls[0],false);
+ // Signed-in buyers are checked the same way.
+ const s=fixture();s.deps.create=async input=>createLiveOrder(input,{store:{insert:()=>assert.fail('Must not insert'),openOrders:async()=>0}},[product]);
+ assert.deepEqual(await hostedCheckout('create',{...s.req,body:{...s.req.body,expectedPrice:'9.99'}},s.deps),{status:409,body:{error:'PRICE_CHANGED',price:'4.19'}});
+});
 test('guest limits refuse with 429, and a failed limit check refuses with 503 (fail closed)',async()=>{
  for(const [error,status,code] of [['TOO_MANY_OPEN_ORDERS',429,'TOO_MANY_OPEN_ORDERS'],['ORDER_LIMIT_UNAVAILABLE',503,'CHECKOUT_UNAVAILABLE']]){
   const logged=[];const f=guestFixture();f.deps.log={error:(...args)=>logged.push(args.join(' '))};

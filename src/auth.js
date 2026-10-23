@@ -2,7 +2,7 @@ import '../dist/locale.js';
 import {authItalian} from './auth-it.js';
 import {createClient} from '@supabase/supabase-js';
 import {authCopy} from './auth-copy.js';
-import {mountAccount} from './account.js';
+import {mountAccount,orderFromPath,hubPath} from './account.js';
 import {nextFromSearch,withNext,rememberNext,forgetNext,takePendingNext} from './next-path.js';
 let dashboard;
 
@@ -10,7 +10,8 @@ Object.assign(authCopy.en,{preview:'Sign-in uses an encrypted connection.',joinR
 Object.assign(authCopy.sq,{preview:'Hyrja bëhet përmes një lidhjeje të enkriptuar.',joinResult:'Kontrollo emailin për linkun e konfirmimit nëse kjo adresë mund të regjistrohet. Nëse ke llogari, hyr ose rivendos fjalëkalimin.',resetResult:'Nëse kjo adresë ka një llogari, do të marrësh emailin për rivendosjen e fjalëkalimit.',update:'Vendos fjalëkalimin e ri.',updateSub:'Zgjidh një fjalëkalim të ri për llogarinë tënde.',updateButton:'Ruaj fjalëkalimin →',updateResult:'Fjalëkalimi u ndryshua. Tani mund të hysh në llogari.',account:'Llogaria jote MOBIALO.',accountSub:'Je identifikuar në llogari.',accountButton:'Dil nga llogaria',connecting:'Duke u lidhur…',working:'Prit pak…',unavailable:'Lidhja nuk u krye. Kontrollo internetin dhe rifresko faqen.',expired:'Ky link është i pavlefshëm ose ka skaduar. Kërko një email të ri për rikuperim.',invalid:'Emaili ose fjalëkalimi nuk është i saktë.',confirmEmail:'Konfirmo emailin para se të hysh.',rate:'Shumë tentativa. Prit pak dhe provo përsëri.',weak:'Zgjidh një fjalëkalim më të fortë me të paktën 8 karaktere.',generic:'Kërkesa nuk u krye. Provo përsëri.',emailIssue:'Emaili nuk u dërgua dot tani. Provo përsëri pas pak minutash ose shkruaj te support@mobialo.eu.',browse:'Zbulo destinacionet →'});
 authCopy.it=authItalian;
 const path=location.pathname.replace(/\/$/,'');
-const mode=({'/join':'join','/sign-in':'sign','/forgot-password':'reset','/update-password':'update','/account':'account'})[path]||'sign';
+// An order page (/account/orders/{id}) is part of the account.
+const mode=({'/join':'join','/sign-in':'sign','/forgot-password':'reset','/update-password':'update','/account':'account'})[path]||(orderFromPath(path)!==null?'account':'sign');
 // After signing in, return to a same-origin page (e.g. the plan being bought), never elsewhere.
 const nextPath=nextFromSearch(location.search,location.origin),leave=()=>{if(nextPath!=='/account')forgetNext();location.replace(nextPath);};
 document.querySelectorAll('.auth-tabs a').forEach(link=>link.href=withNext(new URL(link.href).pathname,nextPath));
@@ -29,6 +30,8 @@ function status(){
 function render(){
   document.documentElement.lang=language;window.MobialoLocale.syncSelect($('#auth-language'),language);
   document.querySelectorAll('[data-text]').forEach(node=>node.innerHTML=t(node.dataset.text));
+  // The header's back link and search icon lead to the destinations page in this language (only the targets change).
+  const hub=hubPath(language);$('.auth-back').href=hub;$('.header-search').href=hub+'#search';$('.header-search').setAttribute('aria-label',t('search'));
   if(dashboard){dashboard.setLanguage(language);return;}
   const title=t(({sign:'welcome',join:'create',reset:'reset',update:'update',account:'account'})[mode]);
   $('#auth-title').textContent=title;document.title=`${title} · MOBIALO`;
@@ -37,7 +40,7 @@ function render(){
   $('#auth-fields').innerHTML=(mode==='join'?field('name','text','name','name'):'')+(['join','sign','reset'].includes(mode)?field('email','email','email','email'):'')+(['join','sign','update'].includes(mode)?field('password','password','password',mode==='sign'?'current-password':'new-password',mode==='sign'?'':'password-hint'):'')+(['join','update'].includes(mode)?`<small class="auth-hint" id="password-hint">${t('passwordHint')}</small>`+field('confirm','password','confirm','new-password'):'')+(mode==='sign'?`<a class="forgot-link" href="${withNext('/forgot-password',nextPath)}">${t('forgot')}</a>`:'');
   if(mode==='account'&&user){const p=document.createElement('p');p.className='account-email';p.textContent=user.email;$('#auth-fields').append(p);}
   const sign=withNext('/sign-in',nextPath);
-  $('#auth-switch').innerHTML=mode==='account'?`<a href="/">${t('browse')}</a>`:mode==='join'?`${t('hasAccount')} <a href="${sign}">${t('signin')}</a>`:mode==='sign'?`${t('noAccount')} <a href="${withNext('/join',nextPath)}">${t('join')}</a>`:`<a href="${sign}">${t('back')}</a> · <a href="${withNext('/forgot-password',nextPath)}">${t('forgot')}</a>`;
+  $('#auth-switch').innerHTML=mode==='account'?`<a href="${hub}">${t('browse')}</a>`:mode==='join'?`${t('hasAccount')} <a href="${sign}">${t('signin')}</a>`:mode==='sign'?`${t('noAccount')} <a href="${withNext('/join',nextPath)}">${t('join')}</a>`:`<a href="${sign}">${t('back')}</a> · <a href="${withNext('/forgot-password',nextPath)}">${t('forgot')}</a>`;
   status();
 }
 function errorMessage(error){
@@ -87,8 +90,8 @@ try{
   const {data:{session},error}=await client.auth.getSession();
   if(callbackError||error){history.replaceState(null,'',location.pathname);errorKey='expired';status();}
   else if(mode==='account'||mode==='update'){
-    if(!session){if(mode==='account')location.replace('/sign-in');else{errorKey='expired';status();}}
-    else{const {data,error:verifyError}=await client.auth.getUser();if(verifyError||!data.user){errorKey='expired';status();}else{user=data.user;ready=true;const pending=mode==='account'&&takePendingNext(location.origin);if(pending)location.replace(pending);else if(mode==='account')dashboard=mountAccount({client,user,language});else render();}}
+    if(!session){if(mode==='account')location.replace(path==='/account'?'/sign-in':withNext('/sign-in',location.href));else{errorKey='expired';status();}}
+    else{const {data,error:verifyError}=await client.auth.getUser();if(verifyError||!data.user){errorKey='expired';status();}else{user=data.user;ready=true;const pending=path==='/account'&&takePendingNext(location.origin);if(pending)location.replace(pending);else if(mode==='account')dashboard=mountAccount({client,user,language});else render();}}
   }else if(session&&(mode==='sign'||mode==='join'))leave();
   else{ready=true;status();}
 }catch(error){errorKey=error.message==='HOSTED_PREVIEW'?'hostedPreview':'unavailable';status();}

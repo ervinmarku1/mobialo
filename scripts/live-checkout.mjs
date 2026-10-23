@@ -23,15 +23,22 @@ export function paypalFailure(diagnostic){
 }
 
 // Hosted checkout passes the consent version (accepted now) and, for guests, the client address hash.
-export async function createLiveOrder(input,services,products){
+export async function createLiveOrder(input,services,products,catalog=getCatalog){
   const email=String(input.email||'').trim();
   if(email.length>254||! /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(email))throw Error('EMAIL_REQUIRED');
-  services??=await deliveryServices();products??=(await getCatalog()).products;
-  const product=products.find(p=>p.id===input.productId);
-  if(!product||product.category!=='esim_realtime'||product.price<=0||/\btest\b/i.test(product.title))throw Error('INVALID_PRODUCT');
+  services??=await deliveryServices();
+  const pick=list=>{const product=list.find(p=>p.id===input.productId);if(!product||product.category!=='esim_realtime'||product.price<=0||/\btest\b/i.test(product.title))throw Error('INVALID_PRODUCT');return product;};
+  const differs=product=>input.expectedPrice!==undefined&&input.expectedPrice!==product.price.toFixed(2);
+  let product=pick(products??(await catalog()).products);
+  // The page sends the price it showed (CDN copies can be minutes old). Before refusing, the price is read again from a
+  // catalog at most a minute old (this instance's may be older than the page's); another current price is never
+  // charged, and nothing is stored or sent to PayPal. Without expectedPrice (local server) the current price applies.
+  if(!products&&differs(product))product=pick((await catalog({maxAge:60000})).products);
+  const amount=product.price.toFixed(2);
+  if(differs(product))throw Object.assign(Error('PRICE_CHANGED'),{price:amount});
   // Each unpaid order is polled by the worker; cap them per customer to protect PayPal rate limits.
   if(input.userId&&services.store.openOrders&&await services.store.openOrders(input.userId,new Date(Date.now()-3600000).toISOString())>=MAX_OPEN_ORDERS_PER_HOUR)throw Error('TOO_MANY_OPEN_ORDERS');
-  const id=randomUUID(),amount=product.price.toFixed(2);
+  const id=randomUUID();
   // Guest orders have no user_id; their client address is kept only as a keyed hash for the abuse limits,
   // which the locking reservation checks in the same transaction as the insert.
   const row={id,paypal_order_id:'pending-'+id,product_id:product.id,product_title:product.title,amount,currency:'EUR',customer_email:email,language:['en','sq','it'].includes(input.language)?input.language:'en',state:'awaiting_payment',

@@ -22,15 +22,21 @@ export async function adminOrders(request,fetcher=fetch,configuration){
  const mfa=adminMfaError(token,user,env.SUPER_ADMIN_USER_IDS?{...env,ADMIN_MFA_REQUIRED:'true'}:env);if(mfa)return fail(403,mfa);
  const query=new URL(request.url,'https://admin.mobialo.eu').searchParams;
  const page=Number(query.get('page')||1),state=query.get('state')||'',search=(query.get('search')||'').trim();
- const from=query.get('from')||'',to=query.get('to')||'';
+ const from=query.get('from')||'',to=query.get('to')||'',id=query.has('id')?query.get('id'):null;
+ // ?id= reads one order for the admin order page (/admin/orders/{id}); only a UUID is accepted, never an empty id.
+ if(id!==null&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return fail(400,'INVALID_FILTER');
  const validDate=value=>!value||/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
  if(!validDate(from)||!validDate(to)||from&&to&&from>to)return fail(400,'INVALID_FILTER');
  if(!Number.isInteger(page)||page<1||page>100000||state&&state!=='payment_issue'&&!states.includes(state)||search.length>150||search&&!/^[\p{L}\p{N}@._+ -]+$/u.test(search))return fail(400,'INVALID_FILTER');
  const params=new URLSearchParams({select:'id,paypal_order_id,paypal_capture_id,product_id,amount,currency,customer_email,language,state,provider_order_id,email_id,created_at,payment_status,refunded_amount,dispute_id,dispute_status,payment_updated_at',order:'created_at.desc,id.desc',limit:'50',offset:String((page-1)*50)});
- if(state==='payment_issue')params.set('or',ISSUE_FILTER);else if(state)params.set('state','eq.'+state);
- if(from)params.append('created_at','gte.'+from+'T00:00:00Z');
- if(to)params.append('created_at','lt.'+new Date(Date.parse(to)+86400000).toISOString());
- if(search)params.set('customer_email','ilike.*'+search.replaceAll('_','\\_')+'*');
+ // The list filters do not apply to a single-order read.
+ if(id!==null)params.set('id','eq.'+id.toLowerCase());
+ else{
+  if(state==='payment_issue')params.set('or',ISSUE_FILTER);else if(state)params.set('state','eq.'+state);
+  if(from)params.append('created_at','gte.'+from+'T00:00:00Z');
+  if(to)params.append('created_at','lt.'+new Date(Date.parse(to)+86400000).toISOString());
+  if(search)params.set('customer_email','ilike.*'+search.replaceAll('_','\\_')+'*');
+ }
  const response=await fetcher(base.origin+'/rest/v1/esim_deliveries?'+params,{headers:{apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY,Prefer:'count=exact'},signal:AbortSignal.timeout(15000)});
  if(!response.ok)return fail(503,'ORDERS_UNAVAILABLE');
  const rows=await response.json(),total=Number(response.headers.get('content-range')?.split('/')[1]);

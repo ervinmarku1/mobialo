@@ -7,3 +7,9 @@ it:{title:'Il tuo spazio di viaggio',intro:'Connessioni, viaggi e account. Tutto
 accountCopy.en.destinations='Destinations';
 accountCopy.sq.destinations='Destinacionet';
 accountCopy.it.destinations='Destinazioni';
+
+// The order page (/account/orders/{id}). Orders older than the latest 100 are read by ID, so "not found" means not in this account.
+// The delivery note holds for every state ("once the eSIM is ready"), so the page placeholder can show it from the first paint.
+Object.assign(accountCopy.en,{back:'Back to orders',notFound:'Order not found',notFoundText:'This order is not in your account. Check the link or open your orders.',orderHelp:'Help with this order',loadingOrder:'Loading the order…',emailDelivery:'Installation details are sent to the email entered at checkout once the eSIM is ready. Contact support with your order reference if you need help.'});
+Object.assign(accountCopy.sq,{back:'Kthehu te porositë',notFound:'Porosia nuk u gjet',notFoundText:'Kjo porosi nuk gjendet në llogarinë tënde. Kontrollo linkun ose hap porositë.',orderHelp:'Ndihmë për këtë porosi',loadingOrder:'Po ngarkohet porosia…',emailDelivery:'Udhëzimet e instalimit dërgohen te emaili i vendosur gjatë blerjes, sapo eSIM-i të jetë gati. Kontakto mbështetjen me referencën e porosisë nëse ke nevojë.'});
+Object.assign(accountCopy.it,{back:'Torna agli ordini',notFound:'Ordine non trovato',notFoundText:'Questo ordine non è nel tuo account. Controlla il link o apri i tuoi ordini.',orderHelp:'Assistenza per questo ordine',loadingOrder:'Caricamento dell’ordine…',emailDelivery:'Le istruzioni sono inviate all’email inserita al pagamento quando la eSIM è pronta. Contatta l’assistenza con il riferimento dell’ordine.'});

@@ -81,6 +81,62 @@ test('catalog cache follows the admin pricing',async()=>{
     for(const [name,value] of [['MOBIMATTER_MERCHANT_ID',saved.id],['MOBIMATTER_API_KEY',saved.key]])if(value===undefined)delete process.env[name];else process.env[name]=value;
   }
 });
+// getCatalog with a clock the test moves; each run gets its own pricing so earlier cache entries never match.
+async function withCatalog(run){
+  const saved={id:process.env.MOBIMATTER_MERCHANT_ID,key:process.env.MOBIMATTER_API_KEY};
+  process.env.MOBIMATTER_MERCHANT_ID='fixture-merchant';process.env.MOBIMATTER_API_KEY='fixture-key';
+  let time=Date.now(),requests=0,fail=false,price=8.99,release=null;
+  const pricing={markupPercent:Math.round(Math.random()*1000)/10,feePercent:0,feeFixed:0};
+  const request=async()=>{requests++;if(release)await new Promise(resolve=>{const go=release;release=null;go(resolve);});if(fail)throw new Error('offline');return new Response(JSON.stringify([{...product,retailPrice:price}]),{status:200});};
+  const deps=extra=>({settings:async()=>({pricing}),request,now:()=>time,...extra});
+  const minutes=n=>{time+=n*60000;};
+  try{await run({deps,minutes,requests:()=>requests,setFail:value=>{fail=value;},setPrice:value=>{price=value;},hold:fn=>{release=fn;},expected:retail=>sellingPrice(retail,'USD',pricing)});}
+  finally{for(const [name,value] of [['MOBIMATTER_MERCHANT_ID',saved.id],['MOBIMATTER_API_KEY',saved.key]])if(value===undefined)delete process.env[name];else process.env[name]=value;}
+}
+test('checkout catalog (default): fresh within 5 minutes, then waits for MobiMatter and fails with it, never a stale copy',async()=>{
+  await withCatalog(async({deps,minutes,requests,setFail,setPrice,expected})=>{
+    assert.equal((await getCatalog(deps())).products[0].price,expected(8.99));
+    minutes(4);assert.equal((await getCatalog(deps())).products[0].price,expected(8.99));assert.equal(requests(),1);
+    // Past 5 minutes checkout waits for the new prices.
+    setPrice(10);minutes(2);assert.equal((await getCatalog(deps())).products[0].price,expected(10));assert.equal(requests(),2);
+    // A failing MobiMatter after the 5 minutes is an error for checkout, although a good catalog is in memory.
+    setFail(true);minutes(6);await assert.rejects(getCatalog(deps()),{code:'UPSTREAM_UNAVAILABLE'});
+    // A shorter maxAge (warm-up, price recheck) refreshes earlier and waits for it.
+    setFail(false);setPrice(11);assert.equal((await getCatalog(deps())).products[0].price,expected(11));
+    minutes(2);assert.equal((await getCatalog(deps({maxAge:60000}))).products[0].price,expected(11));assert.equal(requests(),5);
+    // A longer maxAge never makes checkout accept a catalog past 5 minutes.
+    setPrice(12);minutes(6);assert.equal((await getCatalog(deps({maxAge:3600000}))).products[0].price,expected(12));
+  });
+});
+test('page catalog (allowStale): the last good catalog at once while it refreshes, and for up to an hour while MobiMatter fails',async()=>{
+  await withCatalog(async({deps,minutes,requests,setFail,setPrice,hold,expected})=>{
+    // A cold instance has nothing to show: it waits once.
+    assert.equal((await getCatalog(deps({allowStale:true}))).products[0].price,expected(8.99));
+    // Past 5 minutes the old catalog comes back at once and one refresh runs in the background.
+    let finish;hold(resolve=>{finish=resolve;});setPrice(10);minutes(6);
+    assert.equal((await getCatalog(deps({allowStale:true}))).products[0].price,expected(8.99));
+    assert.equal((await getCatalog(deps({allowStale:true}))).products[0].price,expected(8.99));assert.equal(requests(),2);
+    // Checkout joins the same refresh instead of starting another one, and gets the new prices.
+    const strict=getCatalog(deps());finish();
+    assert.equal((await strict).products[0].price,expected(10));assert.equal(requests(),2);
+    assert.equal((await getCatalog(deps({allowStale:true}))).products[0].price,expected(10));
+    // MobiMatter fails: pages keep the last good catalog for an hour after it was fetched, then fail too.
+    setFail(true);minutes(30);assert.equal((await getCatalog(deps({allowStale:true}))).products[0].price,expected(10));
+    await new Promise(resolve=>setTimeout(resolve,0));
+    minutes(29);assert.equal((await getCatalog(deps({allowStale:true}))).products[0].price,expected(10));
+    minutes(2);await assert.rejects(getCatalog(deps({allowStale:true})),{code:'UPSTREAM_UNAVAILABLE'});
+    setFail(false);setPrice(13);assert.equal((await getCatalog(deps({allowStale:true}))).products[0].price,expected(13));
+  });
+});
+test('a refresh frozen with its instance (older than the request timeout) is not joined: a new one starts',async()=>{
+  await withCatalog(async({deps,minutes,requests,setPrice,hold,expected})=>{
+    await getCatalog(deps());
+    hold(()=>{});setPrice(10);minutes(6);
+    // The page starts a refresh that never ends (the instance was frozen after the response).
+    assert.equal((await getCatalog(deps({allowStale:true}))).products[0].price,expected(8.99));assert.equal(requests(),2);
+    minutes(1);assert.equal((await getCatalog(deps())).products[0].price,expected(10));assert.equal(requests(),3);
+  });
+});
 test('preview snapshot prices follow the admin pricing and stay unchanged with the defaults',async()=>{
   const run=async pricing=>{let body;const res={setHeader(){},status(){return this;},json(value){body=value;}};await catalogHandler({method:'GET'},res,{env:{},settings:async()=>({pricing}),catalog:()=>assert.fail('Must use the snapshot')});return body.products;};
   const base=await run({markupPercent:20,feePercent:2.5,feeFixed:0.2}),free=await run({markupPercent:20,feePercent:0,feeFixed:0}),doubled=await run({markupPercent:140,feePercent:0,feeFixed:0});
@@ -91,8 +147,12 @@ test('preview snapshot prices follow the admin pricing and stay unchanged with t
 test('successful catalog responses are CDN-cacheable; errors and other methods are not',async()=>{
   const call=async(method,deps)=>{const headers={};let status;const res={setHeader(name,value){headers[name]=value;},status(code){status=code;return this;},json(){}};await catalogHandler({method},res,deps);return {status,cache:headers['Cache-Control'],cdn:headers['Vercel-CDN-Cache-Control']};};
   const env={MOBIMATTER_MERCHANT_ID:'fixture-merchant',MOBIMATTER_API_KEY:'fixture-key'},pricing={markupPercent:20,feePercent:2.5,feeFixed:0.2};
-  const cached={status:200,cache:'public, max-age=0, must-revalidate',cdn:'s-maxage=60, stale-while-revalidate=60'};
+  // A minute at the CDN, then a stale copy for 10 minutes while it refreshes in the background, so no visitor waits.
+  const cached={status:200,cache:'public, max-age=0, must-revalidate',cdn:'s-maxage=60, stale-while-revalidate=600'};
   assert.deepEqual(await call('GET',{env,catalog:async()=>({products:[]}),settings:async()=>({pricing})}),cached);
+  // The function answers from the last good catalog (allowStale), priced with the same settings read that decides caching.
+  let options;await call('GET',{env,catalog:async value=>{options=value;return {products:[]};},settings:async()=>({pricing})});
+  assert.equal(options.allowStale,true);assert.deepEqual(await options.settings(),{pricing});
   assert.deepEqual(await call('GET',{env:{},settings:async()=>({pricing})}),cached);
   // Prices built while settings were unreadable must not be shared through the CDN.
   assert.deepEqual(await call('GET',{env,catalog:async()=>({products:[]}),settings:async()=>({pricing,unavailable:true})}),{status:200,cache:'no-store',cdn:undefined});

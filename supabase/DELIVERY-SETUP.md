@@ -32,6 +32,13 @@ database run all of them; for an existing one, run only the files that are missi
    (`payment_status`, `refunded_amount`, `dispute_id`, `dispute_status`, `payment_updated_at`).
    Apply before deploying the code: without it the admin order list and the refund/dispute
    webhook events return 503.
+11. `migrations/20261024090000_catalog_warm_cron.sql`: the every-minute job `mobialo-catalog-warm`, an
+   anonymous GET of `https://www.mobialo.eu/api/store?page=warm` (204, no body, no-store). It refreshes the
+   store function's in-memory catalog before its 5-minute lifetime ends, so no page of a warm instance
+   waits for MobiMatter; pg_net logs only tiny responses. Needs file 7 (pg_net, pg_cron).
+   The URL is hard-coded to production, like file 7. Optional: without it the pages still answer at once
+   from the last good catalog (up to an hour while MobiMatter fails); only a cold instance waits for it.
+   Running it again replaces the job (an earlier version also requested `/api/catalog` and `/esim`).
 
 All files except 5 are safe to run again. A null column below means that migration is missing:
 

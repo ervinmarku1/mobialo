@@ -1,11 +1,15 @@
 import {setupAdminAccess} from './admin-access.js';
 import {setupAdminMfa} from './admin-mfa.js';
 import {setupAdminSettings} from './admin-settings.js';
+import {formatMoney,numericDateTime} from './format.js';
 import {createClient} from '@supabase/supabase-js';
 const $=id=>document.getElementById(id);
 let mfa,access,settings,settingsRole='';
 let client,page=1,orders=[],sequence=0;
 let products=new Map();
+// The order page is /admin/orders/{id} (orderId; null on the list). The list filters ride in the query string (applied),
+// so order links and "back" return to the same filtered page; listReady means the rows on screen match applied.
+let orderId=null,applied='',listReady=false;
 const labels={awaiting_payment:'Në pritje të pagesës',paid:'Paguar',reserving:'Duke rezervuar',reserved:'Rezervuar',completing:'Duke përfunduar',ready:'eSIM gati',sending:'Duke dërguar emailin',sent:'Email i pranuar për dërgim',review:'Për kontroll'};
 // Flags recorded by the verified PayPal webhook (refunds, reversals, denied captures, disputes).
 const paymentLabels={refunded:'Rimbursuar',partially_refunded:'Rimbursuar pjesërisht',reversed:'Kthyer',denied:'Refuzuar',disputed:'Kontestim'};
@@ -18,51 +22,130 @@ const disputeLabel=o=>o.dispute_id?o.dispute_id+' · '+(Object.hasOwn(disputeLab
 const kept=o=>['refunded','reversed'].includes(o.payment_status)?0:Math.max(0,Number(o.amount)-(Number(o.refunded_amount)||0));
 // A PENDING PayPal capture is stored on an awaiting_payment row until PayPal releases it (or denies it).
 const stateLabel=o=>o.state==='awaiting_payment'&&o.paypal_capture_id?(issue(o)?'Pa paguar':'PayPal në pritje: prano pagesën te PayPal'):Object.hasOwn(labels,o.state)?labels[o.state]:o.state;
+// Routing helpers, evaluated without a DOM by scripts/account-admin-pages.test.mjs.
+const orderFromPath=pathname=>{const match=/^\/admin\/orders\/([^/]+)\/?$/.exec(pathname||'');if(!match)return null;try{return decodeURIComponent(match[1]);}catch{return '';}};
+// The canonical list query leaves out empty filters and page 1, so the unfiltered list stays at plain /admin.
+const listQuery=values=>{const query=new URLSearchParams();for(const key of ['page','state','search','from','to']){const value=String(values[key]??'').trim();if(value&&!(key==='page'&&value==='1'))query.set(key,value);}const text=query.toString();return text?'?'+text:'';};
+// Filters read back from a list or order-page URL; anything malformed falls back to "no filter" (the server validates again).
+const filtersFrom=search=>{const query=new URLSearchParams(search),n=Number(query.get('page')||1),day=key=>/^\d{4}-\d{2}-\d{2}$/.test(query.get(key)||'')?query.get(key):'';return {page:Number.isInteger(n)&&n>=1&&n<=100000?n:1,state:query.get('state')||'',search:(query.get('search')||'').slice(0,150),from:day('from'),to:day('to')};};
+const orderHref=(id,query)=>'/admin/orders/'+encodeURIComponent(id)+query;
+// Plain left clicks stay in the page; modified clicks (new tab or window) keep the browser default.
+const plainClick=event=>!event.defaultPrevented&&event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey;
 const message=text=>{$('message').textContent=text;};
+// Amounts and times in the Albanian form without Intl (desktop Chrome lacks Albanian data): "19,99 €", "22.10.2026, 13:30".
+const euro=(value,currency='EUR')=>formatMoney(value,currency,'sq');
+// The gate has decided (orders, login, 2FA or an error message): the admin.html head snippet's login hiding ends.
+const settled=()=>document.documentElement.classList.remove('admin-pending');
+// Takes every order off screen (failed, gated or signed-out loads); the access request box is left to clear().
+function hideData(){orders=[];listReady=false;$('rows').replaceChildren();$('detail-list').replaceChildren();$('order-product').replaceChildren();$('panel').hidden=true;$('order-page').hidden=true;}
 // Orders reloads keep Cilësimet (it sits inside #panel, so it is only hidden meanwhile); sign-out clears it.
-function clear(){access?.clear();orders=[];$('rows').replaceChildren();$('detail-list').replaceChildren();$('details').close();$('panel').hidden=true;}
+function clear(){access?.clear();hideData();}
 function clearSettings(){settingsRole='';settings?.clear();}
-async function load(){
- const current=++sequence;clear();message('Duke ngarkuar porositë…');
- const {data:{session}}=await client.auth.getSession();
+function setFilters(values){page=values.page;$('state').value=values.state;if($('state').value!==values.state)$('state').value='';$('search').value=values.search;$('from').value=values.from;$('to').value=values.to;}
+const formQuery=()=>listQuery({page,state:$('state').value,search:$('search').value,from:$('from').value,to:$('to').value});
+// quiet: refresh, filter and page changes keep the current rows on screen until the new ones arrive, instead of blanking the panel.
+async function load({quiet=false}={}){
+ const current=++sequence,main=document.querySelector('main');main.setAttribute('aria-busy','true');
+ try{await fetchOrders(current,quiet);}finally{if(current===sequence){main.removeAttribute('aria-busy');settled();}}
+}
+async function fetchOrders(current,quiet){
+ const id=orderId;
+ // A result for a view already left (in-page link or back/forward) is dropped, so it never replaces the page on screen;
+ // a dropped list is marked stale and reloads when the admin returns to it.
+ const stale=()=>{if(current!==sequence)return true;if(orderId===id)return false;if(id===null)listReady=false;return true;};
+ if(!quiet){clear();message(id===null?'Duke ngarkuar porositë…':'Duke ngarkuar porosinë…');}
+ const {data:{session}}=await client.auth.getSession();if(stale())return;
  $('login').hidden=!!session;$('logout').hidden=!session;
- if(!session){clearSettings();message('');return;}
+ if(!session){clear();clearSettings();message('');return;}
  try{
-  const superAdmin=await access.load();if(current!==sequence)return;
-  const params=new URLSearchParams({page:String(page),state:$('state').value,search:$('search').value.trim(),from:$('from').value,to:$('to').value});
+  const superAdmin=await access.load();if(stale())return;
+  if(id===null){applied=formQuery();if(location.search!==applied)history.replaceState(history.state,'',location.pathname+applied+location.hash);}
+  // The order page reads its one order through the same gated endpoint (sign-in, admin access, 2FA).
+  const params=id===null?new URLSearchParams({page:String(page),state:$('state').value,search:$('search').value.trim(),from:$('from').value,to:$('to').value}):new URLSearchParams({id});
   const r=await fetch('/api/admin/orders?'+params,{headers:{Authorization:'Bearer '+session.access_token},cache:'no-store'});
-  const data=await r.json();if(current!==sequence)return;
-  if(['MFA_REQUIRED','MFA_SETUP_REQUIRED'].includes(data.error)){await mfa.show(true);message('Konfirmo verifikimin me dy hapa.');return;}
-  if(!r.ok){message(r.status===403?'Kjo llogari nuk ka akses administratori.':r.status===503?'Paneli nuk është konfiguruar ose shërbimi nuk është i disponueshëm.':r.status===400?'Kontrollo filtrat e kërkimit.':'Hyr përsëri në llogari.');return;}
-  await mfa.show();if(current!==sequence)return;
-  orders=data.orders;$('panel').hidden=false;message('');$('total').textContent=data.total??'—';
-  $('paid').textContent=new Intl.NumberFormat('sq-AL',{style:'currency',currency:'EUR'}).format(orders.filter(o=>o.paypal_capture_id&&o.state!=='awaiting_payment').reduce((sum,o)=>sum+kept(o),0));
-  $('attention').textContent=orders.filter(o=>['review','reserving','completing','sending'].includes(o.state)).length;
-  for(const o of orders){const tr=document.createElement('tr');
-   for(const text of [new Date(o.created_at).toLocaleString('sq-AL'),o.customer_email,products.get(o.product_id)?.title||o.product_id,Number(o.amount).toFixed(2)+' '+o.currency]){const td=document.createElement('td');td.textContent=text;tr.append(td);}
-   const status=document.createElement('td'),badge=document.createElement('span');badge.className='badge '+(o.state==='sent'?'sent':o.state==='review'?'review':'');badge.textContent=stateLabel(o);status.append(badge);
-   for(const text of paymentBadges(o)){const flag=document.createElement('span');flag.className='badge bad';flag.textContent=text;status.append(' ',flag);}
-   tr.append(status);
-   const reference=document.createElement('td');reference.textContent=o.paypal_order_id;tr.append(reference);
-   const action=document.createElement('td'),button=document.createElement('button');button.textContent='Shiko';button.onclick=()=>details(o);action.append(button);tr.append(action);$('rows').append(tr);
+  const data=await r.json();if(stale())return;
+  if(['MFA_REQUIRED','MFA_SETUP_REQUIRED'].includes(data.error)){hideData();await mfa.show(true);message('Konfirmo verifikimin me dy hapa.');return;}
+  // A malformed order ID is answered (400) only after the same gates, so it is simply "not found".
+  const malformed=id!==null&&r.status===400;
+  // A refused session (401) gets the login form back, since the message asks to sign in again.
+  if(!r.ok&&!malformed){hideData();if(r.status===401){$('login').hidden=false;$('logout').hidden=true;}message(r.status===403?'Kjo llogari nuk ka akses administratori.':r.status===503?'Paneli nuk është konfiguruar ose shërbimi nuk është i disponueshëm.':r.status===400?'Kontrollo filtrat e kërkimit.':'Hyr përsëri në llogari.');return;}
+  await mfa.show();if(stale())return;
+  message('');
+  if(id!==null)showOrder(malformed?null:(data.orders||[]).find(o=>String(o.id).toLowerCase()===id.toLowerCase())||null);
+  else{
+   orders=data.orders;$('total').textContent=data.total??'—';$('rows').replaceChildren();
+   $('paid').textContent=euro(orders.filter(o=>o.paypal_capture_id&&o.state!=='awaiting_payment').reduce((sum,o)=>sum+kept(o),0));
+   $('attention').textContent=orders.filter(o=>['review','reserving','completing','sending'].includes(o.state)).length;
+   for(const o of orders){const tr=document.createElement('tr');
+    for(const text of [numericDateTime(o.created_at),o.customer_email,products.get(o.product_id)?.title||o.product_id,euro(o.amount,o.currency)]){const td=document.createElement('td');td.textContent=text;tr.append(td);}
+    const status=document.createElement('td');status.append(badge(stateLabel(o),stateKind(o)));
+    for(const text of paymentBadges(o))status.append(' ',badge(text,'bad'));
+    tr.append(status);
+    const reference=document.createElement('td');reference.textContent=o.paypal_order_id;tr.append(reference);
+    // A real link to the order page (opens in a new tab with a modified click); a plain click stays in this page.
+    const action=document.createElement('td'),link=document.createElement('a');link.className='button-link';link.textContent='Shiko';link.href=orderHref(o.id,applied);link.setAttribute('aria-label','Shiko porosinë: '+o.customer_email);
+    link.onclick=event=>{if(!plainClick(event))return;event.preventDefault();history.replaceState({...history.state,adminScroll:scrollY},'');history.pushState({adminFromList:true},'',link.getAttribute('href'));route();};
+    action.append(link);tr.append(action);$('rows').append(tr);
+   }
+   listReady=true;showList();
   }
   // Cilësimet is superadmin-only and loads once per account and role, not on every reload, filter or page;
   // an unknown role (null) is probed silently and never replaces a known one. "Rifresko cilësimet" reloads it.
-  const id=session.user?.id||'',role=id+':'+superAdmin;
-  if(role!==settingsRole&&!(superAdmin===null&&settingsRole.startsWith(id+':'))){settingsRole=role;if(superAdmin===false)settings.clear();else settings.load(superAdmin!==true);}
-  $('empty').hidden=orders.length!==0;$('page').textContent='Faqja '+page;$('previous').disabled=page===1;$('next').disabled=data.total!==null?page*50>=data.total:orders.length<50;
- }catch{if(current===sequence)message('Lidhja nuk u krye. Provo përsëri.');}
+  const user=session.user?.id||'',role=user+':'+superAdmin;
+  if(role!==settingsRole&&!(superAdmin===null&&settingsRole.startsWith(user+':'))){settingsRole=role;if(superAdmin===false)settings.clear();else settings.load(superAdmin!==true);}
+  if(id===null){$('empty').hidden=orders.length!==0;$('page').textContent='Faqja '+page;$('previous').disabled=page===1;$('next').disabled=data.total!==null?page*50>=data.total:orders.length<50;}
+ }catch{if(!stale()){hideData();message('Lidhja nuk u krye. Provo përsëri.');}}
 }
-function details(o){$('detail-list').replaceChildren();const product=products.get(o.product_id);if(product){const heading=document.createElement('h3'),description=document.createElement('p');heading.textContent=product.title;description.textContent=[product.dataAmount,product.dataUnit,product.validityHours?product.validityHours/24+' days':''].filter(Boolean).join(' / ');$('detail-list').append(heading,description);}for(const [name,value] of [['ID MOBIALO',o.id],['Email',o.customer_email],['Statusi',stateLabel(o)],['Shuma',o.amount+' '+o.currency],['ID e paketës',o.product_id],['Porosia PayPal',o.paypal_order_id],['Pagesa PayPal',o.paypal_capture_id],['Statusi i pagesës',paymentBadges(o).join(', ')],['Shuma e rimbursuar',o.refunded_amount==null?'':Number(o.refunded_amount).toFixed(2)+' '+o.currency],['Kontestimi',disputeLabel(o)],['Përditësimi i pagesës',o.payment_updated_at?new Date(o.payment_updated_at).toLocaleString('sq-AL'):''],['Referenca e eSIM-it',o.provider_order_id],['ID e emailit',o.email_id],['Gjuha',o.language],['Data',new Date(o.created_at).toLocaleString('sq-AL')]]){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=name;dd.textContent=value||'—';$('detail-list').append(dt,dd);}$('details').showModal();}
-$('close').onclick=()=>$('details').close();
+const stateKind=o=>o.state==='sent'?'sent':o.state==='review'?'review':'';
+function badge(text,kind){const span=document.createElement('span');span.className='badge '+kind;span.textContent=text;return span;}
+function showList(){$('order-page').hidden=true;$('panel').hidden=false;document.title='MOBIALO · Administrimi';}
+// The order page: the fields of the former details dialog, grouped; supplier and buyer values are set as text only.
+function showOrder(o){
+ $('panel').hidden=true;$('order-page').hidden=false;$('order-back').href='/admin'+listQuery(filtersFrom(location.search));
+ $('detail-list').replaceChildren();$('order-product').replaceChildren();$('detail-list').hidden=!o;$('order-missing').hidden=!!o;$('order-refresh').hidden=!o;
+ $('order-title').textContent=o?'Detajet e porosisë':'Porosia nuk u gjet';document.title='MOBIALO · '+$('order-title').textContent;
+ if(!o)return;
+ const product=products.get(o.product_id),time=numericDateTime;
+ if(product){const name=document.createElement('strong'),specs=[product.dataAmount,product.dataUnit,product.validityHours?product.validityHours/24+' ditë':''].filter(Boolean).join(' / ');name.textContent=product.title;$('order-product').append(name,specs?' · '+specs:'');}
+ const groups=[
+  ['Porosia',[['Data',time(o.created_at)],['Statusi',[badge(stateLabel(o),stateKind(o))]],['Shuma',euro(o.amount,o.currency)],['Email',o.customer_email],['Gjuha',o.language],['ID MOBIALO',o.id]]],
+  ['Pagesa',[['Porosia PayPal',o.paypal_order_id],['Pagesa PayPal',o.paypal_capture_id],['Statusi i pagesës',paymentBadges(o).map(text=>badge(text,'bad'))],['Shuma e rimbursuar',o.refunded_amount==null?'':euro(o.refunded_amount,o.currency)],['Kontestimi',disputeLabel(o)],['Përditësimi i pagesës',time(o.payment_updated_at)]]],
+  ['Dërgimi',[['ID e paketës',o.product_id],['Referenca e eSIM-it',o.provider_order_id],['ID e emailit',o.email_id]]]
+ ];
+ for(const [title,fields] of groups){
+  const card=document.createElement('section'),heading=document.createElement('h2'),list=document.createElement('dl');card.className='detail-card';heading.textContent=title;
+  for(const [name,value] of fields){const row=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=name;if(Array.isArray(value)&&value.length)value.forEach((node,i)=>dd.append(...(i?[' ',node]:[node])));else dd.textContent=Array.isArray(value)?'—':value||'—';row.append(dt,dd);list.append(row);}
+  card.append(heading,list);$('detail-list').append(card);
+ }
+}
+// Runs for in-page links and back/forward. The order page reuses the row already on screen (shown only after the gates
+// passed), otherwise it loads through them; the list comes back with its filters, rows and scroll position.
+function route(){
+ const previous=orderId;orderId=orderFromPath(location.pathname);
+ // A page shown from memory is not dimmed by a reload still running for the other view (fetchOrders drops its result).
+ const ready=()=>document.querySelector('main').removeAttribute('aria-busy');
+ if(orderId!==null){const o=listReady&&orders.find(o=>o.id===orderId);if(!o){load();return;}ready();showOrder(o);window.scrollTo(0,0);$('order-title').focus({preventScroll:true});return;}
+ setFilters(filtersFrom(location.search));
+ if(!listReady||formQuery()!==applied){load();return;}
+ ready();
+ // Focus goes back to the "Shiko" link of the order just viewed.
+ showList();[...$('rows').querySelectorAll('a')].find(a=>previous&&a.pathname===orderHref(previous,''))?.focus({preventScroll:true});
+ const y=history.state?.adminScroll;if(Number.isFinite(y))window.scrollTo(0,y);
+}
+$('order-back').onclick=event=>{if(!plainClick(event))return;event.preventDefault();if(history.state?.adminFromList){history.back();return;}history.pushState(null,'',$('order-back').getAttribute('href'));route();};
+$('order-refresh').onclick=()=>load({quiet:true});
+addEventListener('popstate',()=>{if(client)route();});
 if(![...$('state').options].some(option=>option.value==='payment_issue'))$('state').append(new Option('Problem me pagesën','payment_issue'));
-$('reset').onclick=()=>{$('filters').reset();page=1;load();};
+orderId=orderFromPath(location.pathname);setFilters(filtersFrom(location.search));applied=formQuery();
+$('reset').onclick=()=>{$('filters').reset();page=1;load({quiet:true});};
 $('export').onclick=()=>{
  const cell=value=>'"'+String(value??'').replace(/^[=+@\-\t\r]/,"'$&").replaceAll('"','""')+'"';
  const rows=[['Data','Email','Paketa','Shuma EUR','Statusi','Pagesa','Rimbursuar EUR','PayPal'],...orders.map(o=>[o.created_at,o.customer_email,products.get(o.product_id)?.title||o.product_id,o.amount,stateLabel(o),paymentBadges(o).join(', '),o.refunded_amount??'',o.paypal_order_id])];
  const url=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='mobialo-porosi-faqja-'+page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-$('filters').onsubmit=e=>{e.preventDefault();page=1;load();};$('refresh').onclick=()=>load();$('previous').onclick=()=>{page--;load();};$('next').onclick=()=>{page++;load();};
+$('filters').onsubmit=e=>{e.preventDefault();page=1;load({quiet:true});};$('refresh').onclick=()=>load({quiet:true});$('previous').onclick=()=>{page--;load({quiet:true});};$('next').onclick=()=>{page++;load({quiet:true});};
 $('logout').onclick=async()=>{++sequence;clear();clearSettings();const {error}=await client.auth.signOut();if(error){message('Dalja nuk u krye. Provo përsëri.');return;}$('login').hidden=false;$('logout').hidden=true;message('');};
 $('login-form').onsubmit=async e=>{e.preventDefault();$('submit').disabled=true;try{const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});$('password').value='';if(error){message('Hyrja nuk u krye. Kontrollo emailin dhe fjalëkalimin.');return;}page=1;await load();}catch{message('Lidhja nuk u krye.');}finally{$('submit').disabled=false;}};
-try{const r=await fetch('/api/auth-config',{cache:'no-store'});const config=await r.json();client=createClient(config.url,config.publishableKey);mfa=setupAdminMfa(client,load);access=setupAdminAccess(client,mfa);settings=setupAdminSettings(client);try{const catalog=await(await fetch('/api/catalog')).json();products=new Map((catalog.products||[]).map(p=>[p.id,p]));}catch{}await load();client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){++sequence;clear();clearSettings();$('login').hidden=false;$('logout').hidden=true;}});}catch{message('Paneli nuk mund të lidhet. Provo më vonë.');$('submit').disabled=true;}
+// The catalog (plan titles) downloads alongside the client setup; the first load still waits for it, so titles never change on screen.
+const catalog=fetch('/api/catalog').then(r=>r.json()).then(data=>{products=new Map((data.products||[]).map(p=>[p.id,p]));}).catch(()=>{});
+try{const r=await fetch('/api/auth-config',{cache:'no-store'});const config=await r.json();client=createClient(config.url,config.publishableKey);mfa=setupAdminMfa(client,load);access=setupAdminAccess(client,mfa);settings=setupAdminSettings(client);await catalog;await load();client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){++sequence;clear();clearSettings();$('login').hidden=false;$('logout').hidden=true;}});}catch{message('Paneli nuk mund të lidhet. Provo më vonë.');$('submit').disabled=true;settled();}

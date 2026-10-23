@@ -3,23 +3,45 @@
   "framework": null,
   "buildCommand": "npm run build:auth",
   "outputDirectory": "dist",
+  "trailingSlash": false,
   "regions": ["fra1"],
   "functions": {
     "api/paypal/create.mjs": {"maxDuration": 180},
     "api/paypal/capture.mjs": {"maxDuration": 180},
     "api/paypal/webhook.mjs": {"maxDuration": 60},
-    "api/worker/sweep.mjs": {"maxDuration": 60}
+    "api/worker/sweep.mjs": {"maxDuration": 60},
+    "api/store.mjs": {"maxDuration": 30, "includeFiles": "dist/{storefront-core.js,country-names.js,plan-translations.js,region-icons.js,catalog-filters.js,catalog-preview.json}"}
   },
   "redirects": [
-    {"source": "/(.*)", "has": [{"type":"host","value":"admin.mobialo.eu"}], "destination": "https://www.mobialo.eu/admin", "permanent": false}
+    {"source": "/(.*)", "has": [{"type":"host","value":"admin.mobialo.eu"}], "destination": "https://www.mobialo.eu/admin", "permanent": false},
+    {"source": "/devices.html", "destination": "/devices", "permanent": true},
+    {"source": "/devices-sq.html", "destination": "/sq/devices", "permanent": true},
+    {"source": "/devices-it.html", "destination": "/it/devices", "permanent": true},
+    {"source": "/", "has": [{"type": "query", "key": "plan", "value": "(?<plan>[^&]{1,100})"}], "destination": "/api/store?page=legacy&product=:plan", "permanent": false}
   ],
   "rewrites": [
     {"source": "/admin", "destination": "/admin.html"},
+    {"source": "/admin/orders/:id", "destination": "/admin.html"},
     {"source": "/join", "destination": "/auth.html"},
     {"source": "/sign-in", "destination": "/auth.html"},
     {"source": "/forgot-password", "destination": "/auth.html"},
     {"source": "/update-password", "destination": "/auth.html"},
-    {"source": "/account", "destination": "/auth.html"}
+    {"source": "/account", "destination": "/auth.html"},
+    {"source": "/account/orders/:id", "destination": "/auth.html"},
+    {"source": "/devices", "destination": "/devices.html"},
+    {"source": "/sq/devices", "destination": "/devices-sq.html"},
+    {"source": "/it/devices", "destination": "/devices-it.html"},
+    {"source": "/sitemap.xml", "destination": "/api/store?page=sitemap"},
+    {"source": "/esim", "destination": "/api/store?page=hub&lang=en"},
+    {"source": "/:lang(sq|it)/esim", "destination": "/api/store?page=hub&lang=:lang"},
+    {"source": "/esim/region/:slug", "destination": "/api/store?page=region&lang=en&slug=:slug"},
+    {"source": "/:lang(sq|it)/esim/region/:slug", "destination": "/api/store?page=region&lang=:lang&slug=:slug"},
+    {"source": "/esim/region/:slug/:product", "destination": "/api/store?page=plan&kind=region&lang=en&slug=:slug&product=:product"},
+    {"source": "/:lang(sq|it)/esim/region/:slug/:product", "destination": "/api/store?page=plan&kind=region&lang=:lang&slug=:slug&product=:product"},
+    {"source": "/esim/:slug", "destination": "/api/store?page=country&lang=en&slug=:slug"},
+    {"source": "/:lang(sq|it)/esim/:slug", "destination": "/api/store?page=country&lang=:lang&slug=:slug"},
+    {"source": "/esim/:slug/:product", "destination": "/api/store?page=plan&kind=country&lang=en&slug=:slug&product=:product"},
+    {"source": "/:lang(sq|it)/esim/:slug/:product", "destination": "/api/store?page=plan&kind=country&lang=:lang&slug=:slug&product=:product"}
   ],
   "headers": [{"source":"/(.*)","headers":[{"key":"X-Content-Type-Options","value":"nosniff"},{"key":"Referrer-Policy","value":"strict-origin-when-cross-origin"},{"key":"X-Frame-Options","value":"SAMEORIGIN"},{"key":"Content-Security-Policy","value":"frame-ancestors 'self'"},{"key":"Permissions-Policy","value":"camera=(), microphone=(), geolocation=(), usb=()"},{"key":"Cross-Origin-Opener-Policy","value":"same-origin-allow-popups"}]}]
 }

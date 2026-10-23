@@ -98,14 +98,26 @@ export async function fetchProducts({merchantId,apiKey}, request=fetch, pricing=
   return {source:'mobimatter',fetchedAt:new Date().toISOString(),products:normalizeProducts(body,pricing)};
 }
 
-// Pricing is part of the cache key, so an admin change applies within the settings cache window.
-export async function getCatalog({settings=loadSettings,request=fetch}={}) {
+// Pricing is part of the cache key, so an admin change applies within the settings cache window (never a stale copy).
+// Checkout (the default) takes a catalog fetched within CATALOG_TTL, else waits for MobiMatter and fails with it.
+// Pages pass allowStale: the last good catalog at once while a refresh runs in the background, and for up to
+// STALE_LIMIT while MobiMatter fails (checkout still refuses a price that changed). The warm-up passes a shorter
+// maxAge: it refreshes in its own invocation, before a page would start a background refresh.
+export const CATALOG_TTL=300000,STALE_LIMIT=3600000;
+export async function getCatalog({settings=loadSettings,request=fetch,allowStale=false,maxAge=CATALOG_TTL,now=Date.now}={}) {
   const {config,env}=await credentials();
   const {pricing}=await settings(env);
   const key=JSON.stringify(config)+JSON.stringify(pricing); // Memory only, never logged or persisted.
-  if (cached && cachedFor===key && Date.now()-cached.time<300000) return cached.value;
-  if (pending && pending.key===key) return pending.promise;
-  const promise=fetchProducts(config,request,pricing).then(value=>{cached={time:Date.now(),value};cachedFor=key;return value;});
-  const operation={key,promise};pending=operation;
-  try {return await promise;} finally {if(pending===operation) pending=null;}
+  const age=cached&&cachedFor===key?now()-cached.time:Infinity;
+  if (age<Math.min(maxAge,CATALOG_TTL)) return cached.value;
+  // A refresh older than the 15 s request timeout was frozen with its instance: start another one.
+  const refresh=pending&&pending.key===key&&now()-pending.at<20000?pending.promise:startRefresh(key,config,request,pricing,now);
+  if (allowStale&&age<STALE_LIMIT) {refresh.catch(()=>{});return cached.value;}
+  return refresh;
+}
+function startRefresh(key,config,request,pricing,now) {
+  const operation={key,at:now()};
+  operation.promise=fetchProducts(config,request,pricing).then(value=>{cached={time:now(),value};cachedFor=key;return value;}).finally(()=>{if(pending===operation) pending=null;});
+  pending=operation;
+  return operation.promise;
 }

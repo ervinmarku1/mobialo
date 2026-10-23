@@ -33,6 +33,32 @@ test('a guest order has no owner and stores the consent and the client address h
  await createLiveOrder({productId:'plan',email:'guest@example.com'},services,[product]);assert.equal(via,'insert');
  for(const column of ['terms_accepted_at','terms_version','client_ip_hash','user_id'])assert.equal(column in seen,false);
 });
+test('the price the page showed must be the charged one: a different price is refused before anything is stored or sent to PayPal',async()=>{
+ const calls=[];const services={store:{openOrders:async()=>{calls.push('limit');return 0;},insert:async()=>{calls.push('save');},reserveGuest:async()=>{calls.push('save');},transition:async()=>({})},paypal:async(id,method,body)=>{calls.push('paypal:'+body.purchase_units[0].amount.value);return {id:'remote'};}};
+ const order=extra=>createLiveOrder({productId:'plan',email:'customer@example.com',userId:'user',...extra},services,[product]);
+ await assert.rejects(order({expectedPrice:'3.99'}),error=>error.message==='PRICE_CHANGED'&&error.price==='4.19');
+ await assert.rejects(order({expectedPrice:'4.2'}),error=>error.message==='PRICE_CHANGED'&&error.price==='4.19');
+ assert.deepEqual(calls,[]);
+ await order({expectedPrice:'4.19'});assert.deepEqual(calls,['limit','save','paypal:4.19']);
+ // Without expectedPrice (local development server) the current price applies, as before.
+ calls.length=0;await order({});assert.deepEqual(calls,['limit','save','paypal:4.19']);
+ // An unknown product is still INVALID_PRODUCT, whatever price was sent.
+ await assert.rejects(order({productId:'other',expectedPrice:'4.19'}),/INVALID_PRODUCT/);
+});
+test('a different price is checked once more against a catalog at most a minute old before it is refused',async()=>{
+ const services={store:{insert:async()=>{},transition:async()=>({})},paypal:async(id,method,body)=>({id:'remote',amount:body.purchase_units[0].amount.value})};
+ // This instance's catalog is older than the page's: the recheck finds the shown price, and the order is created with it.
+ const loads=[];const catalog=async options=>{loads.push(options);return {products:[{...product,price:options?.maxAge===60000?4.49:4.19}]};};
+ let charged;services.paypal=async(id,method,body)=>{charged=body.purchase_units[0].amount.value;return {id:'remote'};};
+ await createLiveOrder({productId:'plan',email:'customer@example.com',expectedPrice:'4.49'},services,undefined,catalog);
+ assert.deepEqual(loads,[undefined,{maxAge:60000}]);assert.equal(charged,'4.49');
+ // The fresh catalog still differs: refused with the current price.
+ loads.length=0;charged=null;
+ await assert.rejects(createLiveOrder({productId:'plan',email:'customer@example.com',expectedPrice:'3.99'},services,undefined,catalog),error=>error.message==='PRICE_CHANGED'&&error.price==='4.49');
+ assert.equal(charged,null);
+ // A matching price needs no second catalog read.
+ loads.length=0;await createLiveOrder({productId:'plan',email:'customer@example.com',expectedPrice:'4.19'},services,undefined,catalog);assert.deepEqual(loads,[undefined]);
+});
 test('capture rejects incorrect capability and never calls provider',async()=>{
  const services={store:{get:async()=>({paypal_order_id:'expected'})},paypal:()=>assert.fail('Must not contact payment provider')};
  await assert.rejects(captureLiveOrder('12345678-1234-1234-1234-123456789abc','wrong',services),/INVALID_ORDER/);

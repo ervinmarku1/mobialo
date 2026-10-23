@@ -1,43 +1,13 @@
 let paypalSdkPromise;
 let checkoutEnvironment='sandbox';
 let checkoutUserEmail='';
-// One capture per page: while a payment is verifying (or after it succeeded) a re-rendered
-// or reopened dialog shows that status instead of offering a new PayPal button.
+// One capture per page: while a payment is verifying (or after it succeeded) a remounted
+// checkout (Retry) shows that status instead of offering a new PayPal button.
 let checkoutLock=null;
 let checkoutStatus=null;
-function preparePayPalDialog(container){
-  const dialog=container.closest('dialog');
-  if(!dialog?.open||dialog.classList.contains('paypal-dialog'))return;
-  // PayPal can mount card/verification overlays under body. A native modal
-  // makes those siblings inert regardless of their z-index.
-  const scrollTop=dialog.scrollTop;
-  dialog.close();
-  dialog.classList.add('paypal-dialog');
-  dialog.show();
-  dialog.scrollTop=scrollTop;
-  const backdrop=document.createElement('div');
-  backdrop.className='paypal-dialog-backdrop';
-  backdrop.setAttribute('aria-hidden','true');
-  document.body.append(backdrop);
-  // Without a native modal the page behind would take keyboard focus. PayPal's overlays are added
-  // to body later, so they are never in this list.
-  const outside=[...document.body.children].filter(node=>node!==dialog&&node!==backdrop&&!node.contains(dialog)&&!['SCRIPT','STYLE','IFRAME'].includes(node.tagName));
-  for(const node of outside)node.inert=true;
-  const close=()=>dialog.close();
-  const escape=event=>{if(event.key==='Escape'&&dialog.contains(event.target)){event.preventDefault();close();}};
-  backdrop.addEventListener('click',close);
-  dialog.addEventListener('keydown',escape);
-  const cleanup=()=>{
-    if(dialog.open)return; // close event from switching to non-modal mode
-    backdrop.remove();
-    for(const node of outside)node.inert=false;
-    dialog.classList.remove('paypal-dialog');
-    dialog.removeEventListener('keydown',escape);
-    dialog.removeEventListener('close',cleanup);
-  };
-  dialog.addEventListener('close',cleanup);
-}
-const checkoutText=(sq,en,it)=>lang==='sq'?sq:lang==='it'?it:en;
+// The plan page is rendered in one language (<html lang>, from its /sq or /it URL).
+const checkoutLanguage=()=>{const value=globalThis.document?.documentElement?.lang;return value==='sq'||value==='it'?value:'en';};
+const checkoutText=(sq,en,it)=>{const language=checkoutLanguage();return language==='sq'?sq:language==='it'?it:en;};
 const safeCheckoutCode=value=>String(value||'').replace(/[^A-Za-z0-9_:-]/g,'').slice(0,80);
 function checkoutError(code,details={}){const error=Error(code);error.code=code;return Object.assign(error,details);}
 // Server codes are shown on their own line so support can diagnose a failed payment without DevTools.
@@ -49,9 +19,15 @@ function checkoutCodeSuffix(error){
 async function waitForCustomerSession(){
   for(let waited=0;window.mobialoCustomerSession===undefined&&document.readyState!=='complete'&&waited<3000;waited+=50)await new Promise(resolve=>setTimeout(resolve,50));
 }
+// Supabase keeps a session under sb-{project}-auth-token. false: none stored (a guest); null: storage unreadable, so ask the client.
+function storedCustomerSession(){
+  try{for(let i=0;i<localStorage.length;i++)if(/^sb-.+-auth-token$/.test(localStorage.key(i)))return true;return false;}catch{return null;}
+}
 async function checkoutAuthHeaders(){
-  const headers={};
-  await waitForCustomerSession();checkoutUserEmail='';
+  const headers={};checkoutUserEmail='';
+  // A guest never waits for (or depends on) the Supabase client.
+  if(storedCustomerSession()===false)return headers;
+  await waitForCustomerSession();
   if(window.mobialoCustomerSession){
     let client;try{client=await window.mobialoCustomerSession;}catch{throw checkoutError('AUTH_UNAVAILABLE');}
     if(client){const {data:{session},error}=await client.auth.getSession();if(error)throw checkoutError('AUTH_UNAVAILABLE');if(session){headers.Authorization='Bearer '+session.access_token;checkoutUserEmail=session.user?.email||'';}}
@@ -61,7 +37,7 @@ async function checkoutAuthHeaders(){
 async function checkoutFetch(path,options){
   let response;try{response=await fetch(path,options);}catch{throw checkoutError('NETWORK_ERROR');}
   const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw checkoutError(safeCheckoutCode(data.error)||'HTTP_'+response.status,{reason:data.reason,debugId:data.debugId,issues:Array.isArray(data.issues)?data.issues:[]});
+  if(!response.ok)throw checkoutError(safeCheckoutCode(data.error)||'HTTP_'+response.status,{reason:data.reason,debugId:data.debugId,issues:Array.isArray(data.issues)?data.issues:[],price:['string','number'].includes(typeof data.price)?data.price:undefined});
   return data;
 }
 // Gates are re-checked on every mount, so a new sign-in or 2FA takes effect without a reload.
@@ -83,14 +59,17 @@ async function paypalRequest(path,body){
   const headers={'Content-Type':'application/json',...await checkoutAuthHeaders()};
   return checkoutFetch('/api/paypal/'+path,{method:'POST',headers,body:JSON.stringify(body)});
 }
+// The checkout is built invisibly (is-loading) inside the height the page reserved, under a loading line laid over it,
+// and shown in one step with its first message (styles.css), so nothing moves while the buttons render.
 function paypalContainer(){
-  const container=document.createElement('section');
-  container.innerHTML='<div class="smart-buttons"></div><p role="status" aria-live="polite" style="white-space:pre-line"></p>';
+  const container=document.createElement('section');container.className='checkout is-loading';
+  container.innerHTML='<p class="checkout-loading"></p><div class="smart-buttons"></div><p role="status" aria-live="polite" style="white-space:pre-line"></p>';
+  container.querySelector('.checkout-loading').textContent=checkoutText('Po ngarkohen mënyrat e pagesës…','Loading payment methods…','Caricamento dei metodi di pagamento…');
   return container;
 }
-function remountPayPal(container,productId){
+function remountPayPal(container,product){
   if(!container.isConnected)return;
-  const fresh=paypalContainer();container.replaceWith(fresh);mountPayPal(fresh,productId);
+  const fresh=paypalContainer();container.replaceWith(fresh);mountPayPal(fresh,product);
 }
 // Prompts, links and buttons added after a failure are replaced, never stacked.
 function clearCheckoutExtras(container){container.querySelectorAll('[data-checkout-extra="1"]').forEach(node=>node.remove());}
@@ -149,14 +128,27 @@ function createFailureText(error){
   // Per account, per connection for guests, or all guest orders together: the buyer can only wait.
   if(code==='TOO_MANY_OPEN_ORDERS')return checkoutText('Ka shumë porosi të papaguara në orën e fundit. Prit pak dhe provo përsëri.','There are too many unpaid orders in the last hour. Wait a little and try again.','Ci sono troppi ordini non pagati nell’ultima ora. Attendi un po’ e riprova.');
   if(['CHECKOUT_CLOSED','ADMIN_ONLY'].includes(code))return checkoutText('Blerjet janë përkohësisht të padisponueshme. Provo përsëri pas pak minutash.','Purchases are temporarily unavailable. Please try again in a few minutes.','Gli acquisti sono temporaneamente non disponibili. Riprova tra qualche minuto.');
+  // The page (possibly an older CDN copy) showed another price than the server charges now; no order was created.
+  if(code==='PRICE_CHANGED'){
+    const amount=Number(error.price),S=globalThis.MobialoStorefront;
+    const price=error.price!==undefined&&error.price!==''&&Number.isFinite(amount)&&amount>0?(typeof S?.money==='function'?S.money(amount,checkoutLanguage()):amount.toFixed(2)+' EUR'):'';
+    return price?checkoutText(`Çmimi ka ndryshuar në ${price}. Nuk u tërhoq asnjë pagesë. Rifresko faqen për të parë paketën aktuale.`,`The price has changed to ${price}. No money was taken. Reload the page to see the current plan.`,`Il prezzo è cambiato in ${price}. Nessun addebito effettuato. Ricarica la pagina per vedere il piano aggiornato.`)
+      :checkoutText('Çmimi ka ndryshuar. Nuk u tërhoq asnjë pagesë. Rifresko faqen për të parë paketën aktuale.','The price has changed. No money was taken. Reload the page to see the current plan.','Il prezzo è cambiato. Nessun addebito effettuato. Ricarica la pagina per vedere il piano aggiornato.');
+  }
   return checkoutText('Pagesa nuk mund të niste tani. Nuk u tërhoq asnjë pagesë. Provo përsëri pas pak.','Payment could not start right now. No money was taken. Try again shortly.','Il pagamento non è potuto partire. Nessun addebito effettuato. Riprova tra poco.');
 }
-async function mountPayPal(container,productId){
-  const message=container.querySelector('[role=status]'),buttons=container.querySelector('.smart-buttons');
-  const say=text=>{message.textContent=text;};
-  // The height reserved for the buttons is released when checkout ends with a message instead.
-  const final=text=>{say(text);container.closest('#shop-payment')?.classList.add('is-final');};
-  const remount=()=>remountPayPal(container,productId);
+// A reload that skips cached copies of the page (?r=), so it shows the current price; catalog-shop.js drops the parameter again.
+function reloadFresh(){const url=new URL(location.href);url.searchParams.set('r',Date.now().toString(36));location.assign(url.href);}
+// product: {id, category, title, price} of the plan the page sells (#page-data on a plan page).
+async function mountPayPal(container,product){
+  const productId=product?.id,message=container.querySelector('[role=status]'),buttons=container.querySelector('.smart-buttons');
+  const section=container.closest('#shop-payment');
+  // Everything built so far appears together with the first message (the buttons' note, or why there are none).
+  const say=text=>{container.classList.remove('is-loading');message.textContent=text;};
+  // The height reserved for the buttons is released when checkout ends with a message instead (and reserved again on Retry).
+  const final=text=>{say(text);section?.classList.add('is-final');};
+  section?.classList.remove('is-final');
+  const remount=()=>remountPayPal(container,product);
   const reference=id=>checkoutText(' Referenca: ',' Reference: ',' Riferimento: ')+id;
   const retryLabel=checkoutText('Provo përsëri','Retry','Riprova');
   // A finished purchase only blocks the same plan; an unresolved one blocks every plan.
@@ -167,9 +159,8 @@ async function mountPayPal(container,productId){
     if(checkoutLock.retry)checkoutAction(container,checkoutText('Riprovo verifikimin','Retry verification','Riprova la verifica'),checkoutLock.retry);
     return;
   }
-  say(checkoutText('Po ngarkohen mënyrat e pagesës…','Loading payment methods…','Caricamento dei metodi di pagamento…'));
   try{
-    const selectedProduct=liveProducts.find(p=>p.id===productId);
+    const selectedProduct=product;
     if(['esim_addon','esim_replacement'].includes(selectedProduct?.category)){
       final(checkoutText('Kjo paketë kërkon një eSIM ekzistuese. Blerja online për këtë kategori nuk është aktivizuar ende.','This plan requires an existing eSIM. Online purchase for this category is not enabled yet.','Questo piano richiede una eSIM esistente. L’acquisto online per questa categoria non è ancora attivo.'));
       return;
@@ -186,11 +177,12 @@ async function mountPayPal(container,productId){
     const live=checkoutEnvironment==='live';
     if(live&&(selectedProduct?.category!=='esim_realtime'||/\btest\b/i.test(selectedProduct.title))){final(createFailureText({code:'INVALID_PRODUCT'}));return;}
     const paypal=await loadPayPalSdk(config);if(!container.isConnected)return;
-    preparePayPalDialog(container);
     let order,creating,completed=false,createFailure=null;
     // Signed-in buyers get the eSIM at their account email. Guests (config.guest, also unconfirmed
     // accounts) type the address; without an account they may sign in instead.
     const guest=config.guest===true||!checkoutUserEmail;
+    // The page reserved the guest or the member height from the stored session; the config has the final word.
+    section?.classList.toggle('is-guest',guest);
     const email=document.createElement('input');email.type='email';email.required=true;email.autocomplete='email';email.maxLength=254;email.value=checkoutUserEmail;
     const policyLink=(href,text)=>{const link=document.createElement('a');link.href=href;link.target='_blank';link.rel='noopener';link.textContent=text;return link;};
     let delivery;
@@ -201,7 +193,7 @@ async function mountPayPal(container,productId){
       email.style.cssText='display:block;width:100%;padding:12px;margin:8px 0 4px;box-sizing:border-box;font-size:16px';label.append(email);
       hint.id='checkout-email-hint';hint.style.display='block';email.setAttribute('aria-describedby',hint.id);
       hint.textContent=checkoutText('Kontrollo me kujdes: kodi QR dërgohet këtu.','Check carefully: the QR code is sent here.','Controlla bene: il codice QR viene inviato qui.');
-      // The privacy notice is reachable where the email is collected (the page footer is behind the dialog).
+      // The privacy notice is linked where the email is collected.
       const privacy=document.createElement('small');privacy.style.cssText='display:block;margin-top:4px';
       privacy.append(checkoutText('Si e përdorim emailin: ','How we use your email: ','Come usiamo la tua email: '),policyLink('/privacy.html',checkoutText('Politika e privatësisë','Privacy policy','Informativa sulla privacy')));
       delivery.append(label,hint,privacy);
@@ -211,7 +203,9 @@ async function mountPayPal(container,productId){
         const line=document.createElement('p');line.style.cssText='margin:8px 0 0;font-size:14px';line.append(signIn);delivery.append(line);
       }
     }else{
-      delivery=document.createElement('p');delivery.textContent=checkoutText('eSIM-i do të dërgohet te: ','Your eSIM will be sent to: ','La eSIM verrà inviata a: ')+checkoutUserEmail;
+      // The address has its own line, so the box keeps its reserved height whatever its length.
+      delivery=document.createElement('p');delivery.className='checkout-recipient';delivery.textContent=checkoutText('eSIM-i do të dërgohet te: ','Your eSIM will be sent to: ','La eSIM verrà inviata a: ');
+      const recipient=document.createElement('strong');recipient.textContent=checkoutUserEmail;delivery.append(recipient);
     }
     // Required before PayPal opens; the server refuses orders without it (CONSENT_REQUIRED).
     const consent=document.createElement('input');consent.type='checkbox';consent.required=true;
@@ -233,7 +227,7 @@ async function mountPayPal(container,productId){
     // Email and consent are fixed while an order exists; after a definite refusal the next click starts a new PayPal order.
     const hold=on=>{email.disabled=on;consent.disabled=on;};
     const resetOrder=()=>{order=null;hold(false);checkoutLock=null;};
-    // Results reach both this mount and the newest one if the dialog was re-rendered meanwhile.
+    // Results reach both this mount and the newest one if the checkout was remounted meanwhile.
     const announce=text=>{say(text);if(checkoutStatus!==message&&checkoutStatus?.isConnected)checkoutStatus.textContent=text;};
     const lock=(text,options={})=>{checkoutLock={productId,text,final:false,retry:null,...options};announce(text);};
     const create=()=>{
@@ -241,7 +235,8 @@ async function mountPayPal(container,productId){
       if(!email.reportValidity())throw checkoutError('EMAIL_REQUIRED');
       if(!consent.checked)throw checkoutError('CONSENT_REQUIRED');
       if(order)return Promise.resolve(order.id);
-      if(!creating){const address=email.value.trim();createFailure=null;clearCheckoutExtras(container);hold(true);creating=paypalRequest('create',{productId,smart:true,email:address,consent:true,language:window.MobialoLocale?.emailLanguage||lang}).then(data=>{order={...data,email:address};return data.id;}).catch(error=>{hold(false);createFailure=error;throw error;}).finally(()=>{creating=null;});}
+      // expectedPrice: the price this page shows; the server refuses the order (PRICE_CHANGED) when it charges another one.
+      if(!creating){const address=email.value.trim();createFailure=null;clearCheckoutExtras(container);hold(true);creating=paypalRequest('create',{productId,smart:true,email:address,consent:true,language:window.MobialoLocale?.emailLanguage||checkoutLanguage(),...(['string','number'].includes(typeof product?.price)&&product.price!==''?{expectedPrice:product.price}:{})}).then(data=>{order={...data,email:address};return data.id;}).catch(error=>{hold(false);createFailure=error;throw error;}).finally(()=>{creating=null;});}
       return creating;
     };
     // The same order/capture flow serves the PayPal wallet and the guest "Debit or Credit Card" form.
@@ -277,7 +272,7 @@ async function mountPayPal(container,productId){
             return;
           }
           if(error.code==='MERCHANT_REFUSED'||error.code==='PAYPAL_COMPLIANCE_VIOLATION'){
-            buttons.hidden=true;
+            buttons.hidden=true;section?.classList.add('is-final');
             lock(checkoutText('Nuk mund ta pranojmë këtë pagesë tani. Nuk u tërhoq asnjë pagesë. Na shkruaj te support@mobialo.eu dhe përmend referencën.','We can’t accept this payment right now. You have not been charged. Please contact support@mobialo.eu and quote the reference.','Non possiamo accettare questo pagamento in questo momento. Nessun addebito. Contatta support@mobialo.eu indicando il riferimento.')+reference(target.token)+checkoutCodeSuffix(error),{final:true});
             return;
           }
@@ -290,9 +285,10 @@ async function mountPayPal(container,productId){
           if(container.isConnected)checkoutAction(container,checkoutText('Riprovo verifikimin','Retry verification','Riprova la verifica'),verifyLater);
           return;
         }
-        completed=true;buttons.hidden=true;
-        if(result.status==='PENDING'){lock(pendingPaymentMessage(result,lang),{final:true});return;}
-        if(result.environment==='live'){lock(livePaymentMessage(result,lang,address),{final:true});return;}
+        // The buttons are gone for good, and with them the height kept for them.
+        completed=true;buttons.hidden=true;section?.classList.add('is-final');
+        if(result.status==='PENDING'){lock(pendingPaymentMessage(result,checkoutLanguage()),{final:true});return;}
+        if(result.environment==='live'){lock(livePaymentMessage(result,checkoutLanguage(),address),{final:true});return;}
         lock(checkoutText(`Pagesa provë ${result.amount} EUR u konfirmua. Nuk u krijua eSIM reale.`,`Test payment of ${result.amount} EUR confirmed. No real eSIM was created.`,`Pagamento di prova di ${result.amount} EUR confermato. Nessuna eSIM reale è stata creata.`),{final:true});
       },
       onCancel:()=>say(checkoutText('Dritarja PayPal u mbyll pa përfunduar pagesën.','PayPal checkout closed without completing payment.','Finestra PayPal chiusa senza completare il pagamento.')+(order?reference(order.id):'')),
@@ -305,6 +301,8 @@ async function mountPayPal(container,productId){
         // A guest is only asked to sign in when the shop left public mode after the config loaded.
         if(failure.code==='SIGN_IN_REQUIRED'){if(config.guest===true)say(createFailureText({code:'CHECKOUT_CLOSED'}));else showCheckoutSignIn(container,say);return;}
         if(failure.code==='AUTH_UNAVAILABLE'){say(checkoutText('Lidhja me llogarinë nuk u krye. Rifresko faqen.','Could not reach your account. Reload the page.','Impossibile raggiungere l’account. Ricarica la pagina.'));return;}
+        // Paying again would send the same old price: only the reload stays; the buttons keep their space so nothing moves.
+        if(failure.code==='PRICE_CHANGED'){clearCheckoutExtras(container);if(buttons)buttons.style.visibility='hidden';say(createFailureText(failure));checkoutAction(container,checkoutText('Rifresko faqen','Reload page','Ricarica la pagina'),reloadFresh);return;}
         // Without an order no money can have moved; with one, keep the reference for support.
         say((order?checkoutText('PayPal nuk e përfundoi pagesën. Ruaj referencën për kontroll.','PayPal did not complete payment. Keep the reference for support.','PayPal non ha completato il pagamento. Conserva il riferimento.'):createFailureText(failure))+(order?reference(order.id):'')+checkoutCodeSuffix(failure));
       }
@@ -334,14 +332,11 @@ async function mountPayPal(container,productId){
     checkoutAction(container,retryLabel,remount);
   }
 }
-const renderBeforePayPal=renderModal;
-renderModal=function(){
-  renderBeforePayPal();
-  const old=document.getElementById('paypal-checkout');if(!old)return;
-  const container=paypalContainer();
-  old.replaceWith(container);document.getElementById('paypal-status')?.remove();
-  mountPayPal(container,livePlansFor(selectedDestination)[selectedPlan].id);
-};
+// A plan page has one payment section with a placeholder for this checkout; the product it sells is in #page-data.
+if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
+  const placeholder=document.getElementById('paypal-checkout'),product=JSON.parse(document.getElementById('page-data')?.textContent||'{}').product;
+  if(placeholder&&product?.id){const container=paypalContainer();placeholder.replaceWith(container);mountPayPal(container,product);}
+}
 // The delivery worker (every minute) emails the QR code, the plan details and the installation steps.
 function livePaymentMessage(result,language,email){
   const sq=language==='sq',it=language==='it',to=sq?email||'adresa email e porosisë':it?(email?'all’indirizzo '+email:'all’indirizzo email dell’ordine'):email||'the email address of your order';

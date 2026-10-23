@@ -1,8 +1,10 @@
 // Owner-only "Cilësimet": shop status, payment methods, pricing, administrators and system status.
 // Data is rendered with textContent only; /api/admin/settings re-checks every change (superadmin + 2FA).
+import {numericDateTime} from './format.js';
 export const SETTINGS_MIGRATION='supabase/migrations/20261022150000_app_settings.sql';
-const MODES=[['closed','Mbyllur','Askush nuk mund të blejë. Paketat shfaqen vetëm si prezantim.'],['admin','Vetëm admin (testim)','Vetëm administratorët me 2FA mund të blejnë, për prova me pagesa reale.'],['public','Publik për klientët','Çdo klient me llogari dhe email të konfirmuar mund të paguajë me para reale.']];
-const CONFIRM={public:'Hap dyqanin për klientët? Çdo klient me llogari të konfirmuar do të mund të paguajë me para reale.',closed:'Mbyll dyqanin? Askush, as administratorët, nuk do të mund të blejë derisa ta hapësh përsëri.'};
+const MODES=[['closed','Mbyllur','Askush nuk mund të blejë. Paketat shfaqen vetëm si prezantim.'],['admin','Vetëm admin (testim)','Vetëm administratorët me 2FA mund të blejnë, për prova me pagesa reale.'],['public','Publik për klientët','Çdo klient mund të paguajë me para reale: me llogari të konfirmuar ose si vizitor, me email.']];
+// The question of each status change that needs a confirmation (first line) and what it means (second line).
+const CONFIRM={public:['Hap dyqanin për klientët?','Çdo klient, me llogari ose si vizitor, do të mund të paguajë me para reale.'],closed:['Mbyll dyqanin?','Askush, as administratorët, nuk do të mund të blejë derisa ta hapësh përsëri.']};
 const STALE_WORKER='Worker-i i dërgimit nuk po punon: klientët do paguanin pa marrë eSIM.';
 const METHODS=[['paypal','PayPal','Klientët paguajnë me llogarinë e tyre PayPal.'],['card','Kartë (Debit/Credit)','Klientët paguajnë me kartë pa llogari PayPal, te formulari “Debit or Credit Card”.']];
 const FIELDS=[['markupPercent','Marzhi (%)',200,'Mbi çmimin MobiMatter (USD i trajtuar si EUR).'],['feePercent','Tarifa e pagesës (%)',10,'Përqindja e PayPal-it, llogaritet mbi totalin.'],['feeFixed','Tarifa fikse (EUR)',2,'Kosto fikse për çdo pagesë.']];
@@ -46,7 +48,7 @@ export function examplePrice(usd,{markupPercent,feePercent,feeFixed}){
  const base=Math.round((usd*(1+markupPercent/100)+Number.EPSILON)*100)/100,cents=Math.round(base*100);
  return cents===0?0:Math.ceil((cents+Math.round(feeFixed*100))*10000/(10000-Math.round(feePercent*100)))/100;
 }
-const when=value=>{const date=new Date(value);return value&&Number.isFinite(date.getTime())?date.toLocaleString('sq-AL'):'—';};
+const when=value=>numericDateTime(value)||'—';
 // Detail lines of the delivery worker row: last report, error code, last cycle, email and who runs it.
 export function workerDetails(worker={},status={}){
  const counts=[['checked','kontrolluar'],['sent','dërguar'],['waiting','në pritje'],['review','për kontroll'],['failed','dështuar']].filter(([key])=>Number.isFinite(worker[key])).map(([key,label])=>worker[key]+' '+label).join(' · ');
@@ -62,11 +64,22 @@ const choice=(input,label,...help)=>el('label',{className:'settings-choice'},inp
 
 export function setupAdminSettings(client,{root=document.getElementById('settings'),link=document.getElementById('settings-link')}={}){
  const body=root.querySelector('#settings-body'),message=root.querySelector('#settings-message'),refresh=root.querySelector('#settings-refresh');
- let version=0,busy=false,notice=null,statuses={};
+ let version=0,busy=false,notice=null,statuses={},asking=null,asks=0;
  const say=(text,kind='')=>{message.textContent=text;message.className='settings-message'+(kind?' '+kind:'');};
  const show=(key,text,kind='')=>{const status=statuses[key];if(status){status.textContent=text;status.className='settings-status'+(kind?' '+kind:'');}};
  const reveal=visible=>{root.hidden=!visible;if(link)link.hidden=!visible;};
- function clear(){version++;notice=null;statuses={};body.replaceChildren();say('');reveal(false);}
+ // The confirmation step, inside the same card (no window.confirm): the question with "Po, vazhdo" and "Anulo" right after
+ // `after`. Focus moves to the question; Anulo or Escape closes it and returns focus to `trigger`. One step is open at a time.
+ function ask(after,lines,trigger,onYes){
+  stopAsking(false);
+  const question=el('div',{id:'settings-confirm-'+(++asks)},...lines.map(line=>el('p',{textContent:line})));
+  const box=el('div',{className:'settings-confirm',tabIndex:-1},question,el('div',{className:'settings-actions'},button('Po, vazhdo',()=>{stopAsking(false);onYes();},'primary'),button('Anulo',()=>stopAsking())));
+  box.setAttribute('role','group');box.setAttribute('aria-labelledby',question.id);
+  box.onkeydown=event=>{if(event.key==='Escape'){event.preventDefault();stopAsking();}};
+  after.after(box);asking={box,trigger};box.focus();
+ }
+ function stopAsking(restore=true){if(!asking)return;const {box,trigger}=asking;asking=null;box.remove();if(restore&&trigger?.isConnected)trigger.focus();}
+ function clear(){version++;notice=null;statuses={};asking=null;body.replaceChildren();say('');reveal(false);}
  async function request(payload){
   const {data:{session}}=await client.auth.getSession();if(!session)throw Object.assign(Error('SIGN_IN_REQUIRED'),{code:'SIGN_IN_REQUIRED'});
   let response;
@@ -85,7 +98,7 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
   catch(error){
    if(current!==version)return;
    if(probe||['SUPER_ADMIN_ONLY','SIGN_IN_REQUIRED'].includes(error.code)){clear();return;}
-   reveal(true);statuses={};body.replaceChildren(alertBox('Cilësimet nuk u ngarkuan.',settingsError(error.code)),button('Riprovo',()=>load()));
+   reveal(true);statuses={};asking=null;body.replaceChildren(alertBox('Cilësimet nuk u ngarkuan.',settingsError(error.code)),button('Riprovo',()=>load()));
    say(notice?notice.text:'',notice?.kind);
   }
  }
@@ -103,7 +116,7 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
   return el('article',{className:'settings-card'+(key==='admins'?' settings-wide':'')},el('h3',{textContent:title}),...children,status);
  }
  function render(data){
-  statuses={};say('');
+  statuses={};asking=null;say('');
   const settings=data.settings,checkout=settings.checkout,fresh=data.worker?.fresh===true,admins=data.admins||{},{locked,notice:state}=settingsState(data);
   const people=new Map([...(admins.superAdmins||[]),...(admins.envAdmins||[])].map(a=>[a.id,a.email]));
   for(const row of admins.requests||[])if(!people.has(row.user_id))people.set(row.user_id,row.email);
@@ -123,13 +136,15 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
    const input=el('input',{type:'radio',name:'checkout-mode',value:mode,checked:checkout.mode===mode,disabled:mode==='public'&&!fresh&&checkout.mode!=='public'});radios.push(input);
    form.append(choice(input,label,help,...(mode==='public'&&!fresh?[STALE_WORKER]:[])));
   }
-  form.append(submit('Ruaj statusin',locked));
+  const saveButton=submit('Ruaj statusin',locked);form.append(saveButton);
+  // Choosing another status closes an open confirmation, so the question always matches the checked status.
+  form.onchange=()=>stopAsking(false);
   form.onsubmit=event=>{
    event.preventDefault();if(locked)return;const mode=radios.find(r=>r.checked)?.value,label=MODES.find(m=>m[0]===mode)?.[1];
-   if(!mode||mode===checkout.mode){show('shop','Dyqani është tashmë në “'+(active?.[1]||checkout.mode)+'”.');return;}
-   if(mode==='public'&&!fresh){show('shop',STALE_WORKER,'error');return;}
-   if(Object.hasOwn(CONFIRM,mode)&&!confirm(CONFIRM[mode]))return;
-   save('shop',{action:'checkout',value:{mode,paypal:checkout.paypal,card:checkout.card}},'U ruajt: dyqani tani është “'+label+'”.');
+   if(!mode||mode===checkout.mode){stopAsking(false);show('shop','Dyqani është tashmë në “'+(active?.[1]||checkout.mode)+'”.');return;}
+   if(mode==='public'&&!fresh){stopAsking(false);show('shop',STALE_WORKER,'error');return;}
+   const go=()=>save('shop',{action:'checkout',value:{mode,paypal:checkout.paypal,card:checkout.card}},'U ruajt: dyqani tani është “'+label+'”.');
+   if(Object.hasOwn(CONFIRM,mode))ask(form,CONFIRM[mode],saveButton,go);else go();
   };
   const intro=[el('p',{className:'settings-meta'},'Aktualisht: ',el('b',{textContent:active?.[1]||checkout.mode}),'. '+changed('checkout','Vlera vjen nga Vercel (CHECKOUT_MODE).'))];
   if(checkout.mode==='public'&&!fresh)intro.push(alertBox('Kujdes: dyqani është publik, por worker-i i dërgimit nuk po punon.','Klientët mund të paguajnë pa marrë eSIM. Kalo në “Vetëm admin” ose “Mbyllur” derisa worker-i të raportojë përsëri.'));
@@ -161,14 +176,15 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
    const input=inputs[key]=el('input',{type:'number',min:'0',max:String(max),step:'0.01',inputMode:'decimal',required:true,value:String(pricing[key])});input.oninput=update;
    fields.append(el('label',{},label,input,el('small',{textContent:help+' Lejohet 0–'+max+'.'})));
   }
-  update();form.append(fields,example,submit('Ruaj çmimet',locked));
+  const saveButton=submit('Ruaj çmimet',locked);update();form.append(fields,example,saveButton);
+  // Editing a value closes an open confirmation, so the example in the question is always the one that would be saved.
+  form.oninput=()=>stopAsking(false);
   form.onsubmit=event=>{
    event.preventDefault();if(locked)return;const value=read();
-   if(!validPricingInput(value)){show('pricing',ERRORS.INVALID_SETTING,'error');return;}
-   if(FIELDS.every(([key])=>value[key]===pricing[key])){show('pricing','Nuk ka ndryshime për t’u ruajtur.');return;}
+   if(!validPricingInput(value)){stopAsking(false);show('pricing',ERRORS.INVALID_SETTING,'error');return;}
+   if(FIELDS.every(([key])=>value[key]===pricing[key])){stopAsking(false);show('pricing','Nuk ka ndryshime për t’u ruajtur.');return;}
    const next=examplePrice(20,value).toFixed(2),before=examplePrice(20,pricing).toFixed(2);
-   if(!confirm('Ruaj çmimet e reja?\nShembull: 20 USD → '+next+' EUR (tani '+before+' EUR).\nVlen për gjithë katalogun dhe porositë e reja.'))return;
-   save('pricing',{action:'pricing',value},'U ruajt. Shembull: 20 USD → '+next+' EUR.');
+   ask(form,['Ruaj çmimet e reja?','Shembull: 20 USD → '+next+' EUR (tani '+before+' EUR).','Vlen për gjithë katalogun dhe porositë e reja.'],saveButton,()=>save('pricing',{action:'pricing',value},'U ruajt. Shembull: 20 USD → '+next+' EUR.'));
   };
   return card('pricing','Çmimet',el('p',{className:'settings-help',textContent:'Çmimi = çmimi MobiMatter në USD, i trajtuar si EUR, plus marzhi. Pastaj shtohen kostot e pagesës dhe rrumbullakohet lart në cent.'}),el('p',{className:'settings-meta',textContent:changed('pricing','Vlerat fillestare (20% · 2.5% · 0.20 EUR).')}),form);
  }
@@ -193,12 +209,13 @@ export function setupAdminSettings(client,{root=document.getElementById('setting
   const people=el('ul',{className:'settings-list'}),requests=el('ul',{className:'settings-list'});
   for(const a of admins.superAdmins||[])people.append(el('li',{},el('div',{className:'settings-person'},el('strong',{textContent:a.email||a.id}),el('small',{textContent:'Pronari · 2FA e detyrueshme'})),badge('Superadmin','ok')));
   for(const a of admins.envAdmins||[])people.append(el('li',{},el('div',{className:'settings-person'},el('strong',{textContent:a.email||a.id}),el('small',{textContent:'Vetëm lexim. Ndryshohet te Vercel (ADMIN_USER_IDS).'})),badge('nga Vercel')));
-  const decide=(action,row,question,done)=>()=>{if(confirm(question))save('admins',{action,userId:row.user_id},done);};
+  // The question opens in the person's own row, right under its buttons.
+  const decide=(action,row,question,done)=>event=>ask(event.currentTarget.parentNode,question,event.currentTarget,()=>save('admins',{action,userId:row.user_id},done));
   for(const row of admins.requests||[]){
    const name=row.email||row.user_id,[label,kind]=requestLabel(row.status),actions=el('div',{className:'settings-actions'});
    if(!supers.has(row.user_id)){
-    if(row.status==='pending')actions.append(button('Mirato',decide('approve',row,'Mirato '+name+' si administrator? Do të shohë porositë e klientëve dhe do të blejë në modalitetin admin.','U miratua: '+name+'.'),'primary'),button('Refuzo',decide('reject',row,'Refuzo kërkesën e '+name+'?','U refuzua: '+name+'.')));
-    else if(row.status==='approved'&&!envIds.has(row.user_id))actions.append(button('Hiq aksesin',decide('revoke',row,'Hiq aksesin e administratorit për '+name+'?','Aksesi u hoq për '+name+'.')));
+    if(row.status==='pending')actions.append(button('Mirato',decide('approve',row,['Mirato '+name+' si administrator?','Do të shohë porositë e klientëve dhe do të blejë në modalitetin admin.'],'U miratua: '+name+'.'),'primary'),button('Refuzo',decide('reject',row,['Refuzo kërkesën e '+name+'?'],'U refuzua: '+name+'.')));
+    else if(row.status==='approved'&&!envIds.has(row.user_id))actions.append(button('Hiq aksesin',decide('revoke',row,['Hiq aksesin e administratorit për '+name+'?'],'Aksesi u hoq për '+name+'.')));
    }
    requests.append(el('li',{},el('div',{className:'settings-person'},el('strong',{textContent:name}),el('small',{textContent:'Kërkuar më '+when(row.created_at)+(row.decided_at?' · vendosur më '+when(row.decided_at):'')+(envIds.has(row.user_id)?' · ka akses edhe nga Vercel':'')})),badge(label,kind),actions));
   }

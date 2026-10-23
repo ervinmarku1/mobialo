@@ -9,8 +9,18 @@ Vercel deploys every push to `main` straight to production.
 - **Vercel** serves `dist/` as static files and `api/**/*.mjs` as Node 24 functions.
   `vercel.json` sets the build command (`npm run build:auth`), function durations, security
   headers, the rewrites for `/admin`, `/join`, `/sign-in`, `/forgot-password`,
-  `/update-password` and `/account`, and the redirect of `admin.mobialo.eu` to
-  https://www.mobialo.eu/admin.
+  `/update-password`, `/account` (and `/account/orders/:id`, `/admin/orders/:id`), `/devices` (with
+  `/sq/devices` and `/it/devices`, pre-rendered as `devices-sq.html` and `devices-it.html`), the
+  storefront pages and `/sitemap.xml`, the redirect of old `/?plan={id}` links and the redirect of
+  `admin.mobialo.eu` to https://www.mobialo.eu/admin.
+- **Storefront pages** (no popups): `/esim` (every destination, with search), `/esim/{country}`,
+  `/esim/region/{region}` (`global` included) and the plan pages `/esim/{destination}/{productId}` with
+  the checkout in the page; Albanian and Italian under `/sq` and `/it`. `api/store.mjs` renders them
+  on the server (`scripts/storefront-pages.mjs`) with the browser's own `dist/storefront-core.js`
+  (grouping, slugs, links, cards), loaded through `node:vm`, from the same catalog and prices as
+  `/api/catalog`. The homepage links to them; old `/?plan={id}` links are redirected by the server to
+  the plan page (`/api/store?page=legacy`). Plan pages send the price they showed with the order, and
+  checkout refuses to charge a different one (409 `PRICE_CHANGED` with the current price).
 - **Frontend**: hand-written HTML, CSS and classic scripts in `dist/`. `dist/auth.js`,
   `dist/customer-session.js` and `dist/admin.js` are esbuild bundles of `src/` (they embed
   `@supabase/supabase-js`): edit `src/`, run `npm run build:auth` and commit both. Never edit
@@ -37,7 +47,8 @@ are documented in [supabase/DELIVERY-SETUP.md](supabase/DELIVERY-SETUP.md).
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/catalog` | New-eSIM catalog with server-side EUR prices |
+| `GET /api/catalog` | New-eSIM catalog with server-side EUR prices (CDN 60 s, then 10 min stale while it refreshes) |
+| `GET /api/store` | Storefront pages and `/sitemap.xml` through the `/esim` rewrites (CDN 5 min, then 10 min stale; 404 1 min); `?page=warm` is the pg_cron warm-up (204, no-store) |
 | `GET /api/auth-config` | Supabase URL and publishable key for browser sign-in |
 | `GET /api/locale` | Site and email language from the Vercel IP country |
 | `/api/paypal/config`, `create`, `capture` | Hosted checkout (mode, 2FA, consent, guest limits, order capability) |
