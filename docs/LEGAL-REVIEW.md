@@ -14,13 +14,16 @@ pages fell back to English for Italian visitors):
 | --- | --- | --- |
 | Terms of use and sale | `dist/terms.html`, `dist/terms.js` | 22.10.2026 · v1.0 |
 | Delivery & refund policy | `dist/delivery-refunds.html`, `dist/delivery-refunds.js` | 22.10.2026 · v1.0 |
-| Privacy policy | `dist/privacy.html`, `dist/information.js` | 22.10.2026 · v1.2 |
+| Privacy policy | `dist/privacy.html`, `dist/information.js` | 23.10.2026 · v1.3 (v1.2 of 22.10.2026 named Google Fonts) |
 | About, Compare (purchase description only) | `dist/about.html`, `dist/about-details.js`, `dist/information.js` | – |
 
 The checkout consent checkbox (in `dist/paypal-checkout.js`) records `terms_version`
-`v1.0-2026-10-22` (`TERMS_VERSION` in `scripts/hosted-checkout.mjs`). The Terms and the Delivery &
+`v1.0-2026-10-22` (`TERMS_VERSION` in `scripts/terms-version.mjs`). The Terms and the Delivery &
 refund policy therefore keep version v1.0 of 22.10.2026; any later change to their text needs a new
-version in both places. `scripts/i18n.test.mjs` fails if the pages and `TERMS_VERSION` disagree.
+version in both places. `scripts/i18n.test.mjs` fails if the pages and `TERMS_VERSION` disagree, and
+`scripts/order-confirmation.test.mjs` fails if their text changes while the version stays (each
+version's text is fingerprinted in `scripts/legal-documents.mjs`, so an order confirmation only ever
+attaches the wording of the version the buyer accepted).
 
 ## The system the texts describe
 
@@ -61,8 +64,9 @@ named:
   Supabase Management API for project `kneqrmndtgpihrqkvunp`), Resend (email), Hostinger (the
   support@mobialo.eu mailbox, which also receives the webhook alerts with customer emails; public
   DNS checked on 22.10.2026: MX mx1/mx2.hostinger.com, SPF include:_spf.mail.hostinger.com). No
-  analytics, advertising cookies or trackers. External content: Google Fonts, Unsplash, flagcdn,
-  MobiMatter logo storage, and PayPal's SDK when checkout opens.
+  analytics, advertising cookies or trackers. External content: Unsplash, flagcdn, MobiMatter logo
+  storage, and PayPal's SDK when checkout opens. The fonts (DM Sans, Manrope; SIL Open Font
+  License) are served from the site itself since 23.10.2026 (privacy policy v1.3).
 
 ## Before publishing
 
@@ -211,15 +215,25 @@ and the privacy policy describe behaviour that is not yet running.
    - IT: "Hai accettato i Termini e la Politica di consegna e rimborso (versione v1.0-2026-10-22),
      hai richiesto la consegna immediata di questa eSIM e hai riconosciuto di perdere il diritto di
      recesso una volta consegnata."
-   Confirm whether a confirmation sent together with the eSIM is in time, and whether the email
-   should also carry the terms text or a link to the archived version. Article 8(7)(a) also
-   requires the Article 6(1) information (trader identity, geographical address, contact details,
-   total price, main characteristics, withdrawal information), unless it was already given on a
-   durable medium, and the confirmation must arrive at the latest before performance begins; a line
-   inside the eSIM email arrives at the same moment as performance. Consider a separate
-   order-confirmation email sent at capture (before the worker buys the eSIM) with the consent
-   line, `terms_accepted_at`, terms version v1.0-2026-10-22, trader identity and address, plan,
-   total, and the terms text as an attachment or copy.
+   Article 8(7)(a) also requires the Article 6(1) information (trader identity, geographical
+   address, contact details, total price, main characteristics, withdrawal information), unless it
+   was already given on a durable medium, and the confirmation must arrive at the latest before
+   performance begins; a line inside the eSIM email arrives at the same moment as performance.
+   **Added on 23.10.2026 (not yet deployed at the time of writing):** a separate order confirmation
+   (`renderConfirmation` in `scripts/delivery-template.mjs`), which the worker sends once PayPal has
+   confirmed the payment and before it buys the eSIM; the eSIM is not bought until the confirmation
+   has been accepted by the email provider. It contains: seller (iSmart Shop & Service, NIPT,
+   address, support@mobialo.eu), plan name, order reference, order date, total in EUR, payment by
+   PayPal, delivery email, the consent line above with the acceptance time and terms version, the
+   sentence that the statutory right of withdrawal remains until delivery (write to
+   support@mobialo.eu with the order reference) and that the eSIM cannot be returned after delivery,
+   links to both pages, and the Terms and the Delivery & refund policy of the accepted version as
+   UTF-8 text attachments in the order's language (`scripts/legal-documents.mjs`; attached only
+   while the pages carry the version stored with the order). Confirm that this content and timing
+   satisfy Articles 8(7) and 16(m)(iii); that plain-text attachments are an adequate durable medium
+   (or whether PDF is expected); whether the plan's main characteristics (data, validity,
+   countries) must be listed beyond the plan name; and whether a telephone number must be added
+   (point 4).
 2. **Classification of the eSIM (urgent, like point 1).** Digital content (Article 16(m)) or an
    electronic communications service (Article 16(a) with Article 14(3), possibly a pro-rata
    payment), and the equivalent under Albanian law. Directive (EU) 2019/770, Article 3(5)(b),
@@ -266,10 +280,11 @@ and the privacy policy describe behaviour that is not yet running.
 12. **Complaints body.** Name the competent Albanian consumer authority (under Law 9902 and, once
     adopted, the new law) and any ADR body; the pages refer to "the competent consumer-protection
     authority" only.
-13. **Third-party content.** Fonts, photos, flags and supplier logos load from third parties and
+13. **Third-party content.** Photos, flags and supplier logos load from third parties and
     receive the visitor's IP address before any interaction. Consider self-hosting them; the
     privacy policy discloses the current state. LG München I, 20.01.2022, 3 O 17493/20, held that
-    loading Google Fonts from Google's servers without consent breached the GDPR.
+    loading Google Fonts from Google's servers without consent breached the GDPR; the fonts are
+    therefore served from the site itself since 23.10.2026.
 14. **Italian and Albanian legal translations.** Have the Italian and Albanian texts checked by a
     native-speaking lawyer; the English text was the drafting basis.
 15. **Accessibility.** Check whether the European Accessibility Act applies to the shop (it has an

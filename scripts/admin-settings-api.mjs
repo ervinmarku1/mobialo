@@ -48,6 +48,9 @@ function workerView(worker,now){
  if(typeof worker.truncated==='boolean')view.truncated=worker.truncated;
  // The sweep reports whether it can email QR codes, who runs it and, on failure, a safe error code and stage.
  if(typeof worker.email==='boolean')view.email=worker.email;
+ // Whether order confirmations carry the accepted legal documents, and the first paid order's failure code.
+ if(typeof worker.documents==='boolean')view.documents=worker.documents;
+ if(typeof worker.failure==='string'&&/^[A-Z][A-Z0-9_]{0,60}(:[a-z_]{1,60})?$/.test(worker.failure))view.failure=worker.failure;
  if(typeof worker.code==='string'&&/^[A-Z][A-Z0-9_:]{0,80}$/.test(worker.code))view.code=worker.code;
  for(const name of ['stage','source'])if(typeof worker[name]==='string'&&/^[a-z_]{1,40}$/.test(worker[name]))view[name]=worker[name];
  return view;

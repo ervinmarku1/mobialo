@@ -2,7 +2,7 @@
   "name": "mobialo-storefront",
   "version": "0.1.0",
   "private": true,
-  "description": "Bilingual MOBIALO eSIM storefront preview",
+  "description": "MOBIALO eSIM shop (www.mobialo.eu): storefront, PayPal checkout and eSIM delivery",
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "worker:delivery": "node scripts/delivery-worker.mjs",

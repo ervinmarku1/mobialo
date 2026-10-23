@@ -5,9 +5,10 @@ import {deliveryServices} from './esim-delivery.mjs';
 import {createLiveOrder,captureLiveOrder,paypalFailure} from './live-checkout.mjs';
 import {loadSettings,workerFresh} from './app-settings.mjs';
 import {checkGuestLimits,clientIpHash} from './checkout-limits.mjs';
+import {TERMS_VERSION} from './terms-version.mjs';
 
 // Version of the Terms and Delivery & refund policy accepted with the checkout consent checkbox.
-export const TERMS_VERSION='v1.0-2026-10-22';
+export {TERMS_VERSION};
 
 // Internal error codes are safe to log and to show to administrators.
 export function checkoutErrorCode(error){
@@ -114,6 +115,8 @@ export async function hostedCheckout(action,req,{
   }catch(error){
     if(error.paypalDiagnostic){
       const failure=paypalFailure(error.paypalDiagnostic);
+      // A compliance block concerns the merchant account, not the buyer: customers see the neutral merchant code.
+      if(!trusted&&failure.body.error==='PAYPAL_COMPLIANCE_VIOLATION')failure.body.error='MERCHANT_REFUSED';
       if(!trusted&&failure.body.error==='MERCHANT_REFUSED')failure.body.issues=[];
       return result(failure.status,failure.body);
     }

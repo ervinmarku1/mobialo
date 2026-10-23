@@ -6,3 +6,9 @@
 !scripts/delivery-template.mjs
 !scripts/worker-health.mjs
 !scripts/app-settings.mjs
+!scripts/checkout-limits.mjs
+!scripts/legal-documents.mjs
+!scripts/terms-version.mjs
+!dist/
+!dist/terms.js
+!dist/delivery-refunds.js

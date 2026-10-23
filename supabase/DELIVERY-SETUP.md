@@ -16,8 +16,8 @@ database run all of them; for an existing one, run only the files that are missi
    index on `esim_deliveries`; needs file 1.
 4. `migrations/20261020_test_order_limit.sql`: `reserve_esim_test_order()` (sandbox creation limit);
    needs file 2.
-5. `migrations/20261022074725_admin_access_requests.sql`: administrator approval requests. It runs
-   in one transaction; a second run fails on `create table` and changes nothing.
+5. `migrations/20261022074725_admin_access_requests.sql`: administrator approval requests, in one
+   transaction.
 6. `migrations/20261022150000_app_settings.sql`: `app_settings` (Cilësimet and worker heartbeat).
 7. `migrations/20261022160000_worker_cron.sql`: pg_net, pg_cron, `mobialo_worker_config()` and the
    every-minute job `mobialo-delivery-sweep`. Create the Vault secrets first (see below). The job
@@ -39,8 +39,11 @@ database run all of them; for an existing one, run only the files that are missi
    The URL is hard-coded to production, like file 7. Optional: without it the pages still answer at once
    from the last good catalog (up to an hour while MobiMatter fails); only a cold instance waits for it.
    Running it again replaces the job (an earlier version also requested `/api/catalog` and `/esim`).
+12. `migrations/20261024100000_order_confirmation.sql`: `confirmation_email_id`, the Resend ID of the order
+   confirmation the worker sends after payment and before it buys the eSIM (see "Order confirmation" below).
+   Apply before deploying the code: without it paid orders wait in `paid` and the admin order list returns 503.
 
-All files except 5 are safe to run again. A null column below means that migration is missing:
+All files are safe to run again. A null column below means that migration is missing:
 
 ```sql
 select to_regclass('public.esim_deliveries') as m1, to_regclass('public.esim_test_orders') as m2,
@@ -51,7 +54,9 @@ select to_regclass('public.esim_deliveries') as m1, to_regclass('public.esim_tes
   to_regclass('public.esim_deliveries_state_created_idx') as m8,
   to_regclass('public.esim_deliveries_ip_open_idx') as m9,
   (select 1 from information_schema.columns where table_schema='public'
-    and table_name='esim_deliveries' and column_name='payment_updated_at') as m10;
+    and table_name='esim_deliveries' and column_name='payment_updated_at') as m10,
+  (select 1 from information_schema.columns where table_schema='public'
+    and table_name='esim_deliveries' and column_name='confirmation_email_id') as m12;
 select jobname, schedule, active from cron.job;
 ```
 
@@ -162,9 +167,38 @@ Test account access with `node --test scripts/customer-orders.test.mjs`.
    check it before paying. Only realtime products are allowed; test and KYC plans are blocked.
 3. Capture checks the stored order and rechecks the actual completed payment amount.
    The email and amount cannot be changed at capture.
-4. The worker reserves the eSIM at MobiMatter (deducting the supplier wallet), completes
-   it and emails the QR code. Each irreversible step is claimed in the database before
-   its request.
+4. The worker first emails the order confirmation (see below), then reserves the eSIM at
+   MobiMatter (deducting the supplier wallet), completes it and emails the QR code. Each
+   irreversible step is claimed in the database before its request.
+
+### Order confirmation
+
+The confirmation on a durable medium (Consumer Rights Directive Art. 8(7); docs/LEGAL-REVIEW.md
+point 1) goes out while the order is `paid`, before the worker buys the eSIM: seller, plan, its data,
+validity and countries as sold (`product_details`, stored at checkout), order reference, date, total,
+delivery email, the recorded consent with its time and terms version, the withdrawal right until
+delivery, the statutory rights of Terms §7, and links to both legal pages. The accepted Terms and Delivery &
+refund policy are attached as UTF-8 text files in the order's language, read from `dist/terms.js`
+and `dist/delivery-refunds.js` (shipped with `api/worker/sweep.mjs` through `includeFiles`); they are
+attached only while those pages carry the version stored with the order and their text still matches
+that version's fingerprint in `scripts/legal-documents.mjs` (a text change needs a new version in
+`scripts/terms-version.mjs`; the tests fail otherwise). If the files cannot be read or no longer match,
+the confirmation still goes out without them, the error is logged and Cilësimet shows "Dokumentet
+ligjore te konfirmimi: Mungojnë" (heartbeat `documents: false`).
+
+- The Resend ID is stored in `confirmation_email_id` (migration 12) and shown on the admin order page.
+- An order that already has a `provider_order_id` is never bought again from `paid`; it goes to `review`.
+- A failed send leaves the order in `paid` and the next sweep tries again with the same Resend
+  idempotency key (`confirmation/<id>/<digest of the message>`), so a send whose answer was lost is not
+  delivered twice; a changed message (corrected address, new template) is a new send. A 409 is then
+  a concurrent send of the same message: the sweep leaves the row for the next one, which records it.
+  Other failures (quota, outage, keys) count as a failed paid order: the heartbeat is not ok, public
+  checkout falls back to admin-only and Cilësimet shows the code, e.g. `DELIVERY_UPSTREAM_429:...`.
+- If Resend refuses the message (400 or 422) while it carries the documents, it is sent again at once
+  without them. Refused again, the address is the problem and the eSIM email would be refused too:
+  the order moves to `review` without buying the eSIM, and support@mobialo.eu gets an alert with the
+  code but no customer data. Fix the email or refund in PayPal. Only a `review` row with an empty
+  `provider_order_id` may be moved back to `paid` (that sends the confirmation again).
 
 States `reserving` and `sending` are deliberately never auto-reclaimed: a timeout
 may have occurred after the remote action succeeded. Reconcile in the provider's
@@ -179,7 +213,7 @@ Email currently supports SQ, EN, IT, with EN fallback. This is separate from the
 PNG via CID. No QR rendering service receives the activation credential.
 
 No real order or email is created by the automated tests. Run:
-`node --test scripts/esim-delivery.test.mjs scripts/live-checkout.test.mjs scripts/delivery-worker.test.mjs`
+`node --test scripts/esim-delivery.test.mjs scripts/order-confirmation.test.mjs scripts/live-checkout.test.mjs scripts/delivery-worker.test.mjs`
 
 ## Verified live PayPal webhook
 
@@ -235,7 +269,10 @@ PayPal captures are checked again before provisioning; approved but uncaptured p
 are never captured by the worker. A failing item does not stop later items. The heartbeat
 is not ok when a paid order failed or paid work was left for the next sweep.
 The database is the durable queue: nothing is lost between runs, and concurrent sweeps,
-workers and browser requests are arbitrated by the same conditional state updates.
+workers and browser requests are arbitrated by the same conditional state updates. The order
+confirmation is not claimed: two processes may send it at once, and Resend's idempotency key keeps
+it to one email (the second request gets a 409 and is left for the next sweep). The sweep function
+has `maxDuration` 120 s, so a provider step started just before the 45 s budget ends can finish.
 
 Monitoring:
 - Runs: `select * from cron.job_run_details order by start_time desc limit 20;`
@@ -260,9 +297,11 @@ pause between sweeps; `npm run worker:delivery -- --once` for one sweep). It rea
 `MOBIMATTER_MERCHANT_ID`, `MOBIMATTER_API_KEY` and `RESEND_API_KEY`. It can buy real
 eSIMs and send real emails for already captured payments; start it only against the
 intended production project. Running it next to the pg_cron sweep is safe because every
-state change is a conditional transition. `npm run dev` does not start it.
+state change is a conditional transition (the order confirmation is deduplicated by Resend, see
+above). `npm run dev` does not start it.
 
-`Dockerfile.worker` packages only the worker's source files; credentials are injected at
+`Dockerfile.worker` packages only the worker's source files and the two legal documents its order
+confirmation attaches (a test checks the list against the worker's imports); credentials are injected at
 runtime and `.env.local` is excluded from the build. It is a fallback, not used in
 production: build it and confirm the container starts before relying on it.
 
@@ -284,18 +323,22 @@ unhealthy flag alone does not restart it or send alerts.
 
 Repeat after changes to checkout or delivery: create one explicitly selected live
 order, complete payment, confirm the capture is stored (browser or webhook), confirm
-exactly one provider order and one email, replay the webhook event, let the next sweep
-run and confirm no duplicate purchase or email. Record references without activation
-credentials.
+one order confirmation with both .txt attachments in the order's language and version and
+`confirmation_email_id` set before `provider_order_id`, then exactly one provider order and one
+eSIM email. Replay the webhook event, let the next sweep run and confirm no second confirmation,
+purchase or eSIM email, and Cilësimet shows "Dokumentet ligjore te konfirmimi: OK". Record
+references without activation credentials.
 
 ## Local development
 
-`npm run dev` (scripts/serve.mjs) reads `.env.local`. If that file holds the production
-Supabase keys and `PAYPAL_ENV=live`, the local server creates real PayPal orders and
-production rows, and a completed local capture buys the eSIM and sends the email at once.
-It skips the hosted checkout gates: no shop mode, admin list, 2FA or worker heartbeat
-check, sign-in is optional on create and capture does not check ownership. Use
-`PAYPAL_ENV=sandbox` locally, preferably with a separate Supabase project. Sandbox orders
+`npm run dev` (scripts/serve.mjs) reads `.env.local`. With `PAYPAL_ENV=live` there it refuses
+`/api/paypal/create`, `/api/paypal/capture`, `/api/paypal/webhook` and every `/api/admin/*`
+route with 403 `LOCAL_LIVE_BLOCKED`; pages, the catalog and the read-only account endpoint still
+work. Only `ALLOW_LOCAL_LIVE=1` in the environment lifts that guard, and then the local server
+creates real PayPal orders and production rows, a completed local capture buys the eSIM and
+sends the email at once, and it skips the hosted checkout gates: no shop mode, admin list, 2FA
+or worker heartbeat check, sign-in is optional on create and capture does not check ownership.
+Use `PAYPAL_ENV=sandbox` locally, preferably with a separate Supabase project. Sandbox orders
 use `esim_test_orders` and never buy an eSIM.
 
 ## Sandbox creation limit

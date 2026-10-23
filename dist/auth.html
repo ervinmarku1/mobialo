@@ -5,9 +5,9 @@
   <script>/* Until auth.js renders (6 s at most): the card stays empty and text that may change language stays hidden. */(function(d){var l='',p=location.pathname.replace(/\/$/,'');try{l=localStorage.getItem('mobialo-language-choice')||(sessionStorage.getItem('mobialo-detected-language')||'').split(':')[0]}catch(e){}d.classList.add('auth-pending');if(l!=='en')d.classList.add('lang-pending-text');d.setAttribute('data-auth-mode',/^\/account\/orders\/[^\/]+$/.test(p)?'account':{'/join':'join','/forgot-password':'reset','/update-password':'update','/account':'account'}[p]||'sign');setTimeout(function(){d.classList.remove('auth-pending','lang-pending-text')},6000)})(document.documentElement)</script>
   <meta name="theme-color" content="#ffffff"><meta name="robots" content="noindex"><meta name="referrer" content="no-referrer">
   <title>MOBIALO — Your account</title>
-  <link rel="icon" href="/brand-mark.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap">
+  <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/brand-mark.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  
+  <link rel="preload" href="/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/auth.css">
   <link rel="stylesheet" href="/account.css">
   <link rel="stylesheet" href="/quick-links.css">

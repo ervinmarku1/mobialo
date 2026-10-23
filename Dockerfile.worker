@@ -1,7 +1,9 @@
 FROM node:24-bookworm-slim
 WORKDIR /app
 # Explicit copies keep .env.local, Git history and browser assets out of the image.
-COPY --chown=node:node scripts/delivery-worker.mjs scripts/esim-delivery.mjs scripts/delivery-template.mjs scripts/worker-health.mjs scripts/app-settings.mjs ./scripts/
+COPY --chown=node:node scripts/delivery-worker.mjs scripts/esim-delivery.mjs scripts/delivery-template.mjs scripts/worker-health.mjs scripts/app-settings.mjs scripts/checkout-limits.mjs scripts/legal-documents.mjs scripts/terms-version.mjs ./scripts/
+# The accepted Terms and Delivery & refund policy, attached to order confirmations.
+COPY --chown=node:node dist/terms.js dist/delivery-refunds.js ./dist/
 USER node
 ENV NODE_ENV=production
 HEALTHCHECK --interval=60s --timeout=5s --start-period=60s --retries=3 CMD ["node", "scripts/worker-health.mjs"]

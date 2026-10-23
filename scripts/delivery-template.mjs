@@ -1,24 +1,41 @@
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export function renderDelivery(order,details,fields,{test=false}={}){
- const language=['sq','it'].includes(order.language)?order.language:'en';
- const t=(sq,en,it)=>({sq,en,it})[language];
- const title=t('eSIM-i yt është gati','Your eSIM is ready','La tua eSIM è pronta');
+const translator=order=>{const language=['sq','it'].includes(order.language)?order.language:'en';return {language,t:(sq,en,it)=>({sq,en,it})[language]};};
+const table=items=>`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${items.map(([k,v])=>`<tr><td style="padding:9px 5px;border-bottom:1px solid #eee;vertical-align:top;width:36%">${esc(k)}</td><td style="padding:9px 5px;border-bottom:1px solid #eee;word-break:break-all">${esc(v)}</td></tr>`).join('')}</table>`;
+const page=(language,content)=>`<!doctype html><html lang="${language}"><body style="margin:0;background:#fff7f0;color:#17212b;font-family:Arial,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:20px 10px"><table role="presentation" width="100%" style="max-width:620px;background:#fff;border:1px solid #eadfd7;border-radius:18px"><tr><td style="padding:24px"><div style="font-size:30px;font-weight:bold">mobialo<span style="color:#c74d08">.eu</span></div>${content}<p style="font-size:12px;color:#667;border-top:1px solid #eee;padding-top:16px">MOBIALO · iSmart Shop &amp; Service<br>NIPT: L71614008L<br>Rruga Tom Plezha, Yzberisht, Tiranë, Shqipëri</p></td></tr></table></td></tr></table></body></html>`;
+const validity=(hours,t)=>hours%24===0?`${hours/24} ${hours===24?t('ditë','day','giorno'):t('ditë','days','giorni')}`:`${hours} ${hours===1?t('orë','hour','ora'):t('orë','hours','ore')}`;
+// Country names in the email's language (Node's ICU); an unknown code stays as it is.
+const countryNames=(codes,language)=>{
+ let names=null;try{names=new Intl.DisplayNames([language],{type:'region'});}catch{}
+ return codes.map(code=>{try{return names?.of(code)||code;}catch{return code;}}).sort((a,b)=>a.localeCompare(b,language));
+};
+// Order rows shared by both emails: plan, order reference, date and total as stored with the order.
+function orderRows(order,t,title){
  const rows=[];
  const row=(label,value)=>{if(value!==undefined&&value!==null&&value!=='')rows.push([label,String(value)]);};
- row(t('Paketa','Plan','Piano'),details.orderLineItem.title||order.product_title);
+ row(t('Paketa','Plan','Piano'),title);
  row(t('Porosia','Order','Ordine'),order.paypal_order_id||order.id);
  if(order.created_at&&!isNaN(Date.parse(order.created_at)))row(t('Data (UTC)','Date (UTC)','Data (UTC)'),new Date(order.created_at).toISOString().slice(0,10));
  if(order.amount!==null&&order.amount!==undefined&&Number.isFinite(Number(order.amount)))row(t('Totali','Total','Totale'),`${order.currency||'EUR'} ${Number(order.amount).toFixed(2)}`);
+ return {rows,row};
+}
+// Confirmation of the checkout consent (Article 16(m) with 8(7); docs/LEGAL-REVIEW.md point 1), only for orders that recorded it.
+function consentLines(order,t){
+ const version=order.terms_version?String(order.terms_version):'';
+ const consent=version?t(`Ke pranuar Kushtet dhe Politikën e dërgesës dhe rimbursimit (versioni ${version}), ke kërkuar dërgimin e menjëhershëm të këtij eSIM-i dhe ke pranuar se humbet të drejtën e tërheqjes pasi ai dërgohet.`,`You accepted the Terms and the Delivery & refund policy (version ${version}), requested immediate delivery of this eSIM and acknowledged that you lose your right of withdrawal once it is delivered.`,`Hai accettato i Termini e la Politica di consegna e rimborso (versione ${version}), hai richiesto la consegna immediata di questa eSIM e hai riconosciuto di perdere il diritto di recesso una volta consegnata.`):'';
+ const acceptedAt=consent&&order.terms_accepted_at&&!isNaN(Date.parse(order.terms_accepted_at))?`${t('Koha e pranimit (UTC)','Time of acceptance (UTC)','Ora dell’accettazione (UTC)')}: ${new Date(order.terms_accepted_at).toISOString().slice(0,19).replace('T',' ')}`:'';
+ return {version,consent,acceptedAt};
+}
+export function renderDelivery(order,details,fields,{test=false}={}){
+ const {language,t}=translator(order);
+ const title=t('eSIM-i yt është gati','Your eSIM is ready','La tua eSIM è pronta');
+ const {rows,row}=orderRows(order,t,details.orderLineItem.title||order.product_title);
  row('ICCID',fields.get('ICCID'));row('APN',fields.get('APN'));
  row(t('Numri i telefonit','Phone number','Numero di telefono'),fields.get('PHONE_NUMBER'));
  const data=fields.get('PLAN_DATA_LIMIT'),unit=fields.get('PLAN_DATA_UNIT');
  if(data&&unit)row(t('Internet','Data','Dati'),`${data} ${unit}`);
  const hours=Number(fields.get('PLAN_VALIDITY'));
- if(Number.isFinite(hours)&&hours>0)row(t('Vlefshmëria','Validity','Validità'),hours%24===0?`${hours/24} ${t('ditë','days','giorni')}`:`${hours} ${t('orë','hours','ore')}`);
- // Confirmation of the checkout consent (Article 16(m) with 8(7); docs/LEGAL-REVIEW.md point 1), only for orders that recorded it.
- const version=test||!order.terms_version?'':String(order.terms_version);
- const consent=version?t(`Ke pranuar Kushtet dhe Politikën e dërgesës dhe rimbursimit (versioni ${version}), ke kërkuar dërgimin e menjëhershëm të këtij eSIM-i dhe ke pranuar se humbet të drejtën e tërheqjes pasi ai dërgohet.`,`You accepted the Terms and the Delivery & refund policy (version ${version}), requested immediate delivery of this eSIM and acknowledged that you lose your right of withdrawal once it is delivered.`,`Hai accettato i Termini e la Politica di consegna e rimborso (versione ${version}), hai richiesto la consegna immediata di questa eSIM e hai riconosciuto di perdere il diritto di recesso una volta consegnata.`):'';
- const acceptedAt=consent&&order.terms_accepted_at&&!isNaN(Date.parse(order.terms_accepted_at))?`${t('Koha e pranimit (UTC)','Time of acceptance (UTC)','Ora dell’accettazione (UTC)')}: ${new Date(order.terms_accepted_at).toISOString().slice(0,19).replace('T',' ')}`:'';
+ if(Number.isFinite(hours)&&hours>0)row(t('Vlefshmëria','Validity','Validità'),validity(hours,t));
+ const {consent,acceptedAt}=test?{consent:'',acceptedAt:''}:consentLines(order,t);
  const note=t('Vlefshmëria fillon sipas kushteve të paketës; instalimi dhe aktivizimi mund të jenë momente të ndryshme.','Validity starts according to your plan terms; installation and activation may happen at different times.','La validità inizia secondo le condizioni del piano; installazione e attivazione possono avvenire in momenti diversi.');
  const steps=[t('Lidhu me Wi-Fi dhe sigurohu që telefoni mbështet eSIM dhe nuk është i bllokuar për një operator.','Connect to Wi-Fi and check that your phone supports eSIM and is carrier unlocked.','Collegati al Wi-Fi e verifica che il telefono supporti eSIM e non sia bloccato su un operatore.'),
  'iPhone: Settings → Cellular / Mobile Data → Add eSIM → Use QR Code.',
@@ -33,9 +50,38 @@ export function renderDelivery(order,details,fields,{test=false}={}){
  const warning=t('Mos e fshi eSIM-in gjatë përdorimit. Riinstalimi varet nga paketa dhe mund të mos jetë i mundur. Mbaji QR-në dhe kodet private.','Do not delete your eSIM while using it. Reinstallation depends on the plan and may not be possible. Keep your QR and codes private.','Non eliminare la eSIM durante l’uso. La reinstallazione dipende dal piano e potrebbe non essere possibile. Mantieni privati QR e codici.');
  const help=t('Nëse nuk ke internet, kontrollo mbulimin, eSIM-in e zgjedhur për të dhënat dhe APN-në më sipër nëse është dhënë. Provo të aktivizosh dhe çaktivizosh modalitetin avion. Për ndihmë, na dërgo referencën e porosisë dhe modelin e telefonit.','If data does not work, check coverage, your selected data SIM and the APN above if provided. Try toggling airplane mode. For help, send us your order reference and phone model.','Se internet non funziona, controlla copertura, SIM selezionata per i dati e APN indicato, se presente. Prova ad attivare e disattivare la modalità aereo. Per assistenza, inviaci riferimento ordine e modello del telefono.');
  const banner=test?t('TEST — jo eSIM reale. Pa pagesë. QR-ja dhe kodet janë demonstrues: mos i instalo.','TEST — not a real eSIM. No payment. QR and codes are demonstrations: do not install.','TEST — non è una eSIM reale. Nessun pagamento. QR e codici dimostrativi: non installare.') : '';
- const table=items=>`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${items.map(([k,v])=>`<tr><td style="padding:9px 5px;border-bottom:1px solid #eee;vertical-align:top;width:36%">${esc(k)}</td><td style="padding:9px 5px;border-bottom:1px solid #eee;word-break:break-all">${esc(v)}</td></tr>`).join('')}</table>`;
  const heading=t('Instalimi dhe aktivizimi','Installation and activation','Installazione e attivazione');
  const manualTitle=t('Instalimi manual','Manual installation','Installazione manuale');
- const html=`<!doctype html><html lang="${language}"><body style="margin:0;background:#fff7f0;color:#17212b;font-family:Arial,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:20px 10px"><table role="presentation" width="100%" style="max-width:620px;background:#fff;border:1px solid #eadfd7;border-radius:18px"><tr><td style="padding:24px"><div style="font-size:30px;font-weight:bold">mobialo<span style="color:#c74d08">.eu</span></div>${banner?`<p style="padding:16px;background:#fff0df;color:#903800"><strong>${esc(banner)}</strong></p>`:''}<h1 style="font-size:26px">${test?t('Porosi demonstrimi','Demonstration order','Ordine dimostrativo'):title}</h1>${table(rows)}${consent?`<p style="font-size:14px;line-height:1.6;color:#445">${esc(consent)}${acceptedAt?`<br>${esc(acceptedAt)}`:''}</p>`:''}<h2 style="font-size:20px">eSIM · QR</h2><p style="text-align:center"><img src="cid:esim-qr" width="260" height="260" style="max-width:100%;height:auto" alt="${test?'TEST QR':'eSIM QR'}"></p><p style="background:#fff0df;padding:16px;border-radius:10px">${esc(warning)}</p>${manual.length?`<h2 style="font-size:20px">${manualTitle}</h2><p>iPhone: Enter Details Manually · Samsung: Enter activation code</p>${table(manual)}`:''}<h2 style="font-size:20px">${heading}</h2><p>${esc(note)}</p><ol style="padding-left:22px;line-height:1.7">${steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol><p><a href="https://support.apple.com/en-gb/118669">Apple · iPhone</a> &nbsp; <a href="https://www.samsung.com/uk/support/mobile-devices/how-to-use-an-esim-with-your-galaxy-phone/">Samsung · Galaxy</a></p><h2 style="font-size:20px">${t('Ndihmë','Support','Assistenza')}</h2><p style="line-height:1.6">${esc(help)}</p><p><a href="mailto:support@mobialo.eu" style="color:#c74d08">support@mobialo.eu</a></p><p style="font-size:12px;color:#667;border-top:1px solid #eee;padding-top:16px">MOBIALO · iSmart Shop &amp; Service<br>NIPT: L71614008L<br>Rruga Tom Plezha, Yzberisht, Tiranë, Shqipëri</p></td></tr></table></td></tr></table></body></html>`;
+ const html=page(language,`${banner?`<p style="padding:16px;background:#fff0df;color:#903800"><strong>${esc(banner)}</strong></p>`:''}<h1 style="font-size:26px">${test?t('Porosi demonstrimi','Demonstration order','Ordine dimostrativo'):title}</h1>${table(rows)}${consent?`<p style="font-size:14px;line-height:1.6;color:#445">${esc(consent)}${acceptedAt?`<br>${esc(acceptedAt)}`:''}</p>`:''}<h2 style="font-size:20px">eSIM · QR</h2><p style="text-align:center"><img src="cid:esim-qr" width="260" height="260" style="max-width:100%;height:auto" alt="${test?'TEST QR':'eSIM QR'}"></p><p style="background:#fff0df;padding:16px;border-radius:10px">${esc(warning)}</p>${manual.length?`<h2 style="font-size:20px">${manualTitle}</h2><p>iPhone: Enter Details Manually · Samsung: Enter activation code</p>${table(manual)}`:''}<h2 style="font-size:20px">${heading}</h2><p>${esc(note)}</p><ol style="padding-left:22px;line-height:1.7">${steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol><p><a href="https://support.apple.com/en-gb/118669">Apple · iPhone</a> &nbsp; <a href="https://www.samsung.com/uk/support/mobile-devices/how-to-use-an-esim-with-your-galaxy-phone/">Samsung · Galaxy</a></p><h2 style="font-size:20px">${t('Ndihmë','Support','Assistenza')}</h2><p style="line-height:1.6">${esc(help)}</p><p><a href="mailto:support@mobialo.eu" style="color:#c74d08">support@mobialo.eu</a></p>`);
  return {subject:`${test?'[TEST] ':''}MOBIALO · ${title}`,html,text:[banner,title,...rows.map(r=>r.join(': ')),consent,acceptedAt,warning,manualTitle,...manual.map(r=>r.join(': ')),heading,note,...steps,help,'support@mobialo.eu'].filter(Boolean).join('\n\n')};
+}
+
+// Order confirmation on a durable medium (Consumer Rights Directive Art. 8(7)), sent after payment and before the eSIM
+// is bought: seller, plan, total, the recorded consent and, as attachments, the documents accepted (documents = titles).
+export function renderConfirmation(order,documents=[]){
+ const {language,t}=translator(order);
+ const title=t('Konfirmimi i porosisë','Order confirmation','Conferma dell’ordine');
+ const intro=t('Faleminderit! PayPal e konfirmoi pagesën dhe ky email konfirmon porosinë tënde. Tani po përgatisim eSIM-in: një email i veçantë me kodin QR dhe udhëzimet e instalimit vjen zakonisht brenda pak minutash.','Thank you! PayPal has confirmed your payment and this email confirms your order. We are now preparing your eSIM: a separate email with the QR code and the installation instructions usually follows within a few minutes.','Grazie! PayPal ha confermato il pagamento e questa email conferma il tuo ordine. Stiamo preparando la tua eSIM: un’email separata con il codice QR e le istruzioni di installazione arriva di solito entro pochi minuti.');
+ const {rows,row}=orderRows(order,t,order.product_title||order.product_id);
+ // The plan's main characteristics as sold (Art. 6(1)(a)), stored with the order at checkout.
+ const details=order.product_details&&typeof order.product_details==='object'?order.product_details:{};
+ if(details.dataAmount&&details.dataUnit)row(t('Internet','Data','Dati'),`${details.dataAmount} ${details.dataUnit}`);
+ const hours=Number(details.validityHours);
+ if(Number.isFinite(hours)&&hours>0)row(t('Vlefshmëria','Validity','Validità'),validity(hours,t));
+ const countries=Array.isArray(details.countries)?details.countries.filter(code=>typeof code==='string'&&/^[A-Z]{2}$/.test(code)):[];
+ if(countries.length)row(t('Mbulimi','Coverage','Copertura'),countries.length<=20?countryNames(countries,language).join(', '):`${countries.length} ${t('shtete','countries','paesi')}`);
+ row(t('Pagesa','Payment','Pagamento'),'PayPal');
+ row(t('Emaili i dërgesës','Delivery email','Email di consegna'),order.customer_email);
+ row(t('Shitësi','Seller','Venditore'),'iSmart Shop & Service (NIPT L71614008L)');
+ const {version,consent,acceptedAt}=consentLines(order,t);
+ // Delivery & refund policy §6: the statutory right of withdrawal remains until the eSIM is delivered.
+ const withdrawal=consent?t('Derisa eSIM-i të dorëzohet, e drejta ligjore e tërheqjes mbetet: shkruaj te support@mobialo.eu me referencën e porosisë. Pas dorëzimit eSIM-i nuk mund të kthehet.','Until the eSIM is delivered, your statutory right of withdrawal remains: write to support@mobialo.eu with the order reference. After delivery the eSIM cannot be returned.','Finché la eSIM non è consegnata, il diritto di recesso previsto dalla legge resta: scrivi a support@mobialo.eu con il riferimento dell’ordine. Dopo la consegna la eSIM non può essere restituita.'):'';
+ // Terms §7, word for word: the statutory rights that no consent removes.
+ const rights=t('Të drejtat ligjore mbeten nëse eSIM-i nuk dërgohet, nuk funksionon siç përshkruhet ose je tarifuar dy herë.','Your statutory rights remain if the eSIM is not delivered, does not work as described or you were charged twice.','Restano i diritti di legge se la eSIM non viene consegnata, non funziona come descritto o ti è stato addebitato due volte.');
+ const attached=documents.length?t(`Dokumentet që pranove (versioni ${version}) janë bashkëngjitur këtij emaili: ${documents.join(' · ')}.`,`The documents you accepted (version ${version}) are attached to this email: ${documents.join(' · ')}.`,`I documenti che hai accettato (versione ${version}) sono allegati a questa email: ${documents.join(' · ')}.`):'';
+ const links=[[t('Kushtet e përdorimit','Terms of use','Termini di utilizzo'),'https://www.mobialo.eu/terms.html'],[t('Politika e dërgesës dhe rimbursimit','Delivery & refund policy','Politica di consegna e rimborso'),'https://www.mobialo.eu/delivery-refunds.html']];
+ const help=t('Për pyetje, shkruaj te support@mobialo.eu me referencën e porosisë.','Questions? Write to support@mobialo.eu with your order reference.','Per domande, scrivi a support@mobialo.eu indicando il riferimento dell’ordine.');
+ const paragraph=text=>text?`<p style="font-size:14px;line-height:1.6;color:#445">${esc(text)}</p>`:'';
+ const html=page(language,`<h1 style="font-size:26px">${esc(title)}</h1><p style="line-height:1.6">${esc(intro)}</p>${table(rows)}${consent?`<p style="font-size:14px;line-height:1.6;color:#445">${esc(consent)}${acceptedAt?`<br>${esc(acceptedAt)}`:''}</p>`:''}${paragraph(withdrawal)}${paragraph(rights)}${paragraph(attached)}<p style="font-size:14px;line-height:1.6">${links.map(([label,href])=>`<a href="${href}" style="color:#c74d08">${esc(label)}</a>`).join(' · ')}</p><p style="line-height:1.6">${esc(help)}</p><p><a href="mailto:support@mobialo.eu" style="color:#c74d08">support@mobialo.eu</a></p>`);
+ return {subject:`MOBIALO · ${title}`,html,text:[title,intro,...rows.map(r=>r.join(': ')),consent,acceptedAt,withdrawal,rights,attached,...links.map(r=>r.join(': ')),help,'MOBIALO · iSmart Shop & Service\nNIPT: L71614008L\nRruga Tom Plezha, Yzberisht, Tiranë, Shqipëri'].filter(Boolean).join('\n\n')};
 }

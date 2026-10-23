@@ -28,7 +28,7 @@ export async function adminOrders(request,fetcher=fetch,configuration){
  const validDate=value=>!value||/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
  if(!validDate(from)||!validDate(to)||from&&to&&from>to)return fail(400,'INVALID_FILTER');
  if(!Number.isInteger(page)||page<1||page>100000||state&&state!=='payment_issue'&&!states.includes(state)||search.length>150||search&&!/^[\p{L}\p{N}@._+ -]+$/u.test(search))return fail(400,'INVALID_FILTER');
- const params=new URLSearchParams({select:'id,paypal_order_id,paypal_capture_id,product_id,amount,currency,customer_email,language,state,provider_order_id,email_id,created_at,payment_status,refunded_amount,dispute_id,dispute_status,payment_updated_at',order:'created_at.desc,id.desc',limit:'50',offset:String((page-1)*50)});
+ const params=new URLSearchParams({select:'id,paypal_order_id,paypal_capture_id,product_id,product_title,user_id,amount,currency,customer_email,language,state,provider_order_id,confirmation_email_id,email_id,created_at,payment_status,refunded_amount,dispute_id,dispute_status,payment_updated_at',order:'created_at.desc,id.desc',limit:'50',offset:String((page-1)*50)});
  // The list filters do not apply to a single-order read.
  if(id!==null)params.set('id','eq.'+id.toLowerCase());
  else{

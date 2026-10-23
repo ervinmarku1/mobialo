@@ -202,7 +202,9 @@ test('pages that may start in another language stay hidden briefly, with locale.
     assert.ok(snippet>0&&snippet<locale&&locale<css,page);
     assert.match(html,/setTimeout\(function\(\)\{d\.classList\.remove\('lang-pending'\)\},1200\)/,page);
     assert.doesNotMatch(html,/locale\.js" defer/,page);
-    assert.match(html,/fonts\.googleapis\.com\/css2\?family=DM\+Sans/,page);
+    // The fonts are served from the site (no request to Google); the files are preloaded so the swap comes early.
+    assert.match(html,/<link rel="preload" href="\/fonts\/manrope-latin\.woff2" as="font" type="font\/woff2" crossorigin>/,page);
+    assert.doesNotMatch(html,/fonts\.googleapis\.com|fonts\.gstatic\.com/,page);
   }
   const index=await read('dist/index.html');
   assert.equal((index.match(/<div class="destination-card skeleton" aria-hidden="true">/g)||[]).length,9);

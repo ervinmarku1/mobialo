@@ -242,13 +242,14 @@ test('reasons are hidden from admin-mode callers who did not pass every admin ga
  assert.equal(result.status,503);assert.equal(result.body.reason,undefined);
 });
 test('merchant-side refusals are separated and their details hidden from customers',async()=>{
- for(const [mode,user] of [['admin','admin'],['public','customer']]){
+ for(const [mode,user] of [['admin','admin'],['public','customer']])for(const issue of ['PAYEE_ACCOUNT_RESTRICTED','COMPLIANCE_VIOLATION']){
   const f=fixture();f.deps.env.CHECKOUT_MODE=mode;f.deps.identity=async()=>({status:200,user:{id:user}});
   f.deps.services=async()=>({store:{get:async()=>({user_id:user})}});
-  f.deps.capture=async()=>{const error=new Error('x');error.paypalDiagnostic={issues:['PAYEE_ACCOUNT_RESTRICTED'],debugId:'abc123'};throw error;};
+  f.deps.capture=async()=>{const error=new Error('x');error.paypalDiagnostic={issues:[issue],debugId:'abc123'};throw error;};
   const result=await hostedCheckout('capture',f.req,f.deps);
-  assert.equal(result.status,422);assert.equal(result.body.error,'MERCHANT_REFUSED');
-  assert.deepEqual(result.body.issues,mode==='admin'?['PAYEE_ACCOUNT_RESTRICTED']:[]);
+  // Administrators keep the exact code; a customer never reads "compliance violation" as their own fault.
+  assert.equal(result.status,422);assert.equal(result.body.error,mode==='admin'&&issue==='COMPLIANCE_VIOLATION'?'PAYPAL_COMPLIANCE_VIOLATION':'MERCHANT_REFUSED');
+  assert.deepEqual(result.body.issues,mode==='admin'?[issue]:[]);
  }
 });
 test('pending reasons are shown to admins only',async()=>{

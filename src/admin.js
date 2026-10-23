@@ -77,7 +77,8 @@ async function fetchOrders(current,quiet){
    $('paid').textContent=euro(orders.filter(o=>o.paypal_capture_id&&o.state!=='awaiting_payment').reduce((sum,o)=>sum+kept(o),0));
    $('attention').textContent=orders.filter(o=>['review','reserving','completing','sending'].includes(o.state)).length;
    for(const o of orders){const tr=document.createElement('tr');
-    for(const text of [numericDateTime(o.created_at),o.customer_email,products.get(o.product_id)?.title||o.product_id,euro(o.amount,o.currency)]){const td=document.createElement('td');td.textContent=text;tr.append(td);}
+    // The title stored with the order is the plan that was bought, even after the catalog renames or drops it.
+    for(const text of [numericDateTime(o.created_at),o.customer_email,o.product_title||products.get(o.product_id)?.title||o.product_id,euro(o.amount,o.currency)]){const td=document.createElement('td');td.textContent=text;tr.append(td);}
     const status=document.createElement('td');status.append(badge(stateLabel(o),stateKind(o)));
     for(const text of paymentBadges(o))status.append(' ',badge(text,'bad'));
     tr.append(status);
@@ -106,11 +107,11 @@ function showOrder(o){
  $('order-title').textContent=o?'Detajet e porosisë':'Porosia nuk u gjet';document.title='MOBIALO · '+$('order-title').textContent;
  if(!o)return;
  const product=products.get(o.product_id),time=numericDateTime;
- if(product){const name=document.createElement('strong'),specs=[product.dataAmount,product.dataUnit,product.validityHours?product.validityHours/24+' ditë':''].filter(Boolean).join(' / ');name.textContent=product.title;$('order-product').append(name,specs?' · '+specs:'');}
+ if(product||o.product_title){const name=document.createElement('strong'),specs=product?[product.dataAmount,product.dataUnit,product.validityHours?product.validityHours/24+' ditë':''].filter(Boolean).join(' / '):'';name.textContent=o.product_title||product.title;$('order-product').append(name,specs?' · '+specs:'');}
  const groups=[
-  ['Porosia',[['Data',time(o.created_at)],['Statusi',[badge(stateLabel(o),stateKind(o))]],['Shuma',euro(o.amount,o.currency)],['Email',o.customer_email],['Gjuha',o.language],['ID MOBIALO',o.id]]],
+  ['Porosia',[['Data',time(o.created_at)],['Statusi',[badge(stateLabel(o),stateKind(o))]],['Shuma',euro(o.amount,o.currency)],['Email',o.customer_email],['Blerësi',o.user_id?'Me llogari':'Vizitor (pa llogari)'],['Gjuha',o.language],['ID MOBIALO',o.id]]],
   ['Pagesa',[['Porosia PayPal',o.paypal_order_id],['Pagesa PayPal',o.paypal_capture_id],['Statusi i pagesës',paymentBadges(o).map(text=>badge(text,'bad'))],['Shuma e rimbursuar',o.refunded_amount==null?'':euro(o.refunded_amount,o.currency)],['Kontestimi',disputeLabel(o)],['Përditësimi i pagesës',time(o.payment_updated_at)]]],
-  ['Dërgimi',[['ID e paketës',o.product_id],['Referenca e eSIM-it',o.provider_order_id],['ID e emailit',o.email_id]]]
+  ['Dërgimi',[['ID e paketës',o.product_id],['Referenca e eSIM-it',o.provider_order_id],['Emaili i konfirmimit',o.confirmation_email_id],['ID e emailit',o.email_id]]]
  ];
  for(const [title,fields] of groups){
   const card=document.createElement('section'),heading=document.createElement('h2'),list=document.createElement('dl');card.className='detail-card';heading.textContent=title;

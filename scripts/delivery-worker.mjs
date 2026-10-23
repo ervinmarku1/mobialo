@@ -8,7 +8,7 @@ import {saveSetting} from './app-settings.mjs';
 
 export function recoveryErrorCode(error){
   const message=error?.message||'';
-  if(/^(LIVE_PAYMENT_REQUIRED|PAYPAL_AUTH_FAILED|DELIVERY_UPSTREAM_[1-5][0-9]{2}|DELIVERY_NOT_CONFIGURED:(SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|PAYPAL_CLIENT_ID|PAYPAL_CLIENT_SECRET|RESEND_API_KEY|MOBIMATTER_MERCHANT_ID|MOBIMATTER_API_KEY))$/.test(message))return message;
+  if(/^(LIVE_PAYMENT_REQUIRED|PAYPAL_AUTH_FAILED|DELIVERY_UPSTREAM_[1-5][0-9]{2}(:[a-z_]{1,60})?|EMAIL_STATUS_UNKNOWN|ESIM_NOT_READY|INVALID_QR|PROVIDER_ORDER_UNKNOWN|PROVIDER_ORDER_MISMATCH|DELIVERY_NOT_CONFIGURED:(SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|PAYPAL_CLIENT_ID|PAYPAL_CLIENT_SECRET|RESEND_API_KEY|MOBIMATTER_MERCHANT_ID|MOBIMATTER_API_KEY))$/.test(message))return message;
   if(error?.name==='TimeoutError')return 'UPSTREAM_TIMEOUT';
   if(['EACCES','EPERM','ENOENT','ENOSPC','ERR_INVALID_URL'].includes(error?.code))return error.code;
   if(['ENOTFOUND','ECONNREFUSED','ECONNRESET','ETIMEDOUT'].includes(error?.cause?.code))return error.cause.code;
@@ -81,10 +81,12 @@ export async function recoverDeliveries(services,{signal,deadline,report=()=>{},
           if(phase==='work')counts.workDone++;
         }catch(error){
           if(error.message==='PAYMENT_NOT_VERIFIED')counts.waiting++;
+          // A read cut short by the sweep signal ends the sweep for the next one; it is not this row's failure.
+          else if(signal?.aborted)return halt(phase);
           else{
             counts.failed++;
-            // Never log upstream bodies, customer data or activation credentials.
-            report({id:row.id,state:row.state,outcome:'retry_or_review'});
+            // Never log upstream bodies, customer data or activation credentials: only a safe code.
+            report({id:row.id,state:row.state,outcome:'retry_or_review',code:recoveryErrorCode(error)});
           }
         }
       }

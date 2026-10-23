@@ -16,9 +16,15 @@ import {paypalFailure} from './live-checkout.mjs';
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
 const port = Number(process.env.PORT || 3000);
 const types = {'.svg':'image/svg+xml','.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8'};
+// .env.local holds the live PayPal and production Supabase credentials. Unless ALLOW_LOCAL_LIVE=1, the local preview
+// refuses every route that could take money or change production data; pages and the catalog keep working.
+let localEnv={};try{localEnv=parseEnv(await readFile(new URL('../.env.local',import.meta.url),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
+const liveLocked=({...localEnv,...process.env}).PAYPAL_ENV==='live'&&process.env.ALLOW_LOCAL_LIVE!=='1';
+const lockedRoute=pathname=>liveLocked&&(pathname.startsWith('/api/admin/')||['/api/paypal/create','/api/paypal/capture','/api/paypal/webhook'].includes(pathname));
 http.createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
+    if(lockedRoute(pathname)){response.writeHead(403,{'Content-Type':'application/json','Cache-Control':'no-store'});response.end(JSON.stringify({error:'LOCAL_LIVE_BLOCKED'}));return;}
     if(pathname==='/api/admin/access'){
       response.setHeader('Content-Type','application/json');response.setHeader('Cache-Control','private, no-store');response.setHeader('Vary','Authorization');
       if(!['localhost','127.0.0.1'].some(host=>request.headers.host===`${host}:${port}`)){response.writeHead(403);response.end('{}');return;}

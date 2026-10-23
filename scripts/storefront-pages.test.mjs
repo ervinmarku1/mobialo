@@ -489,6 +489,15 @@ async function runClient(html,options){
   return client;
 }
 
+test('a long list grows by twenty plans per "Show more", with focus on the first new one',async()=>{
+  const many=catalog(Array.from({length:45},(_,i)=>product('al-long-'+i,{title:'Albania '+i,price:4+i,countries:['AL']})));
+  const client=await runClient(page('/esim/albania',many).body);
+  assert.equal(client.visible().length,10);assert.equal(client.more.hidden,false);
+  client.fire(client.more,'click');
+  assert.equal(client.visible().length,30);assert.equal(client.more.textContent,'Show more (15)');assert.equal(client.focused()?.textContent,'Albania 10');
+  client.fire(client.more,'click');
+  assert.equal(client.visible().length,45);assert.equal(client.more.hidden,true);assert.equal(client.focused()?.textContent,'Albania 30');
+});
 test('"Show more" reveals the rest in place and moves focus to the first new plan; a filter or sort starts compact again',async()=>{
   const many=catalog([...Array.from({length:13},(_,i)=>product('al-'+i,{title:'Albania '+i,price:4+i,countries:['AL'],dataAmount:String(i+1)})),product('region',{title:'Balkans',price:1,countries:['AL','XK'],regions:['Europe']})]);
   const client=await runClient(page('/esim/albania',many).body);

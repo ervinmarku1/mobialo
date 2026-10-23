@@ -274,18 +274,26 @@ test('the success text promises only what the delivery email contains, in every 
 });
 
 // payment.html imports customer-session.js before payment.js, so the session promise already exists.
-async function paymentPage(session,body){
-  const status={textContent:'',style:{}},retry={hidden:true,addEventListener(){}},requests=[];
+async function paymentPage(session,body,{ok=true}={}){
+  const status={textContent:'',style:{},replaceChildren(...nodes){status.nodes=nodes;status.textContent=nodes.map(node=>typeof node==='string'?node:node.textContent).join('');}},retry={hidden:true,addEventListener(){}},requests=[];
   const code=(await readFile(new URL('../dist/payment.js',import.meta.url),'utf8')).replace("import './customer-session.js';",'');
   vm.runInContext(code,vm.createContext({
     window:{MobialoLocale:{ready:Promise.resolve('en')},mobialoCustomerSession:session},URLSearchParams,
     location:{search:'?state='+state+'&token=remote',pathname:'/payment.html'},history:{replaceState(){}},
-    document:{getElementById:id=>id==='payment-status'?status:retry},
-    fetch:async(path,options)=>{requests.push(JSON.parse(JSON.stringify({path,headers:options.headers,body:JSON.parse(options.body)})));return {ok:true,status:200,json:async()=>body};}
+    document:{getElementById:id=>id==='payment-status'?status:retry,createElement:tag=>({tag})},
+    fetch:async(path,options)=>{requests.push(JSON.parse(JSON.stringify({path,headers:options.headers,body:JSON.parse(options.body)})));return {ok,status:ok?200:401,json:async()=>body};}
   }));
   for(let i=0;i<50&&(!status.textContent||status.textContent.startsWith('Verifying'));i++)await new Promise(resolve=>setTimeout(resolve,0));
-  return {status:status.textContent,requests};
+  return {status:status.textContent,nodes:status.nodes,requests};
 }
+test('the payment page links the sign-in and 2FA pages instead of printing their address',async()=>{
+  for(const [error,path,text] of [['SIGN_IN_REQUIRED','/sign-in','Sign in at https://www.mobialo.eu/sign-in in this browser, then retry here.'],['MFA_REQUIRED','/admin','Verify 2FA at https://www.mobialo.eu/admin in another tab, then retry here.']]){
+    const page=await paymentPage(Promise.resolve(null),{error},{ok:false});
+    assert.equal(page.status,text);
+    const link=page.nodes[1];
+    assert.deepEqual({tag:link.tag,href:link.href,target:link.target,rel:link.rel},{tag:'a',href:path,target:'_blank',rel:'noopener'});
+  }
+});
 test('the payment page verifies a guest order without a session and shows the delivery-email copy',async()=>{
   const unavailable=Promise.reject(Error('AUTH_UNAVAILABLE'));unavailable.catch(()=>{});
   const body={status:'COMPLETED',environment:'live',amount:'4.19',currency:'EUR',emailAccepted:false,reference:'remote'};

@@ -9,7 +9,7 @@
     "api/paypal/create.mjs": {"maxDuration": 180},
     "api/paypal/capture.mjs": {"maxDuration": 180},
     "api/paypal/webhook.mjs": {"maxDuration": 60},
-    "api/worker/sweep.mjs": {"maxDuration": 60},
+    "api/worker/sweep.mjs": {"maxDuration": 120, "includeFiles": "dist/{terms.js,delivery-refunds.js}"},
     "api/store.mjs": {"maxDuration": 30, "includeFiles": "dist/{storefront-core.js,country-names.js,plan-translations.js,region-icons.js,catalog-filters.js,catalog-preview.json}"}
   },
   "redirects": [

@@ -1,3 +1,5 @@
+-- PRODUCTION ONLY: the job URL below is hard-coded to https://www.mobialo.eu. Edit it before running this
+-- file on any other Supabase project, or that project will call the production sweep.
 -- Delivery worker without a separate server: pg_cron calls the Vercel sweep endpoint every
 -- minute (https://www.mobialo.eu/api/worker/sweep). Runs after 20261022150000_app_settings.sql.
 -- The secrets live in Supabase Vault and are created separately, never in this file:

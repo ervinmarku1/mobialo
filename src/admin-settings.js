@@ -53,7 +53,10 @@ const when=value=>numericDateTime(value)||'—';
 export function workerDetails(worker={},status={}){
  const counts=[['checked','kontrolluar'],['sent','dërguar'],['waiting','në pritje'],['review','për kontroll'],['failed','dështuar']].filter(([key])=>Number.isFinite(worker[key])).map(([key,label])=>worker[key]+' '+label).join(' · ');
  const source=Object.hasOwn(SOURCES,worker.source)?SOURCES[worker.source]:cleanCode(worker.source),stage=cleanCode(worker.stage);
- return [worker.at?'Raportimi i fundit: '+when(worker.at):'Nuk ka raportuar kurrë.',worker.ok===false&&'Gabim: '+(cleanCode(worker.code)||'pa kod')+(stage?' (hapi: '+stage+')':''),counts&&'Cikli i fundit: '+counts,'Email: '+(status.email===true?'OK':'Mungon'),source&&'Burimi: '+source].filter(Boolean);
+ // A failed paid order names its code ('Porosia: DELIVERY_UPSTREAM_429:rate_limit_exceeded'); documents tells whether
+ // order confirmations carry the accepted Terms and Delivery & refund policy.
+ const failure=cleanCode(worker.failure);
+ return [worker.at?'Raportimi i fundit: '+when(worker.at):'Nuk ka raportuar kurrë.',worker.ok===false&&'Gabim: '+(cleanCode(worker.code)||(failure?'porosia: '+failure:'pa kod'))+(stage?' (hapi: '+stage+')':''),counts&&'Cikli i fundit: '+counts,'Email: '+(status.email===true?'OK':'Mungon'),typeof worker.documents==='boolean'&&'Dokumentet ligjore te konfirmimi: '+(worker.documents?'OK':'Mungojnë'),source&&'Burimi: '+source].filter(Boolean);
 }
 function el(tag,props={},...children){const node=Object.assign(document.createElement(tag),props);node.append(...children);return node;}
 const button=(text,onclick,className='')=>el('button',{type:'button',textContent:text,className,onclick});

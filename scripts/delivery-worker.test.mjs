@@ -32,7 +32,7 @@ function fixture(overrides={}){
       calls.push(method+' '+path);
       return path==='/order'?{orderId:'provider'}:details;
     },
-    send:async()=>{calls.push('email');return {id:'email'};}
+    send:async(body,key)=>{calls.push(String(key).startsWith('confirmation/')?'confirmation '+key:'email');return {id:'email'};}
   };
   return {services,calls,row:()=>row};
 }
@@ -43,6 +43,8 @@ test('restart discovers a completed payment without browser callback and sends o
   assert.equal((await recoverDeliveries(f.services)).sent,0);
   assert.equal(f.calls.filter(v=>v==='POST /order').length,1);
   assert.equal(f.calls.filter(v=>v==='email').length,1);
+  assert.equal(f.calls.filter(v=>v.startsWith('confirmation')).length,1);
+  assert.match(f.calls.find(v=>v.startsWith('confirmation')),/^confirmation confirmation\/order\/[0-9a-f]{16}$/);
 });
 
 test('uncaptured or mismatched payment never provisions',async()=>{
@@ -107,6 +109,8 @@ test('concurrent workers cannot purchase or send twice',async()=>{
   await Promise.all([recoverDeliveries(f.services),recoverDeliveries(f.services)]);
   assert.equal(f.calls.filter(v=>v==='POST /order').length,1);
   assert.equal(f.calls.filter(v=>v==='email').length,1);
+  // The confirmation is not claimed: concurrent sends share one idempotency key, so Resend delivers it once.
+  assert.equal(new Set(f.calls.filter(v=>v.startsWith('confirmation'))).size,1);
 });
 
 test('failed item does not block later pages and the next sweep starts from the beginning',async()=>{

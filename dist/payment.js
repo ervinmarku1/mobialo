@@ -15,6 +15,8 @@ try{const client=await window.mobialoCustomerSession;const session=client&&(awai
 }
 const debug=data=>typeof data.debugId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.debugId)?' · Debug ID: '+data.debugId:'';
 const reference=value=>t(' Referenca: ',' Reference: ',' Riferimento: ')+value;
+// The page to visit is a real link; a new tab keeps this payment check open for the retry.
+const linked=(before,path,after)=>{const a=document.createElement('a');a.href=path;a.target='_blank';a.rel='noopener';a.textContent='https://www.mobialo.eu'+path;status.replaceChildren(before,a,after);};
 history.replaceState(null,'',location.pathname);
 async function check(){
 retry.hidden=true;
@@ -41,8 +43,8 @@ if(['MERCHANT_REFUSED','PAYPAL_COMPLIANCE_VIOLATION'].includes(data.error)){stat
 if(data.error==='PAYMENT_APPROVAL_REQUIRED'){status.textContent=t('PayPal nuk e ka regjistruar miratimin e kësaj porosie. Pagesa nuk u arkëtua. Kthehu te dyqani dhe provo përsëri.','PayPal has not recorded approval for this order. Payment was not captured. Return to the shop and try again.','PayPal non ha registrato l’approvazione di questo ordine. Il pagamento non è stato acquisito. Torna al negozio e riprova.')+reference(token);return;}
 // Fixable or unknown outcomes keep the retry button.
 retry.hidden=false;
-if(['MFA_REQUIRED','MFA_SETUP_REQUIRED'].includes(data.error)){status.textContent=t('Verifiko 2FA te https://www.mobialo.eu/admin në një skedë tjetër dhe pastaj riprovo këtu.','Verify 2FA at https://www.mobialo.eu/admin in another tab, then retry here.','Verifica la 2FA su https://www.mobialo.eu/admin in un’altra scheda, poi riprova qui.');return;}
-if(data.error==='SIGN_IN_REQUIRED'){status.textContent=t('Hyr në llogari te https://www.mobialo.eu/sign-in në këtë shfletues dhe pastaj riprovo këtu.','Sign in at https://www.mobialo.eu/sign-in in this browser, then retry here.','Accedi su https://www.mobialo.eu/sign-in in questo browser, poi riprova qui.');return;}
+if(['MFA_REQUIRED','MFA_SETUP_REQUIRED'].includes(data.error)){linked(t('Verifiko 2FA te ','Verify 2FA at ','Verifica la 2FA su '),'/admin',t(' në një skedë tjetër dhe pastaj riprovo këtu.',' in another tab, then retry here.',' in un’altra scheda, poi riprova qui.'));return;}
+if(data.error==='SIGN_IN_REQUIRED'){linked(t('Hyr në llogari te ','Sign in at ','Accedi su '),'/sign-in',t(' në këtë shfletues dhe pastaj riprovo këtu.',' in this browser, then retry here.',' in questo browser, poi riprova qui.'));return;}
 status.textContent=t('Statusi nuk u verifikua. Mos paguaj përsëri; riprovo verifikimin.','Status could not be verified. Do not pay again; retry verification.','Stato non verificato. Non pagare di nuovo; riprova la verifica.')+reference(token)+codes(data);
 }
 retry.addEventListener('click',check);check();

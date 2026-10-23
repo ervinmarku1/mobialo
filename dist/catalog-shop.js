@@ -49,20 +49,21 @@ if(data.page==='hub'&&search){
   document.querySelector('.header-search')?.addEventListener('click',event=>{event.preventDefault();focus();});
 }
 
-// Destination pages: the first plans are visible, "Show more" reveals the rest in place. Filters and sort reorder the
-// server-rendered cards with catalog-filters.js (a country's own plans first under the default order).
+// Destination pages: the first plans are visible, each "Show more" reveals the next twenty in place, so a long list
+// stays short enough to keep the sort and filters in reach. Filters and sort reorder the server-rendered cards with
+// catalog-filters.js (a country's own plans first under the default order).
 const list=document.getElementById('plan-list');
 if(list&&typeof MobialoCatalogFilter==='function'){
   const cards=[...list.children],more=document.getElementById('show-more'),count=document.getElementById('shop-count'),empty=document.getElementById('shop-empty'),active=document.getElementById('shop-active');
   const plans=cards.map(card=>({card,title:card.querySelector('h3').textContent,price:Number(card.dataset.price),provider:card.dataset.provider,countries:card.dataset.countries.split(' ').filter(Boolean),dataAmount:card.dataset.amount||null,dataUnit:card.dataset.unit||null,validityHours:card.dataset.hours?Number(card.dataset.hours):null}));
   const selects=[...document.querySelectorAll('[data-shop-filter]')];
-  let filters={},expanded=false;
+  let filters={},shown=S.PAGE_SIZE;
   function render(){
     const results=MobialoCatalogFilter(plans,filters,data.home||null,S.coveredCodes),position=new Map(results.map(({index},at)=>[index,at]));
     const order=[...results.map(({index})=>cards[index]),...cards.filter((_,index)=>!position.has(index))];
     if(order.some((card,index)=>list.children[index]!==card))list.append(...order);
-    cards.forEach((card,index)=>{card.hidden=!position.has(index)||(!expanded&&position.get(index)>=S.PAGE_SIZE);});
-    const rest=expanded?0:Math.max(0,results.length-S.PAGE_SIZE);
+    cards.forEach((card,index)=>{card.hidden=!position.has(index)||position.get(index)>=shown;});
+    const rest=Math.max(0,results.length-shown);
     count.textContent=S.plansLabel(results.length,lang);empty.hidden=results.length>0;
     more.hidden=!rest;more.textContent=`${more.dataset.label} (${rest})`;
     active.replaceChildren(...selects.filter(select=>select.dataset.shopFilter!=='sort'&&select.value).map(select=>{
@@ -72,12 +73,12 @@ if(list&&typeof MobialoCatalogFilter==='function'){
     }));
   }
   // A new filter or sort starts compact again.
-  const read=()=>{filters=Object.fromEntries(selects.filter(select=>select.value).map(select=>[select.dataset.shopFilter,select.value]));expanded=false;};
+  const read=()=>{filters=Object.fromEntries(selects.filter(select=>select.value).map(select=>[select.dataset.shopFilter,select.value]));shown=S.PAGE_SIZE;};
   selects.forEach(select=>select.addEventListener('change',()=>{read();render();}));
   document.getElementById('shop-reset')?.addEventListener('click',()=>{selects.forEach(select=>{select.value='';});read();render();});
   active.addEventListener('click',event=>{const chip=event.target.closest('[data-remove-filter]');if(!chip)return;const select=selects.find(s=>s.dataset.shopFilter===chip.dataset.removeFilter);select.value='';read();render();(active.querySelector('button')||select).focus();});
   // The newly shown plans appear below the ones already visible; focus moves to the first of them.
-  more.addEventListener('click',()=>{expanded=true;render();list.children[S.PAGE_SIZE]?.querySelector('a')?.focus();});
+  more.addEventListener('click',()=>{const first=shown;shown+=2*S.PAGE_SIZE;render();list.children[first]?.querySelector('a')?.focus();});
   // The browser may restore filter values on back navigation; the server rendered the unfiltered list.
   read();if(Object.keys(filters).length)render();
 }

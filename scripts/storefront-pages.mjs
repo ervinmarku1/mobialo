@@ -83,9 +83,9 @@ export function createStorefront(context=loadStorefront()){
   <meta name="description" content="${esc(description)}">${robots?`
   <meta name="robots" content="${robots}">`:''}
   ${head}
-  <link rel="icon" type="image/svg+xml" href="/brand-mark.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://flagcdn.com">${page==='plan'?'<link rel="preconnect" href="https://www.paypal.com"><link rel="preconnect" href="https://www.paypalobjects.com">':''}
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap">
+  <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/brand-mark.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://flagcdn.com">${page==='plan'?'<link rel="preconnect" href="https://www.paypal.com"><link rel="preconnect" href="https://www.paypalobjects.com">':''}
+  <link rel="preload" href="/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/quick-links.css">
   <link rel="stylesheet" href="/styles.css?v=pages-1">
   <noscript><style>.shop-cards>[hidden]{display:flex!important}.show-more-row,.shop-filters,.shop-toolbar label{display:none!important}</style></noscript>

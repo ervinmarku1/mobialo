@@ -7,6 +7,11 @@ test('server price wins and order is persisted before PayPal creation',async()=>
  const services={store:{insert:async row=>{saved=row;calls.push('save');},transition:async(id,state,patch)=>{saved={...saved,...patch};calls.push('link');return saved;}},paypal:async(id,method,body)=>{calls.push('paypal');assert.equal(body.purchase_units[0].amount.value,'4.19');assert.equal(body.application_context.shipping_preference,'NO_SHIPPING');return {id:'remote'};}};
  const result=await createLiveOrder({productId:'plan',email:'customer@example.com',amount:0.01,language:'sq'},services,[product]);
  assert.deepEqual(calls,['save','paypal','link']);assert.equal(result.state,saved.id);assert.equal(saved.customer_email,'customer@example.com');assert.equal(saved.paypal_order_id,'remote');
+ // The plan's characteristics as sold are kept for the order confirmation.
+ assert.deepEqual(saved.product_details,{dataAmount:null,dataUnit:null,validityHours:null,countries:[]});
+ const rich={...product,dataAmount:'5',dataUnit:'GB',validityHours:720,countries:['AL','XK','bad',7]};
+ await createLiveOrder({productId:'plan',email:'customer@example.com',language:'sq'},services,[rich]);
+ assert.deepEqual(saved.product_details,{dataAmount:'5',dataUnit:'GB',validityHours:720,countries:['AL','XK']});
 });
 test('invalid email, test plans and identity verification products cannot create payments',async()=>{
  const services={};

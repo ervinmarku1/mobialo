@@ -206,6 +206,18 @@ test('recurring supplier terms are translated for Albanian and Italian shoppers'
   assert.equal(context.MobialoPlanText('The eSIM will expire if not activated within 1 month of purchase.','sq'),'eSIM-i skadon nëse nuk aktivizohet brenda 1 muaji nga blerja.');
   assert.equal(context.MobialoPlanText('The eSIM will expire if not activated within 2 months of purchase.','it'),'La eSIM scade se non viene attivata entro 2 mesi dall’acquisto.');
   assert.equal(context.MobialoPlanText('Unknown supplier sentence.','it'),'Unknown supplier sentence.');
+  // Sentences that differ only in their numbers keep those numbers exactly.
+  assert.equal(context.MobialoPlanText('3GB/day at 20Mbps high speed. Up to 1 Mbps speed limit afterwards, resets every 24 hours. Fair usage policy applies.','sq'),'3 GB në ditë me shpejtësi të lartë 20 Mbps. Më pas shpejtësia kufizohet deri në 1 Mbps; kufiri rinis çdo 24 orë. Zbatohet politika e përdorimit të drejtë.');
+  assert.equal(context.MobialoPlanText('5GB/day at unrestricted high speed. Up to 200 kbps speed limit afterwards, resets every 24 hours. Fair usage policy applies.','it'),'5 GB al giorno ad alta velocità senza limiti. Poi la velocità è limitata fino a 200 kbps; il limite si azzera ogni 24 ore. Si applica la politica di utilizzo corretto.');
+  assert.equal(context.MobialoPlanText('No daily limits. Speed restricted to 2 Mbps if total consumption exceeds 90 GB','sq'),'Pa kufij ditorë. Shpejtësia kufizohet në 2 Mbps nëse konsumi total kalon 90 GB.');
+  assert.equal(context.MobialoPlanText('Usage must start within 1 day from purchase. Please do not buy this product now if your trip is further ahead.','it'),'L’utilizzo deve iniziare entro 1 giorno dall’acquisto. Non acquistare ora questo prodotto se il tuo viaggio è più avanti.');
+  assert.equal(context.MobialoPlanText('This eSIM comes with USA (+1) phone number and includes 50 minutes and 50 SMS. Minutes allowance can be used to receive calls and make domestic calls to USA only.','sq'),'Ky eSIM vjen me numër telefoni të SHBA-së (+1) dhe përfshin 50 minuta dhe 50 SMS. Minutat mund të përdoren për të marrë thirrje dhe për thirrje brenda vendit vetëm drejt SHBA-së.');
+  // A changed condition is not matched by a pattern, so it stays in the supplier's words.
+  assert.equal(context.MobialoPlanText('5GB/day at unrestricted high speed. Up to 200 kbps speed limit afterwards, resets every 12 hours. Fair usage policy applies.','sq'),'5GB/day at unrestricted high speed. Up to 200 kbps speed limit afterwards, resets every 12 hours. Fair usage policy applies.');
+  // Every supplier text the bundled catalog shows on plan pages has both translations.
+  const catalog=JSON.parse(await read('dist/catalog-preview.json'));
+  for(const plan of catalog.products)for(const text of [plan.details?.heading,plan.details?.description,...(plan.details?.items||[]),plan.features?.speed,plan.features?.activation])
+    if(typeof text==='string'&&/[a-z]{3}/i.test(text))for(const language of ['sq','it'])assert.notEqual(context.MobialoPlanText(text,language),text,language+': '+text);
   assert.equal(context.MobialoPlanText('Package activates upon purchase.','en'),'Package activates upon purchase.');
 });
 
@@ -300,7 +312,7 @@ async function legalCopy(file){
   vm.runInContext(source,context);return context.copy;
 }
 test('legal pages are indexable, listed in the sitemap, versioned like the checkout consent and complete in SQ, EN and IT',async()=>{
-  const version=(await read('scripts/hosted-checkout.mjs')).match(/TERMS_VERSION='v(\d+\.\d+)-(\d{4})-(\d{2})-(\d{2})'/);
+  const version=(await read('scripts/terms-version.mjs')).match(/TERMS_VERSION='v(\d+\.\d+)-(\d{4})-(\d{2})-(\d{2})'/);
   assert.ok(version,'TERMS_VERSION');
   const sitemap=await renderedSitemap();
   for(const page of ['terms','delivery-refunds','privacy','about']){

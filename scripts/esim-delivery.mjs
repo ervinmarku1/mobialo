@@ -1,8 +1,19 @@
-import {renderDelivery} from './delivery-template.mjs';
+import {renderDelivery,renderConfirmation} from './delivery-template.mjs';
+import {legalDocuments} from './legal-documents.mjs';
 import {readFile} from 'node:fs/promises';
 import {parseEnv} from 'node:util';
 import {createHash} from 'node:crypto';
 import {MAX_OPEN_ORDERS_PER_IP,MAX_GUEST_ORDERS_PER_HOUR} from './checkout-limits.mjs';
+
+// The accepted Terms and Delivery & refund policy travel as plain-text attachments. If this deployment cannot read
+// them, the confirmation still goes out (consent, seller, plan, total and links) and the reason is logged.
+export function confirmationEmail(order,{documents=legalDocuments,log=console}={}){
+  let attached=[];
+  try{attached=documents(order.language,order.terms_version);}
+  catch(error){log.error('Legal documents not attached',JSON.stringify({order:order.id,code:/^[A-Z][A-Z0-9_]{0,60}$/.test(error?.message||'')?error.message:'LEGAL_DOCUMENTS_FAILED'}));}
+  return {from:'MOBIALO <support@mobialo.eu>',to:[order.customer_email],...renderConfirmation(order,attached.map(d=>d.title)),
+    ...(attached.length?{attachments:attached.map(d=>({filename:d.filename,content:Buffer.from(d.text,'utf8').toString('base64'),content_type:'text/plain; charset=utf-8'}))}:{})};
+}
 
 export function deliveryEmail(order,details){
   const fields=new Map((details.orderLineItem?.lineItemDetails||[]).map(v=>[v.name,v.value]));
@@ -20,7 +31,7 @@ export function deliveryEmail(order,details){
 const STEP_MARGIN=15000;
 // Payment flags recorded by the verified webhook that forbid provisioning (payment_status column).
 export const PAYMENT_ISSUES=['refunded','partially_refunded','reversed','denied','disputed'];
-export async function fulfillDelivery(id,{store,paypal,mobimatter,send},{deadline=Infinity}={}){
+export async function fulfillDelivery(id,{store,paypal,mobimatter,send,alert},{deadline=Infinity}={}){
   const late=()=>deadline-Date.now()<STEP_MARGIN;
   let order=await store.get(id);
   if(!order)throw Error('ORDER_NOT_FOUND');
@@ -45,7 +56,37 @@ export async function fulfillDelivery(id,{store,paypal,mobimatter,send},{deadlin
   const stop=async state=>({state:await store.transition(id,state,{state:'review'})?'review':'busy'});
   if(order?.state==='paid'){
     if(PAYMENT_ISSUES.includes(order.payment_status))return stop('paid');
+    // An order with a supplier order was bought before (e.g. a review row moved back to 'paid'): never buy it again.
+    if(order.provider_order_id)return stop('paid');
     if(late())return {state:'deferred'};
+    // The order confirmation (Consumer Rights Directive Art. 8(7)) goes out before the eSIM is bought, as the withdrawal
+    // exception requires (Art. 16(m)(iii)). A failed send leaves the order paid for the next sweep; Resend's idempotency
+    // key drops the duplicate of a send whose answer was lost. The key includes a digest of the message, so a corrected
+    // address or a new template is a new send; a 409 can then only be a concurrent send of the same message, which the
+    // next sweep records. If Resend refuses the message (400, 422) while it carries the documents, the confirmation is
+    // sent at once without them; refused again, the address is the problem and the eSIM email would be refused too, so
+    // nothing is bought: the order waits for review and the owner is told.
+    if(!order.confirmation_email_id){
+      const refused=error=>/^DELIVERY_UPSTREAM_4(00|22)(:|$)/.test(error?.message||'');
+      const attempt=email=>{const digest=createHash('sha256').update(JSON.stringify(email)).digest('hex').slice(0,16);return send(email,'confirmation/'+id+'/'+digest).then(sent=>({sent,digest}),error=>({error,digest}));};
+      let email=confirmationEmail(order),result=await attempt(email);
+      if(refused(result.error)&&email.attachments){
+        console.warn('Confirmation refused with the legal documents; sending it without them',JSON.stringify({order:id,code:result.error.message}));
+        email=confirmationEmail(order,{documents:()=>[]});result=await attempt(email);
+      }
+      if(result.error){
+        if(/^DELIVERY_UPSTREAM_409(:|$)/.test(result.error.message))return {state:'busy'};
+        if(!refused(result.error))throw result.error;
+        const stopped=await stop('paid');
+        if(stopped.state==='review')await refusedAlert(alert,order,result.error.message,result.digest);
+        return stopped;
+      }
+      const sent=result.sent;
+      if(!sent?.id)throw Error('EMAIL_STATUS_UNKNOWN');
+      order=await store.transition(id,'paid',{confirmation_email_id:sent.id});
+      if(!order)return {state:'busy'};
+      if(late())return {state:'deferred'};
+    }
     order=await store.transition(id,'paid',{state:'reserving'},{clean:true});if(!order)return {state:'busy'};
     const reserved=await mobimatter('POST','/order',{productId:order.product_id,productCategory:'esim_realtime',label:order.id});
     if(!reserved.orderId)throw Error('PROVIDER_ORDER_UNKNOWN');
@@ -79,6 +120,15 @@ export async function fulfillDelivery(id,{store,paypal,mobimatter,send},{deadlin
     return {state:'sent'};
   }
   return {state:order?.state||'busy'};
+}
+
+// Best effort, like the webhook alerts; the admin panel counts the order in review either way. No customer data in the
+// message: the owner opens the order page. The key follows the refused message, so a later refusal alerts again.
+async function refusedAlert(alert,order,code,digest){
+  if(!alert)return;
+  const text=['Resend refuzoi emailin e konfirmimit të porosisë (adresa ose mesazhi), prandaj eSIM-i nuk u ble dhe porosia kaloi për kontroll.','Pagesa është marrë: kontrollo adresën e emailit te porosia dhe kontakto klientin, ose rimburso pagesën në PayPal.','Porosia MOBIALO: '+order.id,'Porosia PayPal: '+order.paypal_order_id,'Shuma: '+Number(order.amount).toFixed(2)+' '+(order.currency||'EUR'),'Kodi: '+code,'https://www.mobialo.eu/admin/orders/'+encodeURIComponent(order.id)].join('\n');
+  try{await alert({from:'MOBIALO <support@mobialo.eu>',to:['support@mobialo.eu'],subject:'MOBIALO: emaili i konfirmimit u refuzua, porosia '+String(order.id).slice(0,8),text},'confirmation-refused/'+order.id+'/'+digest);}
+  catch{console.warn('Confirmation refusal alert not sent',JSON.stringify({order:order.id}));}
 }
 
 // PayPal throttles clients that fetch a new OAuth token per request. Tokens are shared by every
@@ -120,6 +170,12 @@ export async function deliveryServices({paymentOnly=false,configuration,fetcher=
         const error=new Error('DELIVERY_UPSTREAM_'+response.status);
         error.paypalDiagnostic=diagnostic;
         throw error;
+      }
+      // Resend names its refusal (validation_error, invalid_attachment, concurrent_idempotent_requests, …). Only that
+      // name is kept, never the message, which can echo the recipient's address.
+      if(new URL(url).hostname==='api.resend.com'){
+        const name=(await response.json().catch(()=>({})))?.name;
+        throw Error('DELIVERY_UPSTREAM_'+response.status+(typeof name==='string'&&/^[a-z_]{1,60}$/.test(name)?':'+name:''));
       }
       throw Error('DELIVERY_UPSTREAM_'+response.status);
     }

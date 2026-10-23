@@ -1,6 +1,6 @@
 -- Requests never grant access until explicitly approved by a superadmin API.
 begin;
-create table public.admin_access_requests (
+create table if not exists public.admin_access_requests (
  user_id uuid primary key references auth.users(id) on delete cascade,
  email text not null,
  status text not null default 'pending' check (status in ('pending','approved','rejected')),
@@ -14,5 +14,5 @@ create table public.admin_access_requests (
 alter table public.admin_access_requests enable row level security;
 revoke all on public.admin_access_requests from public, anon, authenticated;
 grant select, insert, update on public.admin_access_requests to service_role;
-create index admin_access_requests_created_idx on public.admin_access_requests(created_at desc, user_id);
+create index if not exists admin_access_requests_created_idx on public.admin_access_requests(created_at desc, user_id);
 commit;

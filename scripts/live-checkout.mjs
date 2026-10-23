@@ -47,7 +47,9 @@ export async function createLiveOrder(input,services,products,catalog=getCatalog
   await (row.client_ip_hash&&!row.user_id?services.store.reserveGuest(row):services.store.insert(row));
   const payment=await services.paypal('','POST',{intent:'CAPTURE',purchase_units:[{custom_id:id,description:('MOBIALO '+product.title).slice(0,127),amount:{currency_code:'EUR',value:amount}}],application_context:{brand_name:'MOBIALO',shipping_preference:'NO_SHIPPING',user_action:'PAY_NOW'}},id);
   if(!payment.id)throw Error('PAYPAL_REQUEST_FAILED');
-  const saved=await services.store.transition(id,'awaiting_payment',{paypal_order_id:payment.id});
+  // The plan's main characteristics as sold, for the order confirmation (the catalog may change before payment).
+  const details={dataAmount:product.dataAmount??null,dataUnit:product.dataUnit??null,validityHours:Number.isFinite(product.validityHours)?product.validityHours:null,countries:Array.isArray(product.countries)?product.countries.filter(code=>typeof code==='string'&&/^[A-Z]{2}$/.test(code)):[]};
+  const saved=await services.store.transition(id,'awaiting_payment',{paypal_order_id:payment.id,product_details:details});
   if(!saved)throw Error('ORDER_SAVE_FAILED');
   return {id:payment.id,state:id,environment:'live'};
 }

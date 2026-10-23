@@ -227,8 +227,8 @@ test('account orders list: while loading it shows three placeholder rows of the 
     }finally{page.restore();}
   }
   const css=await read('dist/account.css');
-  assert.match(css,/\.customer-layout\{min-height:100vh\}/);assert.match(css,/\.customer-order-end>span\.text-link\{display:flex;align-items:center;justify-content:flex-end;font-size:11px\}/);
-  assert.match(css,/\.customer-order-end a\{display:flex;align-items:center;justify-content:flex-end;font-size:11px\}/);
+  assert.match(css,/\.customer-layout\{min-height:100vh\}/);assert.match(css,/\.customer-order-end>span\.text-link\{display:flex;align-items:center;justify-content:flex-end;font-size:12px\}/);
+  assert.match(css,/\.customer-order-end a\{display:flex;align-items:center;justify-content:flex-end;font-size:12px\}/);
 });
 
 test('account: Albanian dates and amounts never depend on the browser having Albanian data',async()=>{

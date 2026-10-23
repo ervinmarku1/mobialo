@@ -1,7 +1,7 @@
 # MOBIALO
 
-Live eSIM shop at https://www.mobialo.eu, in Albanian and English (visitors from Italy get
-Italian automatically). It sells MobiMatter eSIMs for real money through PayPal (live).
+Live eSIM shop at https://www.mobialo.eu, in English, Albanian and Italian (pages under `/sq` and
+`/it`; the language is suggested from the visitor's country and can be changed). It sells MobiMatter eSIMs for real money through PayPal (live).
 Vercel deploys every push to `main` straight to production.
 
 ## Architecture
@@ -118,11 +118,12 @@ check required (and use Vercel preview deployments to try changes).
 ### Local development uses whatever `.env.local` points at
 
 With the production Supabase keys in `.env.local`, `npm run dev` works on the LIVE data:
-local sign-ins, orders and admin actions (Cilësimet, approvals) change the live shop. With
-`PAYPAL_ENV=live` as well, it creates real PayPal orders, and a completed local capture
-immediately buys a real eSIM and sends the email. The local server skips the hosted
-checkout gates (shop mode, admin list, 2FA, worker heartbeat, ownership check on capture);
-it listens on 127.0.0.1 only. Use `PAYPAL_ENV=sandbox` with sandbox credentials locally,
+local sign-ins change the live accounts. With `PAYPAL_ENV=live` as well, the local server
+refuses PayPal create, capture and webhook and every admin route (403 `LOCAL_LIVE_BLOCKED`),
+so it cannot take money, buy an eSIM or change Cilësimet. `ALLOW_LOCAL_LIVE=1` in the shell
+lifts that guard: then it creates real PayPal orders, a completed local capture immediately
+buys a real eSIM and sends the email, and it skips the hosted checkout gates (shop mode,
+admin list, 2FA, worker heartbeat, ownership check on capture). It listens on 127.0.0.1 only. Use `PAYPAL_ENV=sandbox` with sandbox credentials locally,
 preferably with a separate Supabase project: sandbox orders go to `esim_test_orders`, are
 limited to 100 an hour and never buy an eSIM. Set `LOCAL_COUNTRY=IT` in the shell to
 simulate an Italian visitor.
