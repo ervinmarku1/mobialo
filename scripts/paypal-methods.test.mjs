@@ -274,18 +274,29 @@ test('the success text promises only what the delivery email contains, in every 
 });
 
 // payment.html imports customer-session.js before payment.js, so the session promise already exists.
-async function paymentPage(session,body,{ok=true}={}){
+async function paymentPage(session,body,{ok=true,token}={}){
   const status={textContent:'',style:{},replaceChildren(...nodes){status.nodes=nodes;status.textContent=nodes.map(node=>typeof node==='string'?node:node.textContent).join('');}},retry={hidden:true,addEventListener(){}},requests=[];
   const code=(await readFile(new URL('../dist/payment.js',import.meta.url),'utf8')).replace("import './customer-session.js';",'');
   vm.runInContext(code,vm.createContext({
     window:{MobialoLocale:{ready:Promise.resolve('en')},mobialoCustomerSession:session},URLSearchParams,
-    location:{search:'?state='+state+'&token=remote',pathname:'/payment.html'},history:{replaceState(){}},
+    location:{search:'?state='+state+'&token='+(token||'5O190127TN364715T'),pathname:'/payment.html'},history:{replaceState(){}},
     document:{getElementById:id=>id==='payment-status'?status:retry,createElement:tag=>({tag})},
     fetch:async(path,options)=>{requests.push(JSON.parse(JSON.stringify({path,headers:options.headers,body:JSON.parse(options.body)})));return {ok,status:ok?200:401,json:async()=>body};}
   }));
   for(let i=0;i<50&&(!status.textContent||status.textContent.startsWith('Verifying'));i++)await new Promise(resolve=>setTimeout(resolve,0));
   return {status:status.textContent,nodes:status.nodes,requests};
 }
+test('a crafted payment link cannot put its own text on the page: only a real state and PayPal order id are used',async()=>{
+  for(const token of ['Your order failed. Call +1 555 0100 now','remote','5O190127TN364715T<b>'] ){
+    const page=await paymentPage(Promise.resolve(null),{status:'COMPLETED'},{token});
+    assert.deepEqual(page.requests,[]);assert.equal(page.status,'No payment to verify.');
+  }
+});
+test('the admin page never takes a session from a link (PKCE, no session detection in the URL)',async()=>{
+  const source=await readFile(new URL('../src/admin.js',import.meta.url),'utf8');
+  assert.match(source,/createClient\(config\.url,config\.publishableKey,\{auth:\{flowType:'pkce',detectSessionInUrl:false,persistSession:true,autoRefreshToken:true\}\}\)/);
+  assert.doesNotMatch(source,/createClient\(config\.url,config\.publishableKey\)/);
+});
 test('the payment page links the sign-in and 2FA pages instead of printing their address',async()=>{
   for(const [error,path,text] of [['SIGN_IN_REQUIRED','/sign-in','Sign in at https://www.mobialo.eu/sign-in in this browser, then retry here.'],['MFA_REQUIRED','/admin','Verify 2FA at https://www.mobialo.eu/admin in another tab, then retry here.']]){
     const page=await paymentPage(Promise.resolve(null),{error},{ok:false});
@@ -296,11 +307,11 @@ test('the payment page links the sign-in and 2FA pages instead of printing their
 });
 test('the payment page verifies a guest order without a session and shows the delivery-email copy',async()=>{
   const unavailable=Promise.reject(Error('AUTH_UNAVAILABLE'));unavailable.catch(()=>{});
-  const body={status:'COMPLETED',environment:'live',amount:'4.19',currency:'EUR',emailAccepted:false,reference:'remote'};
+  const body={status:'COMPLETED',environment:'live',amount:'4.19',currency:'EUR',emailAccepted:false,reference:'5O190127TN364715T'};
   for(const session of [Promise.resolve(null),unavailable,Promise.resolve({auth:{getSession:async()=>({data:{session:null},error:null})}})]){
     const page=await paymentPage(session,body);
-    assert.deepEqual(page.requests,[{path:'/api/paypal/capture',headers:{'Content-Type':'application/json'},body:{state,token:'remote'}}]);
-    assert.equal(page.status,'Payment of 4.19 EUR confirmed. You will usually receive an email at the email address of your order within a few minutes with your eSIM QR code and installation steps. Check your Spam folder too. Do not pay again. If the email does not arrive, write to support@mobialo.eu quoting the reference. Reference: remote');
+    assert.deepEqual(page.requests,[{path:'/api/paypal/capture',headers:{'Content-Type':'application/json'},body:{state,token:'5O190127TN364715T'}}]);
+    assert.equal(page.status,'Payment of 4.19 EUR confirmed. You will usually receive an email at the email address of your order within a few minutes with your eSIM QR code and installation steps. Check your Spam folder too. Do not pay again. If the email does not arrive, write to support@mobialo.eu quoting the reference. Reference: 5O190127TN364715T');
   }
   // A signed-in owner's session is still sent.
   const page=await paymentPage(Promise.resolve({auth:{getSession:async()=>({data:{session:{access_token:'token'}},error:null})}}),body);

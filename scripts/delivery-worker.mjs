@@ -39,7 +39,8 @@ export function workerHeartbeat({write=saveSetting,env,log=console,now=()=>new D
 // (reserving, sending, review) are only counted; unpaid checkouts are polled last.
 // truncated: the signal or the deadline left paid work for the next sweep.
 export async function recoverDeliveries(services,{signal,deadline,report=()=>{},progress=async()=>{}}={}){
-  const counts={checked:0,sent:0,waiting:0,review:0,failed:0,truncated:false,workDone:0};
+  // deliveryFailed: failures on rows past payment, the only ones that mean a customer waits (both health rules use it).
+  const counts={checked:0,sent:0,waiting:0,review:0,failed:0,deliveryFailed:0,truncated:false,workDone:0};
   const halt=phase=>{if(phase==='work')counts.truncated=true;return counts;};
   // A read cut short by the sweep signal ends the sweep like the signal itself, not as a failure.
   const read=async load=>{try{return await load();}catch(error){if(signal?.aborted)return null;throw error;}};
@@ -85,6 +86,7 @@ export async function recoverDeliveries(services,{signal,deadline,report=()=>{},
           else if(signal?.aborted)return halt(phase);
           else{
             counts.failed++;
+            if(row.state!=='awaiting_payment')counts.deliveryFailed++;
             // Never log upstream bodies, customer data or activation credentials: only a safe code.
             report({id:row.id,state:row.state,outcome:'retry_or_review',code:recoveryErrorCode(error)});
           }
@@ -95,6 +97,11 @@ export async function recoverDeliveries(services,{signal,deadline,report=()=>{},
   }
   return counts;
 }
+
+// The standalone worker's heartbeat follows the cron sweep's health rule (worker-sweep.mjs): a slow PayPal read of an
+// unpaid checkout never closes public checkout; a failed paid order, or paid work left without progress, does. Its
+// source tells Cilësimet that a process other than the Vercel cron is writing the heartbeat.
+export const standaloneBeat=result=>({ok:result.deliveryFailed===0&&!(result.truncated&&!result.workDone),...result,source:'standalone'});
 
 async function main(){
   const controller=new AbortController();
@@ -113,7 +120,7 @@ async function main(){
         stage='recovery';
       },report:event=>console.log(JSON.stringify(event))});
       console.log(JSON.stringify(result));
-      beat={ok:result.failed===0,...result};
+      beat=standaloneBeat(result);
       stage='health_write';
       await writeWorkerHealth(beat);
     }catch(error){

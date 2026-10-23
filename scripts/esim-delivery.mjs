@@ -88,8 +88,23 @@ export async function fulfillDelivery(id,{store,paypal,mobimatter,send,alert},{d
       if(late())return {state:'deferred'};
     }
     order=await store.transition(id,'paid',{state:'reserving'},{clean:true});if(!order)return {state:'busy'};
-    const reserved=await mobimatter('POST','/order',{productId:order.product_id,productCategory:'esim_realtime',label:order.id});
-    if(!reserved.orderId)throw Error('PROVIDER_ORDER_UNKNOWN');
+    let reserved;
+    try{reserved=await mobimatter('POST','/order',{productId:order.product_id,productCategory:'esim_realtime',label:order.id});}
+    catch(error){
+      // A rate limit created nothing: the order goes back to 'paid' for the next sweep. Any other definite refusal
+      // (4xx: balance, key, product withdrawn) also created no supplier order, so it waits for review unbought.
+      // Everything else (timeout, 5xx, 408/409) is ambiguous and stays locked in 'reserving'. The owner is told at once.
+      const status=/^DELIVERY_UPSTREAM_(\d{3})$/.exec(error?.message||'')?.[1];
+      if(status==='429'){await store.transition(id,'reserving',{state:'paid'});throw error;}
+      if(/^4\d\d$/.test(status||'')&&!['408','409','425'].includes(status)){
+        const result={state:await store.transition(id,'reserving',{state:'review'})?'review':'busy'};
+        if(result.state==='review')await lockedAlert(alert,order,error.message,'refused');
+        return result;
+      }
+      await lockedAlert(alert,order,safeCode(error),'reserving');
+      throw error;
+    }
+    if(!reserved?.orderId){await lockedAlert(alert,order,'PROVIDER_ORDER_UNKNOWN','reserving');throw Error('PROVIDER_ORDER_UNKNOWN');}
     order=await store.transition(id,'reserving',{state:'reserved',provider_order_id:reserved.orderId});
   }
   if(order?.state==='reserved'){
@@ -115,7 +130,8 @@ export async function fulfillDelivery(id,{store,paypal,mobimatter,send,alert},{d
     const email=deliveryEmail(order,details);
     if(late())return {state:'deferred'};
     order=await store.transition(id,'ready',{state:'sending'},{clean:true});if(!order)return {state:'busy'};
-    const result=await send(email,'esim/'+id);if(!result.id)throw Error('EMAIL_STATUS_UNKNOWN');
+    const result=await send(email,'esim/'+id).catch(async error=>{await lockedAlert(alert,order,safeCode(error),'sending');throw error;});
+    if(!result.id){await lockedAlert(alert,order,'EMAIL_STATUS_UNKNOWN','sending');throw Error('EMAIL_STATUS_UNKNOWN');}
     await store.transition(id,'sending',{state:'sent',email_id:result.id});
     return {state:'sent'};
   }
@@ -129,6 +145,21 @@ async function refusedAlert(alert,order,code,digest){
   const text=['Resend refuzoi emailin e konfirmimit të porosisë (adresa ose mesazhi), prandaj eSIM-i nuk u ble dhe porosia kaloi për kontroll.','Pagesa është marrë: kontrollo adresën e emailit te porosia dhe kontakto klientin, ose rimburso pagesën në PayPal.','Porosia MOBIALO: '+order.id,'Porosia PayPal: '+order.paypal_order_id,'Shuma: '+Number(order.amount).toFixed(2)+' '+(order.currency||'EUR'),'Kodi: '+code,'https://www.mobialo.eu/admin/orders/'+encodeURIComponent(order.id)].join('\n');
   try{await alert({from:'MOBIALO <support@mobialo.eu>',to:['support@mobialo.eu'],subject:'MOBIALO: emaili i konfirmimit u refuzua, porosia '+String(order.id).slice(0,8),text},'confirmation-refused/'+order.id+'/'+digest);}
   catch{console.warn('Confirmation refusal alert not sent',JSON.stringify({order:order.id}));}
+}
+
+const safeCode=error=>error?.name==='TimeoutError'?'UPSTREAM_TIMEOUT':/^[A-Z][A-Z0-9_]{0,60}(:[a-z_]{1,60})?$/.test(error?.message||'')?error.message:'UNEXPECTED';
+// A paid order that stops for manual handling is reported at once, once per order and reason (before, it only added to
+// the review count). No customer data in the message: the owner opens the order page.
+async function lockedAlert(alert,order,code,reason){
+  if(!alert)return;
+  const what={
+    refused:'MobiMatter refuzoi blerjen e eSIM-it (p.sh. balanca, çelësi ose paketa e tërhequr). Te furnizuesi nuk u krijua asnjë porosi; porosia kaloi për kontroll. Nëse refuzimi vazhdon, mbyll pagesat te Cilësimet derisa ta rregullosh.',
+    reserving:'Blerja e eSIM-it te MobiMatter nuk u konfirmua dhe mund të jetë krijuar. Porosia u bllokua që të mos blihet dy herë: kontrollo te MobiMatter porosinë me etiketën e barabartë me ID MOBIALO para çdo veprimi.',
+    sending:'eSIM-i është blerë, por dërgimi i emailit me eSIM-in nuk u konfirmua. Porosia u bllokua që emaili të mos dërgohet dy herë: kontrollo te Resend nëse u dërgua.'
+  }[reason];
+  const text=[what,'Pagesa është marrë.','Porosia MOBIALO: '+order.id,'Porosia PayPal: '+order.paypal_order_id,'Shuma: '+Number(order.amount).toFixed(2)+' '+(order.currency||'EUR'),'Kodi: '+code,'https://www.mobialo.eu/admin/orders/'+encodeURIComponent(order.id)].join('\n');
+  try{await alert({from:'MOBIALO <support@mobialo.eu>',to:['support@mobialo.eu'],subject:'MOBIALO: porosia '+String(order.id).slice(0,8)+' kërkon kontroll',text},'locked/'+order.id+'/'+reason);}
+  catch{console.warn('Order lock alert not sent',JSON.stringify({order:order.id,reason}));}
 }
 
 // PayPal throttles clients that fetch a new OAuth token per request. Tokens are shared by every

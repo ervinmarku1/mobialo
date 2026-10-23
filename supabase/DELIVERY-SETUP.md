@@ -42,6 +42,9 @@ database run all of them; for an existing one, run only the files that are missi
 12. `migrations/20261024100000_order_confirmation.sql`: `confirmation_email_id`, the Resend ID of the order
    confirmation the worker sends after payment and before it buys the eSIM (see "Order confirmation" below).
    Apply before deploying the code: without it paid orders wait in `paid` and the admin order list returns 503.
+13. `migrations/20261024110000_default_privileges.sql`: tables, sequences and functions created later in
+   `public` are no longer granted to `anon`/`authenticated` by default (the browser's anon key is for Supabase
+   Auth only). A new table still needs RLS and its own explicit grants, like the existing ones.
 
 All files are safe to run again. A null column below means that migration is missing:
 
@@ -56,7 +59,9 @@ select to_regclass('public.esim_deliveries') as m1, to_regclass('public.esim_tes
   (select 1 from information_schema.columns where table_schema='public'
     and table_name='esim_deliveries' and column_name='payment_updated_at') as m10,
   (select 1 from information_schema.columns where table_schema='public'
-    and table_name='esim_deliveries' and column_name='confirmation_email_id') as m12;
+    and table_name='esim_deliveries' and column_name='confirmation_email_id') as m12,
+  (select coalesce(bool_and(defaclacl::text not like '%anon=%'),true) from pg_default_acl
+    where defaclnamespace='public'::regnamespace and defaclrole='postgres'::regrole) as m13;
 select jobname, schedule, active from cron.job;
 ```
 
@@ -203,6 +208,12 @@ ligjore te konfirmimi: Mungojnë" (heartbeat `documents: false`).
 States `reserving` and `sending` are deliberately never auto-reclaimed: a timeout
 may have occurred after the remote action succeeded. Reconcile in the provider's
 portal using the internal order label or stored provider ID before changing state.
+Every such lock emails support@mobialo.eu at once (once per order and reason, with the code and
+the admin link, no customer data). A definite supplier refusal of the purchase (HTTP 4xx other
+than 408/409/425/429: balance, key, product withdrawn) created no supplier order, so the order
+goes to `review` instead of `reserving`, with an alert; a 429 returns it to `paid` for the next
+sweep. If refusals repeat (for example an empty MobiMatter balance), close checkout in Cilësimet
+until it is fixed: each further paid order would stop the same way.
 For `completing`, recovery reads the stored provider order and advances only after
 its ID, product, completed state and QR have been validated; it never repeats PUT.
 Do not reset to `paid` and risk purchasing twice. Resend acceptance (`sent`) is not proof
@@ -286,7 +297,9 @@ pg_net deletes `net._http_response` rows by itself (setting `pg_net.ttl`, 6 hour
 default), so no job is needed for them.
 
 Pause with `select cron.unschedule('mobialo-delivery-sweep');` (the heartbeat then goes
-stale and checkout falls back to admin-only). Resume by running migration 7 again.
+stale and checkout falls back to admin-only). Resume by running migration 7 again. This stops
+only the cron sweep: a standalone worker (below) keeps delivering and writing the heartbeat, so
+stop it too. Cilësimet shows which process wrote the last heartbeat ("Burimi").
 
 ## Standalone worker (optional)
 
@@ -296,14 +309,19 @@ pause between sweeps; `npm run worker:delivery -- --once` for one sweep). It rea
 `PAYPAL_LIVE_CLIENT_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
 `MOBIMATTER_MERCHANT_ID`, `MOBIMATTER_API_KEY` and `RESEND_API_KEY`. It can buy real
 eSIMs and send real emails for already captured payments; start it only against the
-intended production project. Running it next to the pg_cron sweep is safe because every
-state change is a conditional transition (the order confirmation is deduplicated by Resend, see
-above). `npm run dev` does not start it.
+intended production project. Running it next to the pg_cron sweep does not buy or send twice,
+because every state change is a conditional transition (the order confirmation is deduplicated by
+Resend, see above), but it is not recommended: it is one more place holding every live key, it
+overwrites the cron heartbeat (source `standalone`, shown in Cilësimet), and pausing the cron no
+longer pauses deliveries. Its heartbeat uses the same health rule as the cron sweep. `npm run dev`
+does not start it.
 
 `Dockerfile.worker` packages only the worker's source files and the two legal documents its order
 confirmation attaches (a test checks the list against the worker's imports); credentials are injected at
 runtime and `.env.local` is excluded from the build. It is a fallback, not used in
-production: build it and confirm the container starts before relying on it.
+production: build it and confirm the container starts before relying on it. A copy of it was
+found running on Render on 23.10.2026, deploying automatically from `main`; it should be suspended
+and deleted (with its environment variables) unless it is deliberately kept as a fallback.
 
 ```sh
 docker build -f Dockerfile.worker -t mobialo-worker .

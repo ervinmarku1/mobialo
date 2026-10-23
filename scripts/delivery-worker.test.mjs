@@ -190,7 +190,7 @@ const unpaid=count=>Array.from({length:count},(_,i)=>({id:'unpaid'+String(i).pad
 
 test('paid orders are provisioned before any unpaid checkout is polled; review rows are only counted',async()=>{
   const q=queue([...unpaid(5),{id:'zpaid',state:'paid',created_at:'2026-10-22T11:00:00Z'},{id:'locked',state:'reserving',created_at:'2026-10-22T09:00:00Z'},{id:'held',state:'review',created_at:'2026-10-22T09:00:00Z'}]);
-  assert.deepEqual(await recoverDeliveries(q.services),{checked:6,sent:1,waiting:5,review:2,failed:0,truncated:false,workDone:1});
+  assert.deepEqual(await recoverDeliveries(q.services),{checked:6,sent:1,waiting:5,review:2,failed:0,deliveryFailed:0,truncated:false,workDone:1});
   assert.equal(q.state('zpaid'),'sent');assert.equal(q.state('locked'),'reserving');assert.equal(q.state('held'),'review');
   assert.ok(q.calls.indexOf('email')<q.calls.findIndex(call=>call.startsWith('paypal ')));
   assert.deepEqual(q.calls.filter(call=>/^(page|count)/.test(call)),['page work','page work','count review','page payment','page payment','page payment','page payment']);

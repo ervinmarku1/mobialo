@@ -24,6 +24,12 @@ Authentication is checked with the auth server on every API request. Authorizati
 uses server-configured immutable user IDs, never editable user_metadata or email input.
 RLS on the orders table stays enabled; customers have no direct table access.
 
+Supabase Auth settings (Authentication → Sign In / Providers → Email; set on 23.10.2026 through
+the Management API and checked there): minimum password length 8, the same as the sign-up form;
+secure password change on (a password change needs a sign-in from the last 24 hours, which the
+reset link always provides); secure email change on. Sessions have no time limit (a paid-plan
+setting); CAPTCHA stays off by the owner's decision.
+
 Orders: filters, 50-row pagination, details. Financial and review cards are
 explicitly page-scoped, not business-wide revenue. No refund, fulfillment retry or
 email resend actions are exposed.

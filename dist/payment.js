@@ -1,6 +1,9 @@
 import './customer-session.js';
 (async()=>{
-const params=new URLSearchParams(location.search),state=params.get('state'),token=params.get('token');
+// Only a real order (UUID) and PayPal order id (letters and digits) are used; anything else in the link is ignored,
+// so a crafted URL cannot put its own text into the status message.
+const params=new URLSearchParams(location.search),rawState=params.get('state')||'',rawToken=params.get('token')||'';
+const state=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawState)?rawState:null,token=/^[A-Z0-9]{1,20}$/.test(rawToken)?rawToken:null;
 const language=await window.MobialoLocale.ready;
 const t=(sq,en,it)=>language==='sq'?sq:language==='it'?it:en;
 const status=document.getElementById('payment-status'),retry=document.getElementById('retry');

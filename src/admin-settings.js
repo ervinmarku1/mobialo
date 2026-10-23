@@ -9,7 +9,7 @@ const STALE_WORKER='Worker-i i dërgimit nuk po punon: klientët do paguanin pa 
 const METHODS=[['paypal','PayPal','Klientët paguajnë me llogarinë e tyre PayPal.'],['card','Kartë (Debit/Credit)','Klientët paguajnë me kartë pa llogari PayPal, te formulari “Debit or Credit Card”.']];
 const FIELDS=[['markupPercent','Marzhi (%)',200,'Mbi çmimin MobiMatter (USD i trajtuar si EUR).'],['feePercent','Tarifa e pagesës (%)',10,'Përqindja e PayPal-it, llogaritet mbi totalin.'],['feeFixed','Tarifa fikse (EUR)',2,'Kosto fikse për çdo pagesë.']];
 const REQUESTS={pending:['Në pritje','warn'],approved:['Miratuar','ok'],rejected:['Refuzuar','bad']};
-const SOURCES={cron:'Supabase cron (çdo minutë)'};
+const SOURCES={cron:'Supabase cron (çdo minutë)',standalone:'Proces i veçantë (jo Vercel): fike nëse nuk e njeh'};
 const LOCKED='Ruajtja e statusit, e mënyrave të pagesës dhe e çmimeve është çaktivizuar, që vlerat fillestare nga Vercel të mos mbishkruajnë ato të ruajtura.';
 const ERRORS={
  WORKER_NOT_RUNNING:'Statusi Publik u refuzua: worker-i i dërgimit nuk po raporton, ndaj klientët do paguanin pa marrë eSIM. Kontrollo cron-in te Supabase dhe prit raportimin e tij.',
