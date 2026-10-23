@@ -206,13 +206,13 @@ html.signed-in .account-link .account-out,html:not(.signed-in) .account-link .ac
 #shop-reset{min-height:44px;justify-self:start}
 /* The checkout box reserves the height of its finished content (email or recipient line, consent, two 48px buttons, the
    note under them), measured per width and language, so nothing below it moves while it fills; is-guest is the email form. */
-#shop-payment{min-height:496px}html:not(.signed-in) #shop-payment.is-guest{min-height:615px}
-@media(max-width:900px){#shop-payment{min-height:452px}html:not(.signed-in) #shop-payment.is-guest{min-height:571px}html[lang=it] #shop-payment{min-height:475px}html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:594px}}
-@media(max-width:700px){#shop-payment,html[lang=it] #shop-payment{min-height:471px}html:not(.signed-in) #shop-payment.is-guest,html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:590px}}
-@media(max-width:600px){#shop-payment,html[lang=it] #shop-payment{min-height:492px}html:not(.signed-in) #shop-payment.is-guest,html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:611px}}
-@media(max-width:430px){#shop-payment,html[lang=it] #shop-payment{min-height:514px}html:not(.signed-in) #shop-payment.is-guest,html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:633px}}
-@media(max-width:374px){html[lang=en] #shop-payment{min-height:537px}html[lang=en]:not(.signed-in) #shop-payment.is-guest{min-height:655px}html[lang=it] #shop-payment{min-height:558px}html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:697px}}
-@media(max-width:350px){#shop-payment,html[lang=en] #shop-payment,html[lang=it] #shop-payment{min-height:558px}html[lang=sq] #shop-payment{min-height:583px}html:not(.signed-in) #shop-payment.is-guest,html[lang=en]:not(.signed-in) #shop-payment.is-guest{min-height:677px}html[lang=sq]:not(.signed-in) #shop-payment.is-guest{min-height:702px}html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:716px}}
+#shop-payment{min-height:528px}html:not(.signed-in) #shop-payment.is-guest{min-height:647px}
+@media(max-width:900px){#shop-payment{min-height:484px}html:not(.signed-in) #shop-payment.is-guest{min-height:603px}html[lang=it] #shop-payment{min-height:507px}html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:626px}}
+@media(max-width:700px){#shop-payment,html[lang=it] #shop-payment{min-height:503px}html:not(.signed-in) #shop-payment.is-guest,html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:622px}}
+@media(max-width:600px){#shop-payment,html[lang=it] #shop-payment{min-height:524px}html:not(.signed-in) #shop-payment.is-guest,html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:643px}}
+@media(max-width:430px){#shop-payment,html[lang=it] #shop-payment{min-height:546px}html:not(.signed-in) #shop-payment.is-guest,html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:665px}}
+@media(max-width:374px){html[lang=en] #shop-payment{min-height:569px}html[lang=en]:not(.signed-in) #shop-payment.is-guest{min-height:687px}html[lang=it] #shop-payment{min-height:590px}html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:729px}}
+@media(max-width:350px){#shop-payment,html[lang=en] #shop-payment,html[lang=it] #shop-payment{min-height:590px}html[lang=sq] #shop-payment{min-height:615px}html:not(.signed-in) #shop-payment.is-guest,html[lang=en]:not(.signed-in) #shop-payment.is-guest{min-height:709px}html[lang=sq]:not(.signed-in) #shop-payment.is-guest{min-height:734px}html[lang=it]:not(.signed-in) #shop-payment.is-guest{min-height:748px}}
 .suggestion-price>span{margin-left:4px}.lang-suggest .lang-short{display:none}
 @media(max-width:600px){
  /* Phones: destination cards (hub and homepage) put the flag beside the name and the "from" label and the price on lines of

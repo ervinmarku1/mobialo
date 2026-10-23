@@ -286,7 +286,7 @@ test('plan page: the whole plan, the checkout placeholder with reserved height, 
   assert.doesNotMatch(html,/classList\.remove\('is-guest'\)/);
   const styles=await read('dist/styles.css');
   assert.equal(/(^|[},])#shop-payment\.is-guest/.test(styles),false,'every guest height is scoped to html:not(.signed-in)');
-  assert.match(styles,/html:not\(\.signed-in\) #shop-payment\.is-guest\{min-height:615px\}/);
+  assert.match(styles,/html:not\(\.signed-in\) #shop-payment\.is-guest\{min-height:647px\}/);
   // The checkout text the loader shows is the same as paypal-checkout.js's first status, so nothing changes when it mounts.
   return read('dist/paypal-checkout.js').then(source=>{for(const text of ['Po ngarkohen mënyrat e pagesës…','Loading payment methods…','Caricamento dei metodi di pagamento…'])assert.ok(source.includes(text));});
 });

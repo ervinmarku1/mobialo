@@ -329,8 +329,9 @@ test('phone layout: the checkout reserves its finished height and appears in one
   assert.match(styles,/#shop-payment \.checkout\.is-loading>:not\(\.checkout-loading\)\{visibility:hidden\}/);
   assert.match(styles,/#shop-payment \.checkout-loading\{position:absolute;top:0;left:0;right:0;margin:0\}/);
   // Guest heights only without a stored session (html.signed-in is set in <head>), so a member never sees a guest-height frame.
-  assert.match(styles,/#shop-payment\{min-height:496px\}html:not\(\.signed-in\) #shop-payment\.is-guest\{min-height:615px\}/);
-  assert.match(styles,/@media\(max-width:430px\)\{#shop-payment,html\[lang=it\] #shop-payment\{min-height:514px\}html:not\(\.signed-in\) #shop-payment\.is-guest,html\[lang=it\]:not\(\.signed-in\) #shop-payment\.is-guest\{min-height:633px\}\}/);
+  // Measured on production with the real PayPal SDK (its buttons add a 32 px "Powered by PayPal" line): 647 desktop, 665 at 390 px.
+  assert.match(styles,/#shop-payment\{min-height:528px\}html:not\(\.signed-in\) #shop-payment\.is-guest\{min-height:647px\}/);
+  assert.match(styles,/@media\(max-width:430px\)\{#shop-payment,html\[lang=it\] #shop-payment\{min-height:546px\}html:not\(\.signed-in\) #shop-payment\.is-guest,html\[lang=it\]:not\(\.signed-in\) #shop-payment\.is-guest\{min-height:665px\}\}/);
   assert.match(styles,/#shop-payment\.is-final\{min-height:0!important\}/);
   assert.match(styles,/#shop-payment:has\(noscript>\*\) \.checkout-loading/);
   // Breadcrumb: the language link keeps its slot from the first paint and shows only the language's name on phones.
