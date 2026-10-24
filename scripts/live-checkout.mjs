@@ -55,11 +55,16 @@ export async function createLiveOrder(input,services,products,catalog=getCatalog
 export async function captureLiveOrder(state,token,services,{deferDelivery=false}={}){
   if(!/^[a-f0-9-]{36}$/.test(state||'')||typeof token!=='string')throw Error('INVALID_ORDER');
   services??=await deliveryServices();const order=await services.store.get(state);
-  // An expired checkout (a day old, never paid) is not captured: the buyer starts a new order at the current price.
-  if(!order||order.paypal_order_id!==token||order.state==='expired')throw Error('INVALID_ORDER');
+  if(!order||order.paypal_order_id!==token)throw Error('INVALID_ORDER');
   const amount=Number(order.amount).toFixed(2);
   let payment=await services.paypal(token);
+  // An expired checkout (a day old, never paid) is read but never captured: the buyer starts a new order at the current
+  // price. A capture PayPal already holds for it (made just before the hourly expiry) is still recorded below.
+  if(order.state==='expired'&&['CREATED','SAVED','PAYER_ACTION_REQUIRED','APPROVED'].includes(payment.status))throw Error('ORDER_EXPIRED');
   if(['CREATED','SAVED','PAYER_ACTION_REQUIRED'].includes(payment.status))throw Error('PAYMENT_APPROVAL_REQUIRED');
+  // The row can expire while this request runs, so a payment found now is claimed from either unpaid state.
+  const claim=async(patch,fromExpired=patch)=>await services.store.transition(state,'awaiting_payment',patch)||await services.store.transition(state,'expired',fromExpired);
+  const unpaid=['awaiting_payment','expired'].includes(order.state);
   if(payment.status==='APPROVED'){
     // A fresh key per attempt: after a decline and restart, a reused key could replay the decline.
     // Reading first, plus PayPal's single-capture rule, keeps a retried capture from charging twice.
@@ -86,7 +91,7 @@ export async function captureLiveOrder(state,token,services,{deferDelivery=false
   if(matches&&capture.status==='PENDING'){
     const reason=safeCode(capture.status_details?.reason);
     console.warn('PayPal capture pending',{reason});
-    if(order.state==='awaiting_payment'&&!order.paypal_capture_id&&typeof capture.id==='string'&&capture.id)await services.store.transition(state,'awaiting_payment',{paypal_capture_id:capture.id});
+    if(unpaid&&!order.paypal_capture_id&&typeof capture.id==='string'&&capture.id)await claim({paypal_capture_id:capture.id},{paypal_capture_id:capture.id,state:'awaiting_payment'});
     return {status:'PENDING',environment:'live',amount,currency:'EUR',reason:reason||null,reference:token};
   }
   if(!validCapture(payment,{id:token,amount})){
@@ -95,8 +100,8 @@ export async function captureLiveOrder(state,token,services,{deferDelivery=false
   }
   if(deferDelivery){
     if(!capture.id)throw Error('PAYMENT_NOT_COMPLETED');
-    if(order.state==='awaiting_payment'){
-      const saved=await services.store.transition(state,'awaiting_payment',{state:'paid',paypal_capture_id:capture.id});
+    if(unpaid){
+      const saved=await claim({state:'paid',paypal_capture_id:capture.id});
       if(!saved){
         const latest=await services.store.get(state);
         if(!latest||latest.paypal_capture_id!==capture.id)throw Error('ORDER_SAVE_FAILED');

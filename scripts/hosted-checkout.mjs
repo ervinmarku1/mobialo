@@ -135,7 +135,7 @@ export async function hostedCheckout(action,req,{
     if(error.message==='TOO_MANY_OPEN_ORDERS')return fail(429,error.message);
     // Nothing was stored or sent to PayPal; the page shows the current price and asks again.
     if(error.message==='PRICE_CHANGED'&&/^\d+\.\d{2}$/.test(error.price))return result(409,{error:'PRICE_CHANGED',price:error.price});
-    if(['EMAIL_REQUIRED','INVALID_PRODUCT','INVALID_ORDER','PAYMENT_APPROVAL_REQUIRED','PAYMENT_NOT_COMPLETED'].includes(error.message))return fail(400,error.message);
+    if(['EMAIL_REQUIRED','INVALID_PRODUCT','INVALID_ORDER','ORDER_EXPIRED','PAYMENT_APPROVAL_REQUIRED','PAYMENT_NOT_COMPLETED'].includes(error.message))return fail(400,error.message);
     // Configuration and upstream failures were previously silent; log the code for Vercel Logs.
     return unavailable(checkoutErrorCode(error));
   }

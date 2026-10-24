@@ -43,9 +43,12 @@ invisible unless Cloudflare needs the visitor to interact. Turn it on in this or
 3. Supabase → Authentication → Attack Protection → Enable CAPTCHA protection → Turnstile → paste
    the secret key → Save. Sign in to /admin to confirm. To undo, switch CAPTCHA off there first.
 
-Orders: filters, 50-row pagination, details. Financial and review cards are
-explicitly page-scoped, not business-wide revenue. No refund, fulfillment retry or
-email resend actions are exposed.
+Overview (`GET /api/admin/orders?summary=1`, same gates as the orders): money kept (refunds subtracted)
+and paid orders for the last 24 hours, 7 and 30 days, revenue per UTC day for 14 days, checkouts of the
+last 7 days left unpaid (open or expired), how many of the 30 days' checkouts were paid, refunds and
+disputes, and the orders locked for a manual check. Every admin sees it. Orders: filters, 50-row
+pagination, the order page with its steps from payment to the eSIM email. No refund, fulfillment retry
+or email resend actions are exposed.
 
 Cilësimet (superadmin only, always with 2FA; `GET/POST /api/admin/settings`):
 - Shop status: Mbyllur / Vetëm admin / Publik. Publik can only be switched on while

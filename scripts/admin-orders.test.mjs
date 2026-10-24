@@ -32,20 +32,21 @@ test('the overview sums the money kept and the paid orders per period and per da
  const rows=[row({created_at:hours(2)}),row({created_at:hours(30),amount:'20.00',payment_status:'partially_refunded',refunded_amount:'5.00'}),
   row({created_at:hours(24*10),payment_status:'refunded',refunded_amount:'10.00'}),row({created_at:hours(24*20),state:'review'}),
   row({created_at:hours(3),state:'awaiting_payment',paypal_capture_id:null}),row({created_at:hours(0.5),state:'awaiting_payment',paypal_capture_id:null}),
-  row({created_at:hours(24*8),state:'awaiting_payment',paypal_capture_id:null}),row({created_at:hours(5),state:'awaiting_payment',paypal_capture_id:'PENDING-CAPTURE'})];
+  row({created_at:hours(24*8),state:'awaiting_payment',paypal_capture_id:null}),row({created_at:hours(5),state:'awaiting_payment',paypal_capture_id:'PENDING-CAPTURE'}),
+  row({created_at:hours(30),state:'expired',paypal_capture_id:null})];
  const seen=[];
  const result=await adminOrders({...req,url:req.url+'?summary=1&state=sent&page=9'},async(url,options)=>{
   if(!seen.length){seen.push('auth');return Response.json({id:'owner',email_confirmed_at:'now'});}
   const q=new URL(url).searchParams;seen.push(q.get('select'));assert.equal(options.headers.Authorization,'Bearer server-key');
   if(q.get('select')==='id'){assert.equal(q.get('state'),'in.(reserving,sending,review)');assert.equal(options.headers.Prefer,'count=exact');return Response.json([],{headers:{'content-range':'0-0/3'}});}
   // Filters and paging of the list do not apply; only the last 30 days are read.
-  assert.equal(q.get('state'),null);assert.equal(q.get('offset'),null);assert.equal(q.get('created_at'),'gte.'+new Date(now-30*86400000).toISOString());
+  assert.equal(q.get('state'),null);assert.equal(q.get('offset'),'0');assert.equal(q.get('created_at'),'gte.'+new Date(now-30*86400000).toISOString());
   return Response.json(rows);
  },env,{now});
  assert.equal(result.status,200);const s=result.body.summary;
  assert.deepEqual({...s.day},{revenue:10,orders:1});assert.deepEqual({...s.week},{revenue:25,orders:2});assert.deepEqual({...s.month},{revenue:35,orders:4});
- // Unpaid for over an hour within 7 days; the half-hour one may still be paid, the held capture is not abandoned.
- assert.equal(s.abandoned,1);assert.equal(s.started,8);assert.equal(s.issues,2);assert.equal(s.attention,3);assert.equal(s.complete,true);
+ // Unpaid for over an hour within 7 days, open or expired; the half-hour one may still be paid, the held capture is not abandoned.
+ assert.equal(s.abandoned,2);assert.equal(s.started,9);assert.equal(s.issues,2);assert.equal(s.attention,3);assert.equal(s.complete,true);
  assert.equal(s.days.length,14);assert.deepEqual({...s.days[13]},{date:'2026-10-24',revenue:10,orders:1});assert.deepEqual({...s.days[12]},{date:'2026-10-23',revenue:15,orders:1});
  assert.equal(s.days[0].date,'2026-10-11');assert.equal(seen.length,3);
  // Gates first: no token, no admin, no orders read.
@@ -53,6 +54,16 @@ test('the overview sums the money kept and the paid orders per period and per da
  assert.equal((await adminOrders({...req,url:req.url+'?summary=1'},async()=>Response.json({id:'customer',email_confirmed_at:'now'}),env)).status,403);
  // A failed read is an error, never zeros.
  let calls=0;assert.equal((await adminOrders({...req,url:req.url+'?summary=1'},async()=>++calls===1?Response.json({id:'owner',email_confirmed_at:'now'}):new Response('',{status:500}),env,{now})).status,503);
+});
+test('the overview reads the 30 days in pages of 1000 rows and says when its 10 000-row limit cut the read short',async()=>{
+ const now=Date.parse('2026-10-24T15:00:00Z'),paid={state:'sent',amount:'1.00',paypal_capture_id:'C',created_at:new Date(now-3600000).toISOString()};
+ const run=async pageSize=>{const offsets=[];let calls=0;const result=await adminOrders({...req,url:req.url+'?summary=1'},async url=>{
+  if(++calls===1)return Response.json({id:'owner',email_confirmed_at:'now'});const q=new URL(url).searchParams;
+  if(q.get('select')==='id')return Response.json([],{headers:{'content-range':'*/0'}});
+  offsets.push(q.get('offset'));assert.equal(q.get('limit'),'1000');return Response.json(Array.from({length:pageSize(Number(q.get('offset')))},()=>paid));
+ },env,{now});return {s:result.body.summary,offsets};};
+ const two=await run(offset=>offset===0?1000:3);assert.deepEqual(two.offsets,['0','1000']);assert.equal(two.s.started,1003);assert.equal(two.s.month.orders,1003);assert.equal(two.s.complete,true);
+ const capped=await run(()=>1000);assert.equal(capped.offsets.length,10);assert.equal(capped.s.started,10000);assert.equal(capped.s.complete,false);
 });
 test('admin view labels payment flags and keeps refunds out of the paid sum',async()=>{
  // The order helpers of src/admin.js, evaluated without a DOM.

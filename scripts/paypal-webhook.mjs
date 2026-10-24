@@ -162,7 +162,7 @@ async function record(services,order,change){
 async function alert(services,event,{before,order},captureId,title,log){
   const money=value=>Number(value).toFixed(2)+' '+(order.currency||'EUR');
   const outcome=before.state==='paid'&&order.state==='review'?'Dërgimi u ndal dhe porosia kaloi për kontroll. eSIM-i nuk është blerë.'
-    :order.state==='awaiting_payment'?'Porosia nuk është paguar. Asnjë eSIM nuk është blerë.'
+    :['awaiting_payment','expired'].includes(order.state)?'Porosia nuk është paguar. Asnjë eSIM nuk është blerë.'
     :order.state==='review'?'Porosia është për kontroll.'
     :'Statusi i porosisë: '+order.state+'. eSIM-i mund të jetë blerë tashmë: kontrollo porosinë te MobiMatter.';
   const text=['Ngjarja PayPal: '+event.event_type,'Statusi i pagesës: '+(LABELS[order.payment_status]||order.payment_status||'—'),'Porosia MOBIALO: '+order.id,'Porosia PayPal: '+order.paypal_order_id,'Pagesa PayPal (capture): '+captureId,'Shuma: '+money(order.amount),

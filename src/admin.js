@@ -55,11 +55,11 @@ async function loadOverview(token,current){
  try{
   const r=await fetch('/api/admin/orders?summary=1',{headers:{Authorization:'Bearer '+token},cache:'no-store'});const data=await r.json();
   if(!r.ok||!data.summary){overviewAt=0;return;}
-  if(current===sequence&&orderId===null)showOverview(data.summary);
+  if(current===sequence&&orderId===null)showOverview(data.summary);else overviewAt=0;
  }catch{overviewAt=0;}
 }
 function showOverview(s){
- $('paid').textContent=euro(s.month.revenue);$('paid-sub').textContent='7 ditë: '+euro(s.week.revenue)+' · 24 orë: '+euro(s.day.revenue);
+ $('paid').textContent=euro(s.month.revenue);$('paid-sub').textContent='7 ditë: '+euro(s.week.revenue)+' · 24 orë: '+euro(s.day.revenue)+(s.complete===false?' · nga 10 000 porositë e fundit':'');
  $('orders-paid').textContent=String(s.month.orders);$('orders-sub').textContent='7 ditë: '+s.week.orders+' · 24 orë: '+s.day.orders;
  $('abandoned').textContent=String(s.abandoned);
  $('abandoned-sub').textContent=s.started?s.month.orders+' nga '+s.started+' pagesa të nisura u paguan (30 ditë)':'Asnjë pagesë e nisur në 30 ditë';

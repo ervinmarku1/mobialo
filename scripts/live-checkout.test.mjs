@@ -71,9 +71,23 @@ test('a different price is checked once more against a catalog at most a minute 
 test('capture rejects incorrect capability and never calls provider',async()=>{
  const services={store:{get:async()=>({paypal_order_id:'expected'})},paypal:()=>assert.fail('Must not contact payment provider')};
  await assert.rejects(captureLiveOrder('12345678-1234-1234-1234-123456789abc','wrong',services),/INVALID_ORDER/);
- // A checkout closed as expired is never captured, even with the right PayPal order.
- services.store.get=async()=>({paypal_order_id:'expected',state:'expired',amount:4.19});
- await assert.rejects(captureLiveOrder('12345678-1234-1234-1234-123456789abc','expected',services),/^Error: INVALID_ORDER$/);
+});
+test('an expired checkout is read but never captured, and a capture PayPal already holds for it is still recorded',async()=>{
+ const id='12345678-1234-1234-1234-123456789abc';
+ for(const status of ['APPROVED','CREATED','PAYER_ACTION_REQUIRED']){
+  const services={store:{get:async()=>({paypal_order_id:'expected',state:'expired',amount:4.19}),transition:()=>assert.fail('Must not write')},paypal:async(path,method)=>{assert.equal(method,undefined,'never POST /capture');return {id:'expected',status};}};
+  await assert.rejects(captureLiveOrder(id,'expected',services),/^Error: ORDER_EXPIRED$/,status);
+ }
+ // The row expired while the capture ran: the claim from 'awaiting_payment' loses, the one from 'expired' wins.
+ let row={id,paypal_order_id:'remote',amount:4.19,state:'expired'};const tried=[];
+ const services={store:{get:async()=>({...row}),transition:async(at,from,patch)=>{tried.push(from);if(row.state!==from)return;return row={...row,...patch};}},
+  paypal:async()=>({id:'remote',status:'COMPLETED',purchase_units:[{payments:{captures:[{id:'capture',status:'COMPLETED',amount:{currency_code:'EUR',value:'4.19'}}]}}]})};
+ const result=await captureLiveOrder(id,'remote',services,{deferDelivery:true});
+ assert.equal(result.status,'COMPLETED');assert.equal(row.state,'paid');assert.equal(row.paypal_capture_id,'capture');assert.deepEqual(tried,['awaiting_payment','expired']);
+ // A held (PENDING) capture brings the expired row back to awaiting_payment with its capture, so it is polled again.
+ row={id,paypal_order_id:'remote',amount:4.19,state:'expired'};
+ services.paypal=async()=>({id:'remote',status:'COMPLETED',purchase_units:[{payments:{captures:[{id:'held',status:'PENDING',amount:{currency_code:'EUR',value:'4.19'}}]}}]});
+ assert.equal((await captureLiveOrder(id,'remote',services,{deferDelivery:true})).status,'PENDING');assert.equal(row.state,'awaiting_payment');assert.equal(row.paypal_capture_id,'held');
 });
 test('unapproved payment is not captured and cannot trigger delivery',async()=>{
  const services={store:{get:async()=>({paypal_order_id:'remote',amount:4.19})},paypal:async(id,method)=>{assert.equal(method,undefined);return {id:'remote',status:'CREATED'};}};

@@ -112,7 +112,8 @@ test('admin overview and order progress: server figures after the gates, badge c
   const body=adminSource.slice(adminSource.indexOf('async function fetchOrders'));
   assert.ok(body.indexOf('await mfa.show();')<body.indexOf('loadOverview(session.access_token,current)'));
   assert.match(adminSource,/fetch\('\/api\/admin\/orders\?summary=1',\{headers:\{Authorization:'Bearer '\+token\},cache:'no-store'\}\)/);
-  assert.match(adminSource,/if\(current===sequence&&orderId===null\)showOverview\(data\.summary\);/);
+  // A result for a load or view already left is dropped and read again next time.
+  assert.match(adminSource,/if\(current===sequence&&orderId===null\)showOverview\(data\.summary\);else overviewAt=0;/);
   const html=await read('dist/admin.html');
   for(const id of ['paid','orders-paid','abandoned','attention','chart','page-sum','order-progress'])assert.match(html,new RegExp(`id="${id}"`),id);
   assert.doesNotMatch(html,/id="workflow"/);

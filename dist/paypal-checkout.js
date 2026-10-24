@@ -266,6 +266,12 @@ async function mountPayPal(container,product){
             announce(checkoutText('PayPal e refuzoi këtë pagesë. Nuk u tërhoq asnjë pagesë. Provo me një llogari ose mënyrë tjetër pagese.','PayPal refused this payment. No money was taken. Try another PayPal account or payment method.','PayPal ha rifiutato questo pagamento. Nessun addebito. Prova con un altro account o metodo di pagamento.')+reference(target.token)+checkoutCodeSuffix(error));
             return;
           }
+          // A checkout left unpaid for a day was closed: nothing was charged; the next click creates a new order.
+          if(error.code==='ORDER_EXPIRED'){
+            resetOrder();
+            announce(checkoutText('Kjo porosi ka skaduar dhe nuk u pagua. Nuk u tërhoq asnjë pagesë. Provo përsëri për një porosi të re.','This order has expired and was not paid. You have not been charged. Try again to start a new order.','Questo ordine è scaduto e non è stato pagato. Nessun addebito. Riprova per un nuovo ordine.')+reference(target.token));
+            return;
+          }
           if(error.code==='PAYMENT_APPROVAL_REQUIRED'){
             resetOrder();
             announce(checkoutText('PayPal nuk e ka regjistruar miratimin. Pagesa nuk u arkëtua. Provo përsëri.','PayPal has not recorded approval. Payment was not captured. Try again.','PayPal non ha registrato l’approvazione. Il pagamento non è stato acquisito. Riprova.')+reference(target.token));
