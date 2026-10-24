@@ -3,6 +3,9 @@ import {setupAdminMfa} from './admin-mfa.js';
 import {setupAdminSettings} from './admin-settings.js';
 import {formatMoney,numericDateTime} from './format.js';
 import {createClient} from '@supabase/supabase-js';
+import {setupCaptcha} from './captcha.js';
+// Turnstile on the admin sign-in (Supabase checks it once CAPTCHA is on); disabled until a site key is configured.
+let captcha=setupCaptcha('');
 const $=id=>document.getElementById(id);
 let mfa,access,settings,settingsRole='';
 let client,page=1,orders=[],sequence=0;
@@ -146,7 +149,7 @@ $('export').onclick=()=>{
 };
 $('filters').onsubmit=e=>{e.preventDefault();page=1;load({quiet:true});};$('refresh').onclick=()=>load({quiet:true});$('previous').onclick=()=>{page--;load({quiet:true});};$('next').onclick=()=>{page++;load({quiet:true});};
 $('logout').onclick=async()=>{++sequence;clear();clearSettings();const {error}=await client.auth.signOut();if(error){message('Dalja nuk u krye. Provo përsëri.');return;}$('login').hidden=false;$('logout').hidden=true;message('');};
-$('login-form').onsubmit=async e=>{e.preventDefault();$('submit').disabled=true;try{const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});$('password').value='';if(error){message('Hyrja nuk u krye. Kontrollo emailin dhe fjalëkalimin.');return;}page=1;await load();}catch{message('Lidhja nuk u krye.');}finally{$('submit').disabled=false;}};
+$('login-form').onsubmit=async e=>{e.preventDefault();$('submit').disabled=true;try{let captchaToken;try{captchaToken=await captcha.token();}catch{message('Kontrolli i sigurisë nuk përfundoi. Rifresko faqen dhe provo përsëri.');return;}const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value,options:{captchaToken}});$('password').value='';if(error){message(error.code==='captcha_failed'||/captcha/i.test(error.message||'')?'Kontrolli i sigurisë nuk përfundoi. Rifresko faqen dhe provo përsëri.':'Hyrja nuk u krye. Kontrollo emailin dhe fjalëkalimin.');return;}page=1;await load();}catch{message('Lidhja nuk u krye.');}finally{captcha.reset();$('submit').disabled=false;}};
 // The catalog (plan titles) downloads alongside the client setup; the first load still waits for it, so titles never change on screen.
 const catalog=fetch('/api/catalog').then(r=>r.json()).then(data=>{products=new Map((data.products||[]).map(p=>[p.id,p]));}).catch(()=>{});
-try{const r=await fetch('/api/auth-config',{cache:'no-store'});const config=await r.json();client=createClient(config.url,config.publishableKey,{auth:{flowType:'pkce',detectSessionInUrl:false,persistSession:true,autoRefreshToken:true}});mfa=setupAdminMfa(client,load);access=setupAdminAccess(client,mfa);settings=setupAdminSettings(client);await catalog;await load();client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){++sequence;clear();clearSettings();$('login').hidden=false;$('logout').hidden=true;}});}catch{message('Paneli nuk mund të lidhet. Provo më vonë.');$('submit').disabled=true;settled();}
+try{const r=await fetch('/api/auth-config',{cache:'no-store'});const config=await r.json();client=createClient(config.url,config.publishableKey,{auth:{flowType:'pkce',detectSessionInUrl:false,persistSession:true,autoRefreshToken:true}});captcha=setupCaptcha(config.captchaSiteKey,{container:$('login-captcha')});mfa=setupAdminMfa(client,load);access=setupAdminAccess(client,mfa);settings=setupAdminSettings(client);await catalog;await load();client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){++sequence;clear();clearSettings();$('login').hidden=false;$('logout').hidden=true;}});}catch{message('Paneli nuk mund të lidhet. Provo më vonë.');$('submit').disabled=true;settled();}

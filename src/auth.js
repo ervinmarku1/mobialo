@@ -4,10 +4,13 @@ import {createClient} from '@supabase/supabase-js';
 import {authCopy} from './auth-copy.js';
 import {mountAccount,orderFromPath,hubPath} from './account.js';
 import {nextFromSearch,withNext,rememberNext,forgetNext,takePendingNext} from './next-path.js';
+import {setupCaptcha} from './captcha.js';
 let dashboard;
+// Turnstile guards the forms that sign in or send email; disabled until /api/auth-config names a site key.
+let captcha=setupCaptcha('');
 
-Object.assign(authCopy.en,{preview:'Sign-in uses an encrypted connection.',joinResult:'Check your inbox for the confirmation link if this address is eligible for registration. If you already have an account, sign in or reset your password.',resetResult:'If this address has an account, you will receive a password reset email.',update:'Set a new password.',updateSub:'Choose a new password for your account.',updateButton:'Save password →',updateResult:'Your password has been updated. You can now sign in.',account:'Your MOBIALO account.',accountSub:'You are signed in.',accountButton:'Sign out',connecting:'Connecting…',working:'Please wait…',unavailable:'Unable to connect. Check your connection and reload this page.',expired:'This link is invalid or expired. Request a new password reset email.',invalid:'Incorrect email or password.',confirmEmail:'Confirm your email before signing in.',rate:'Too many attempts. Please wait and try again.',weak:'Choose a stronger password with at least 8 characters.',generic:'The request could not be completed. Please try again.',emailIssue:'We couldn’t send the email right now. Please try again in a few minutes or contact support@mobialo.eu.',browse:'Explore destinations →'});
-Object.assign(authCopy.sq,{preview:'Hyrja bëhet përmes një lidhjeje të enkriptuar.',joinResult:'Kontrollo emailin për linkun e konfirmimit nëse kjo adresë mund të regjistrohet. Nëse ke llogari, hyr ose rivendos fjalëkalimin.',resetResult:'Nëse kjo adresë ka një llogari, do të marrësh emailin për rivendosjen e fjalëkalimit.',update:'Vendos fjalëkalimin e ri.',updateSub:'Zgjidh një fjalëkalim të ri për llogarinë tënde.',updateButton:'Ruaj fjalëkalimin →',updateResult:'Fjalëkalimi u ndryshua. Tani mund të hysh në llogari.',account:'Llogaria jote MOBIALO.',accountSub:'Je identifikuar në llogari.',accountButton:'Dil nga llogaria',connecting:'Duke u lidhur…',working:'Prit pak…',unavailable:'Lidhja nuk u krye. Kontrollo internetin dhe rifresko faqen.',expired:'Ky link është i pavlefshëm ose ka skaduar. Kërko një email të ri për rikuperim.',invalid:'Emaili ose fjalëkalimi nuk është i saktë.',confirmEmail:'Konfirmo emailin para se të hysh.',rate:'Shumë tentativa. Prit pak dhe provo përsëri.',weak:'Zgjidh një fjalëkalim më të fortë me të paktën 8 karaktere.',generic:'Kërkesa nuk u krye. Provo përsëri.',emailIssue:'Emaili nuk u dërgua dot tani. Provo përsëri pas pak minutash ose shkruaj te support@mobialo.eu.',browse:'Zbulo destinacionet →'});
+Object.assign(authCopy.en,{preview:'Sign-in uses an encrypted connection.',joinResult:'Check your inbox for the confirmation link if this address is eligible for registration. If you already have an account, sign in or reset your password.',resetResult:'If this address has an account, you will receive a password reset email.',update:'Set a new password.',updateSub:'Choose a new password for your account.',updateButton:'Save password →',updateResult:'Your password has been updated. You can now sign in.',account:'Your MOBIALO account.',accountSub:'You are signed in.',accountButton:'Sign out',connecting:'Connecting…',working:'Please wait…',unavailable:'Unable to connect. Check your connection and reload this page.',expired:'This link is invalid or expired. Request a new password reset email.',invalid:'Incorrect email or password.',confirmEmail:'Confirm your email before signing in.',rate:'Too many attempts. Please wait and try again.',weak:'Choose a stronger password with at least 8 characters.',generic:'The request could not be completed. Please try again.',captcha:'The security check did not finish. Reload the page and try again.',emailIssue:'We couldn’t send the email right now. Please try again in a few minutes or contact support@mobialo.eu.',browse:'Explore destinations →'});
+Object.assign(authCopy.sq,{preview:'Hyrja bëhet përmes një lidhjeje të enkriptuar.',joinResult:'Kontrollo emailin për linkun e konfirmimit nëse kjo adresë mund të regjistrohet. Nëse ke llogari, hyr ose rivendos fjalëkalimin.',resetResult:'Nëse kjo adresë ka një llogari, do të marrësh emailin për rivendosjen e fjalëkalimit.',update:'Vendos fjalëkalimin e ri.',updateSub:'Zgjidh një fjalëkalim të ri për llogarinë tënde.',updateButton:'Ruaj fjalëkalimin →',updateResult:'Fjalëkalimi u ndryshua. Tani mund të hysh në llogari.',account:'Llogaria jote MOBIALO.',accountSub:'Je identifikuar në llogari.',accountButton:'Dil nga llogaria',connecting:'Duke u lidhur…',working:'Prit pak…',unavailable:'Lidhja nuk u krye. Kontrollo internetin dhe rifresko faqen.',expired:'Ky link është i pavlefshëm ose ka skaduar. Kërko një email të ri për rikuperim.',invalid:'Emaili ose fjalëkalimi nuk është i saktë.',confirmEmail:'Konfirmo emailin para se të hysh.',rate:'Shumë tentativa. Prit pak dhe provo përsëri.',weak:'Zgjidh një fjalëkalim më të fortë me të paktën 8 karaktere.',generic:'Kërkesa nuk u krye. Provo përsëri.',captcha:'Kontrolli i sigurisë nuk përfundoi. Rifresko faqen dhe provo përsëri.',emailIssue:'Emaili nuk u dërgua dot tani. Provo përsëri pas pak minutash ose shkruaj te support@mobialo.eu.',browse:'Zbulo destinacionet →'});
 authCopy.it=authItalian;
 const path=location.pathname.replace(/\/$/,'');
 // An order page (/account/orders/{id}) is part of the account.
@@ -45,6 +48,7 @@ function render(){
 }
 function errorMessage(error){
   const code=error?.code||'';
+  if(code==='captcha_failed'||/captcha/i.test(error?.message||''))return 'captcha';
   if(code==='invalid_credentials')return 'invalid';
   if(code==='email_not_confirmed')return 'confirmEmail';
   if(code.includes('rate_limit')||error?.status===429)return 'rate';
@@ -65,9 +69,10 @@ $('#auth-form').addEventListener('submit',async event=>{
   busy=true;status();
   try{
     let response;
-    if(mode==='join'){rememberNext(nextPath);response=await client.auth.signUp({email:$('#email').value.trim(),password:$('#password').value,options:{data:{full_name:$('#name').value.trim(),language:window.MobialoLocale.emailLanguage},emailRedirectTo:`${location.origin}/account`}});}
-    if(mode==='sign')response=await client.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});
-    if(mode==='reset')response=await client.auth.resetPasswordForEmail($('#email').value.trim(),{redirectTo:`${location.origin}/update-password`});
+    const captchaToken=['join','sign','reset'].includes(mode)?await captcha.token():undefined;
+    if(mode==='join'){rememberNext(nextPath);response=await client.auth.signUp({email:$('#email').value.trim(),password:$('#password').value,options:{data:{full_name:$('#name').value.trim(),language:window.MobialoLocale.emailLanguage},emailRedirectTo:`${location.origin}/account`,captchaToken}});}
+    if(mode==='sign')response=await client.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value,options:{captchaToken}});
+    if(mode==='reset')response=await client.auth.resetPasswordForEmail($('#email').value.trim(),{redirectTo:`${location.origin}/update-password`,captchaToken});
     if(mode==='update')response=await client.auth.updateUser({password:$('#password').value});
     if(mode==='account')response=await client.auth.signOut({scope:'local'});
     if(response.error)throw response.error;
@@ -76,7 +81,7 @@ $('#auth-form').addEventListener('submit',async event=>{
     if(mode==='update')await client.auth.signOut({scope:'local'});
     resultKey=`${mode}Result`;$('#auth-form').reset();
   }catch(error){errorKey=errorMessage(error);}
-  finally{busy=false;document.querySelectorAll('input[autocomplete$="password"]').forEach(input=>{input.value='';input.type='password';});document.querySelectorAll('[data-for]').forEach(button=>{button.textContent=t('show');button.setAttribute('aria-pressed','false');});status();if(resultKey)$('#auth-result').focus();}
+  finally{busy=false;if(['join','sign','reset'].includes(mode))captcha.reset();document.querySelectorAll('input[autocomplete$="password"]').forEach(input=>{input.value='';input.type='password';});document.querySelectorAll('[data-for]').forEach(button=>{button.textContent=t('show');button.setAttribute('aria-pressed','false');});status();if(resultKey)$('#auth-result').focus();}
 });
 authCopy.en.hostedPreview='Sign-in is temporarily unavailable. Please try again in a few minutes.';
 authCopy.sq.hostedPreview='Hyrja është përkohësisht e padisponueshme. Provo përsëri pas pak minutash.';
@@ -87,11 +92,12 @@ try{
   const response=await fetch('/api/auth-config',{cache:'no-store'});if(!response.ok)throw Error('Configuration unavailable');
   const config=await response.json();if(config.enabled===false)throw Error('HOSTED_PREVIEW');
   client=createClient(config.url,config.publishableKey,{auth:{flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
+  if(['join','sign','reset'].includes(mode))captcha=setupCaptcha(config.captchaSiteKey,{container:$('#auth-captcha')});
   const {data:{session},error}=await client.auth.getSession();
   if(callbackError||error){history.replaceState(null,'',location.pathname);errorKey='expired';status();}
   else if(mode==='account'||mode==='update'){
     if(!session){if(mode==='account')location.replace(path==='/account'?'/sign-in':withNext('/sign-in',location.href));else{errorKey='expired';status();}}
-    else{const {data,error:verifyError}=await client.auth.getUser();if(verifyError||!data.user){errorKey='expired';status();}else{user=data.user;ready=true;const pending=path==='/account'&&takePendingNext(location.origin);if(pending)location.replace(pending);else if(mode==='account')dashboard=mountAccount({client,user,language});else render();}}
+    else{const {data,error:verifyError}=await client.auth.getUser();if(verifyError||!data.user){errorKey='expired';status();}else{user=data.user;ready=true;const pending=path==='/account'&&takePendingNext(location.origin);if(pending)location.replace(pending);else if(mode==='account')dashboard=mountAccount({client,user,language,captchaSiteKey:config.captchaSiteKey});else render();}}
   }else if(session&&(mode==='sign'||mode==='join'))leave();
   else{ready=true;status();}
 }catch(error){errorKey=error.message==='HOSTED_PREVIEW'?'hostedPreview':'unavailable';status();}

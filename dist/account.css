@@ -17,3 +17,5 @@
 /* Orders list placeholder (src/account.js list() while loading): the rows of the final list with bars, and the layout always
    reaches below the first screen, so neither a late list nor a shorter one (empty, error) moves the footer into view. */
 .customer-layout{min-height:100vh}.customer-order h3 i{width:12em}.customer-order p i{width:15em}.customer-order-end strong i{width:4em}.customer-order-end>span.text-link{display:flex;align-items:center;justify-content:flex-end;font-size:12px}
+/* Turnstile for the password reset email: shown at the bottom of the screen only if the visitor has to interact. */
+.captcha-floating{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:1000;max-width:calc(100% - 32px)}

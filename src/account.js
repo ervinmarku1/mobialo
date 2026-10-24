@@ -1,5 +1,6 @@
 import {accountCopy} from './account-copy.js';
 import {formatMoney,albanianDate,clock} from './format.js';
+import {setupCaptcha} from './captcha.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // An order has its own page inside the account layout, /account/orders/{id}; /account keeps its #section tabs.
 export const orderFromPath=pathname=>{const match=/^\/account\/orders\/([^/]+)\/?$/.exec(pathname||'');if(!match)return null;try{return decodeURIComponent(match[1]);}catch{return '';}};
@@ -7,7 +8,9 @@ export const orderHref=id=>'/account/orders/'+encodeURIComponent(id);
 // The destinations page in the visitor's language (/esim, /sq/esim, /it/esim); the auth.html header links there too.
 export const hubPath=lang=>(lang==='sq'||lang==='it'?'/'+lang:'')+'/esim';
 const sections=['overview','esims','orders','profile','support'],UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export function mountAccount({client,user,language}){
+export function mountAccount({client,user,language,captchaSiteKey}){
+ // The password reset email needs a Turnstile token; the check loads only when it is first asked for.
+ let captcha=null;
  if(location.hash==='#destinations'){location.replace(hubPath(language));return {setLanguage(){}};}
  const root=document.createElement('main');root.className='customer-layout wrap';document.querySelector('.auth-layout').hidden=true;document.querySelector('.auth-layout').after(root);document.body.classList.add('customer-page');
  let lang=language,orderId=orderFromPath(location.pathname),tab=orderId!==null?'orders':sections.includes(location.hash.slice(1))?location.hash.slice(1):'overview',orders=[],older=new Map(),limit=100,loadState='loading',notice='',working=false,version=0;
@@ -111,7 +114,7 @@ export function mountAccount({client,user,language}){
   }
   if(button.dataset.action==='retry'){load();return;}if(working)return;
   if(['reset','signout'].includes(button.dataset.action)){
-   working=true;notice='';render();try{const result=button.dataset.action==='reset'?await client.auth.resetPasswordForEmail(user.email,{redirectTo:location.origin+'/update-password'}):await client.auth.signOut({scope:'local'});if(result.error)throw result.error;if(button.dataset.action==='signout'){location.replace('/sign-in');return;}notice=t('resetSent');}catch{notice=t('error');}finally{working=false;render();}
+   working=true;notice='';render();try{let result;if(button.dataset.action==='reset'){captcha??=setupCaptcha(captchaSiteKey);try{result=await client.auth.resetPasswordForEmail(user.email,{redirectTo:location.origin+'/update-password',captchaToken:await captcha.token()});}finally{captcha.reset();}}else result=await client.auth.signOut({scope:'local'});if(result.error)throw result.error;if(button.dataset.action==='signout'){location.replace('/sign-in');return;}notice=t('resetSent');}catch{notice=t('error');}finally{working=false;render();}
   }
  });
  root.addEventListener('submit',async event=>{if(event.target.id!=='customer-profile')return;event.preventDefault();if(working)return;const name=new FormData(event.target).get('full_name').trim();if(!name)return;working=true;notice='';render();try{const {data,error}=await client.auth.updateUser({data:{full_name:name}});if(error)throw error;user=data.user;notice=t('saved');}catch{notice=t('error');}finally{working=false;render();}});

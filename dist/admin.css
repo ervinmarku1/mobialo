@@ -57,3 +57,5 @@ main[aria-busy=true] #rows,main[aria-busy=true] .detail-groups{opacity:.55}
 html.admin-pending #login{display:none}header #logout[hidden]{display:inline-block!important;visibility:hidden}html{scrollbar-gutter:stable}
 /* Cilësimet: the inline confirmation step (src/admin-settings.js ask()), in place of the browser's confirm dialog. */
 .settings-confirm{display:grid;gap:10px;padding:14px 16px;background:#fff5ed;border:1px solid #f3c9b1;border-radius:12px;color:#754226;font-size:14px;line-height:1.5}.settings-confirm p:first-child{color:#20201f;font-weight:700}.settings-confirm:focus{outline:2px solid #b84d11;outline-offset:2px}.settings-list .settings-confirm{flex-basis:100%}
+/* Turnstile on the admin sign-in: invisible unless interaction is needed. */
+.login-captcha{display:flex;justify-content:center;margin-top:12px}

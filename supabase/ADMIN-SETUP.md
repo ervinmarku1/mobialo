@@ -28,7 +28,20 @@ Supabase Auth settings (Authentication → Sign In / Providers → Email; set on
 the Management API and checked there): minimum password length 8, the same as the sign-up form;
 secure password change on (a password change needs a sign-in from the last 24 hours, which the
 reset link always provides); secure email change on. Sessions have no time limit (a paid-plan
-setting); CAPTCHA stays off by the owner's decision.
+setting).
+
+CAPTCHA (Cloudflare Turnstile, chosen by the owner on 23.10.2026) protects sign-up, sign-in, the
+password reset email (also from /account) and the admin sign-in (src/captcha.js). The widget stays
+invisible unless Cloudflare needs the visitor to interact. Turn it on in this order, or sign-in breaks:
+1. Cloudflare dashboard → Turnstile → Add widget: hostnames www.mobialo.eu and mobialo.eu, mode
+   Managed. It gives a site key (public) and a secret key.
+2. Put the site key in `TURNSTILE_SITE_KEY` in scripts/supabase-config.mjs (or the Vercel variable of
+   the same name) and deploy; /api/auth-config then serves it and the forms send a token, which
+   Supabase ignores while CAPTCHA is off. Check that sign-in still works. The privacy policy must name
+   Cloudflare Turnstile from the same deploy on (dist/information.js and dist/privacy.html); without a
+   site key the code loads nothing from Cloudflare.
+3. Supabase → Authentication → Attack Protection → Enable CAPTCHA protection → Turnstile → paste
+   the secret key → Save. Sign in to /admin to confirm. To undo, switch CAPTCHA off there first.
 
 Orders: filters, 50-row pagination, details. Financial and review cards are
 explicitly page-scoped, not business-wide revenue. No refund, fulfillment retry or
