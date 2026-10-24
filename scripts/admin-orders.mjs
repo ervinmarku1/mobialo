@@ -2,7 +2,7 @@ import {readFile} from 'node:fs/promises';
 import {parseEnv} from 'node:util';
 import {adminMfaError} from './admin-mfa.mjs';
 import {hasAdminAccess} from './admin-access.mjs';
-export const states=['awaiting_payment','paid','reserving','reserved','completing','ready','sending','sent','review'];
+export const states=['awaiting_payment','paid','reserving','reserved','completing','ready','sending','sent','review','expired'];
 // 'payment_issue' lists orders with a refund, reversal, denied capture or dispute recorded by the webhook.
 const ISSUE_FILTER='(payment_status.in.(refunded,partially_refunded,reversed,denied,disputed),dispute_id.not.is.null)';
 const ISSUES=['refunded','partially_refunded','reversed','denied','disputed'],DAY=86400000;

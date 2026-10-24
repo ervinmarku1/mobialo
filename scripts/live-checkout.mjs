@@ -55,7 +55,8 @@ export async function createLiveOrder(input,services,products,catalog=getCatalog
 export async function captureLiveOrder(state,token,services,{deferDelivery=false}={}){
   if(!/^[a-f0-9-]{36}$/.test(state||'')||typeof token!=='string')throw Error('INVALID_ORDER');
   services??=await deliveryServices();const order=await services.store.get(state);
-  if(!order||order.paypal_order_id!==token)throw Error('INVALID_ORDER');
+  // An expired checkout (a day old, never paid) is not captured: the buyer starts a new order at the current price.
+  if(!order||order.paypal_order_id!==token||order.state==='expired')throw Error('INVALID_ORDER');
   const amount=Number(order.amount).toFixed(2);
   let payment=await services.paypal(token);
   if(['CREATED','SAVED','PAYER_ACTION_REQUIRED'].includes(payment.status))throw Error('PAYMENT_APPROVAL_REQUIRED');

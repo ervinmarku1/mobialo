@@ -72,6 +72,7 @@ test('admin view labels payment flags and keeps refunds out of the paid sum',asy
  assert.equal(ui.stateLabel(order({state:'awaiting_payment'})),'PayPal në pritje: prano pagesën te PayPal');
  assert.equal(ui.stateLabel(order({state:'awaiting_payment',payment_status:'denied'})),'Pa paguar');
  assert.equal(ui.stateLabel(order({state:'review',payment_status:'refunded'})),'Për kontroll');
+ assert.equal(ui.stateLabel(order({state:'expired',paypal_capture_id:null})),'Skaduar pa pagesë');
  assert.match(source,/sum\+kept\(o\)/);
  assert.match(source,/new Option\('Problem me pagesën','payment_issue'\)/);
 });

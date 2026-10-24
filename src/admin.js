@@ -13,7 +13,7 @@ let products=new Map();
 // The order page is /admin/orders/{id} (orderId; null on the list). The list filters ride in the query string (applied),
 // so order links and "back" return to the same filtered page; listReady means the rows on screen match applied.
 let orderId=null,applied='',listReady=false;
-const labels={awaiting_payment:'Në pritje të pagesës',paid:'Paguar',reserving:'Duke rezervuar',reserved:'Rezervuar',completing:'Duke përfunduar',ready:'eSIM gati',sending:'Duke dërguar emailin',sent:'Email i pranuar për dërgim',review:'Për kontroll'};
+const labels={awaiting_payment:'Në pritje të pagesës',paid:'Paguar',reserving:'Duke rezervuar',reserved:'Rezervuar',completing:'Duke përfunduar',ready:'eSIM gati',sending:'Duke dërguar emailin',sent:'Email i pranuar për dërgim',review:'Për kontroll',expired:'Skaduar pa pagesë'};
 // Flags recorded by the verified PayPal webhook (refunds, reversals, denied captures, disputes).
 const paymentLabels={refunded:'Rimbursuar',partially_refunded:'Rimbursuar pjesërisht',reversed:'Kthyer',denied:'Refuzuar',disputed:'Kontestim'};
 const disputeLabels={OPEN:'Hapur',WAITING_FOR_BUYER_RESPONSE:'Në pritje të blerësit',WAITING_FOR_SELLER_RESPONSE:'Pret përgjigjen tonë',UNDER_REVIEW:'Në shqyrtim te PayPal',RESOLVED:'Zgjidhur',RESOLVED_BUYER_FAVOUR:'Zgjidhur në favor të blerësit',RESOLVED_SELLER_FAVOUR:'Zgjidhur në favor tonë',RESOLVED_WITH_PAYOUT:'Zgjidhur, PayPal pagoi blerësin',CANCELED_BY_BUYER:'Anuluar nga blerësi',ACCEPTED:'Pranuar',DENIED:'Refuzuar',OTHER:'Tjetër'};
@@ -131,7 +131,7 @@ async function fetchOrders(current,quiet){
  }catch{if(!stale()){hideData();message('Lidhja nuk u krye. Provo përsëri.');}}
 }
 // Badge colours: delivered green, manual check red, a held PayPal capture amber, unpaid grey, any step in between blue.
-const stateKind=o=>o.state==='sent'?'ok':o.state==='review'?'bad':o.state==='awaiting_payment'?(o.paypal_capture_id?'warn':'muted'):'info';
+const stateKind=o=>o.state==='sent'?'ok':o.state==='review'?'bad':o.state==='expired'?'muted':o.state==='awaiting_payment'?(o.paypal_capture_id?'warn':'muted'):'info';
 // The order's way from checkout to the eSIM email. The first unfinished step is the current one (a problem while the order
 // waits for a manual check); orders sent before the order confirmation existed show that step as skipped.
 const progress=o=>{const sent=o.state==='sent';return [['Porosia u krijua',true],['Pagesa u konfirmua',!!o.paypal_capture_id&&o.state!=='awaiting_payment'],['Konfirmimi me email',o.confirmation_email_id?true:sent?null:false],['eSIM-i u ble',sent||!!o.provider_order_id],['Emaili me kodin QR',sent]];};

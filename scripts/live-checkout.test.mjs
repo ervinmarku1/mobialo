@@ -71,6 +71,9 @@ test('a different price is checked once more against a catalog at most a minute 
 test('capture rejects incorrect capability and never calls provider',async()=>{
  const services={store:{get:async()=>({paypal_order_id:'expected'})},paypal:()=>assert.fail('Must not contact payment provider')};
  await assert.rejects(captureLiveOrder('12345678-1234-1234-1234-123456789abc','wrong',services),/INVALID_ORDER/);
+ // A checkout closed as expired is never captured, even with the right PayPal order.
+ services.store.get=async()=>({paypal_order_id:'expected',state:'expired',amount:4.19});
+ await assert.rejects(captureLiveOrder('12345678-1234-1234-1234-123456789abc','expected',services),/^Error: INVALID_ORDER$/);
 });
 test('unapproved payment is not captured and cannot trigger delivery',async()=>{
  const services={store:{get:async()=>({paypal_order_id:'remote',amount:4.19})},paypal:async(id,method)=>{assert.equal(method,undefined);return {id:'remote',status:'CREATED'};}};

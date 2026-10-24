@@ -48,6 +48,10 @@ database run all of them; for an existing one, run only the files that are missi
 14. `migrations/20261024120000_account_order_limit.sql`: `reserve_account_order()`, which counts a signed-in
    customer's unpaid orders and inserts the new one under a lock per account (limits under "Hosted checkout").
    Apply before deploying the code: without it signed-in customers cannot create orders (503); guests are unaffected.
+15. `migrations/20261024130000_expired_checkouts.sql`: the final state `expired` for checkouts left unpaid for a day
+   (no capture, no payment flag), set by the hourly job `mobialo-expire-checkouts`, and for rows held for a check that
+   never had a payment. Customers see "Payment not completed", the admin panel "Skaduar pa pagesë". Apply AFTER
+   deploying the code that knows the state (the webhook delivers a late completed capture, checkout refuses to capture).
 
 All files are safe to run again. A null column below means that migration is missing:
 
@@ -65,7 +69,8 @@ select to_regclass('public.esim_deliveries') as m1, to_regclass('public.esim_tes
     and table_name='esim_deliveries' and column_name='confirmation_email_id') as m12,
   (select coalesce(bool_and(defaclacl::text not like '%anon=%'),true) from pg_default_acl
     where defaclnamespace='public'::regnamespace and defaclrole='postgres'::regrole) as m13,
-  to_regprocedure('public.reserve_account_order(uuid,uuid,text,text,numeric,text,text,timestamptz,text,integer)') as m14;
+  to_regprocedure('public.reserve_account_order(uuid,uuid,text,text,numeric,text,text,timestamptz,text,integer)') as m14,
+  (select 1 from pg_constraint where conname='esim_deliveries_state_check' and pg_get_constraintdef(oid) like '%expired%') as m15;
 select jobname, schedule, active from cron.job;
 ```
 
@@ -143,6 +148,9 @@ Capture outcomes:
   limits) and 422 `PAYPAL_COMPLIANCE_VIOLATION`: no money taken; fix the PayPal account.
 - 400 `PAYMENT_APPROVAL_REQUIRED` (also PAYER_ACTION_REQUIRED/ORDER_NOT_APPROVED on
   capture): not captured; the buyer starts again.
+- Never paid: a checkout without any capture or payment flag becomes `expired` a day after it was created
+  (job `mobialo-expire-checkouts`, migration 15). It is no longer polled or captured (400 `INVALID_ORDER`); a completed
+  capture that PayPal still reports through the webhook makes it `paid` and is delivered.
 - 502 `PAYPAL_REQUEST_FAILED`: unknown outcome, "do not pay again; retry verification".
   The PayPal issue is logged as `PayPal API request failed {status,name,debugId,issues}`.
 - 503 `CHECKOUT_UNAVAILABLE`: configuration/upstream failure, logged as

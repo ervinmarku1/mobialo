@@ -35,6 +35,15 @@ test('verified webhook persists payment for worker and tolerates replay',async()
   assert.equal(f.calls.filter(c=>c==='save').length,1);
   assert.equal(f.calls[0],'verify');
 });
+test('a completed capture for a checkout already closed as expired still marks it paid for delivery',async()=>{
+  const f=fixture(),row={...f.row(),state:'expired'};let from;
+  f.services.store.byPayPal=async()=>({...row});
+  f.services.store.transition=async(id,state,patch)=>{from=state;return {...row,...patch};};
+  assert.equal((await paypalWebhook(request(),f.services)).status,200);assert.equal(from,'expired');
+  // If the claim loses and the row is still expired, PayPal must retry.
+  f.services.store.transition=async()=>null;f.services.store.get=async()=>({...row,paypal_capture_id:'capture'});
+  assert.equal((await paypalWebhook(request(),f.services)).status,503);
+});
 test('invalid signature and verification failure cannot access orders',async()=>{
   for(const unavailable of [false,true]){
     const f=fixture();f.services.verifyWebhook=async()=>{if(unavailable)throw Error('offline');return false;};

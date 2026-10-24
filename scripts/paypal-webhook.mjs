@@ -55,12 +55,13 @@ export async function paypalWebhook(req,services,log=console){
     const recorded=payment.purchase_units?.flatMap(unit=>unit.payments?.captures||[])||[];
     if(!validCapture(payment,{id:orderId,amount:Number(order.amount).toFixed(2)})||recorded[0]?.id!==capture.id)return reply(409,'PAYMENT_MISMATCH');
     if(order.paypal_capture_id&&order.paypal_capture_id!==capture.id)return reply(409,'PAYMENT_MISMATCH');
-    if(order.state==='awaiting_payment'){
+    // An unpaid checkout closed as expired (a day without a capture) that PayPal still reports as paid is delivered too.
+    if(['awaiting_payment','expired'].includes(order.state)){
       // The claim keeps a refund or dispute flag recorded meanwhile; the worker then stops the order.
-      const saved=await services.store.transition(order.id,'awaiting_payment',{state:'paid',paypal_capture_id:capture.id});
+      const saved=await services.store.transition(order.id,order.state,{state:'paid',paypal_capture_id:capture.id});
       if(!saved){
         const latest=await services.store.get(order.id);
-        if(!latest||latest.paypal_capture_id!==capture.id||latest.state==='awaiting_payment')return reply(503,'ORDER_NOT_AVAILABLE');
+        if(!latest||latest.paypal_capture_id!==capture.id||['awaiting_payment','expired'].includes(latest.state))return reply(503,'ORDER_NOT_AVAILABLE');
       }
     }
     // A held payment that completed; only a 'pending' flag is replaced. Best effort: the label is informational.
