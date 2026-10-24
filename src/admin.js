@@ -40,12 +40,41 @@ const euro=(value,currency='EUR')=>formatMoney(value,currency,'sq');
 // The gate has decided (orders, login, 2FA or an error message): the admin.html head snippet's login hiding ends.
 const settled=()=>document.documentElement.classList.remove('admin-pending');
 // Takes every order off screen (failed, gated or signed-out loads); the access request box is left to clear().
-function hideData(){orders=[];listReady=false;$('rows').replaceChildren();$('detail-list').replaceChildren();$('order-product').replaceChildren();$('panel').hidden=true;$('order-page').hidden=true;}
+function hideData(){orders=[];listReady=false;overviewAt=0;$('rows').replaceChildren();$('detail-list').replaceChildren();$('order-product').replaceChildren();$('order-progress').replaceChildren();$('panel').hidden=true;$('order-page').hidden=true;}
 // Orders reloads keep Cilësimet (it sits inside #panel, so it is only hidden meanwhile); sign-out clears it.
 function clear(){access?.clear();hideData();}
 function clearSettings(){settingsRole='';settings?.clear();}
 function setFilters(values){page=values.page;$('state').value=values.state;if($('state').value!==values.state)$('state').value='';$('search').value=values.search;$('from').value=values.from;$('to').value=values.to;}
 const formQuery=()=>listQuery({page,state:$('state').value,search:$('search').value,from:$('from').value,to:$('to').value});
+// The overview: server figures (?summary=1) for the last 24 hours, 7 and 30 days and 14 days of revenue, read again at
+// most every 30 seconds unless "Rifresko" is pressed. A result for a load or view already left is dropped; a failure
+// leaves the previous figures (or the dashes) and is retried with the next load.
+let overviewAt=0;
+async function loadOverview(token,current){
+ if(Date.now()-overviewAt<30000)return;overviewAt=Date.now();
+ try{
+  const r=await fetch('/api/admin/orders?summary=1',{headers:{Authorization:'Bearer '+token},cache:'no-store'});const data=await r.json();
+  if(!r.ok||!data.summary){overviewAt=0;return;}
+  if(current===sequence&&orderId===null)showOverview(data.summary);
+ }catch{overviewAt=0;}
+}
+function showOverview(s){
+ $('paid').textContent=euro(s.month.revenue);$('paid-sub').textContent='7 ditë: '+euro(s.week.revenue)+' · 24 orë: '+euro(s.day.revenue);
+ $('orders-paid').textContent=String(s.month.orders);$('orders-sub').textContent='7 ditë: '+s.week.orders+' · 24 orë: '+s.day.orders;
+ $('abandoned').textContent=String(s.abandoned);
+ $('abandoned-sub').textContent=s.started?s.month.orders+' nga '+s.started+' pagesa të nisura u paguan (30 ditë)':'Asnjë pagesë e nisur në 30 ditë';
+ $('attention').textContent=s.attention??'—';$('attention-sub').textContent=s.issues?'Rimbursime ose kontestime (30 ditë): '+s.issues:'Asnjë rimbursim ose kontestim (30 ditë)';
+ $('attention-card').classList.toggle('alert',s.attention>0);
+ // One bar per UTC day, scaled to the best day; the amount and order count are read out after the date.
+ const max=Math.max(0,...s.days.map(d=>d.revenue)),chart=$('chart');chart.replaceChildren();
+ $('chart-total').textContent='Gjithsej '+euro(s.days.reduce((sum,d)=>sum+d.revenue,0))+' · ';
+ for(const d of s.days){
+  const li=document.createElement('li'),bar=document.createElement('span'),day=document.createElement('small'),value=document.createElement('span');
+  bar.className='bar'+(d.revenue?'':' empty');bar.style.height=(max&&d.revenue?Math.max(4,Math.round(d.revenue/max*100)):3)+'%';
+  day.textContent=d.date.slice(8,10)+'.'+d.date.slice(5,7);value.className='visually-hidden';value.textContent=': '+euro(d.revenue)+', '+d.orders+' porosi';
+  li.title=day.textContent+' · '+euro(d.revenue)+' · '+d.orders+' porosi';li.append(bar,day,value);chart.append(li);
+ }
+}
 // quiet: refresh, filter and page changes keep the current rows on screen until the new ones arrive, instead of blanking the panel.
 async function load({quiet=false}={}){
  const current=++sequence,main=document.querySelector('main');main.setAttribute('aria-busy','true');
@@ -77,21 +106,22 @@ async function fetchOrders(current,quiet){
   if(id!==null)showOrder(malformed?null:(data.orders||[]).find(o=>String(o.id).toLowerCase()===id.toLowerCase())||null);
   else{
    orders=data.orders;$('total').textContent=data.total??'—';$('rows').replaceChildren();
-   $('paid').textContent=euro(orders.filter(o=>o.paypal_capture_id&&o.state!=='awaiting_payment').reduce((sum,o)=>sum+kept(o),0));
-   $('attention').textContent=orders.filter(o=>['review','reserving','completing','sending'].includes(o.state)).length;
+   $('page-sum').textContent=euro(orders.filter(o=>o.paypal_capture_id&&o.state!=='awaiting_payment').reduce((sum,o)=>sum+kept(o),0));
    for(const o of orders){const tr=document.createElement('tr');
+    // Each cell carries its column name, shown above the value when phones stack a row as a card (admin.css).
+    const cell=(label,className,...content)=>{const td=document.createElement('td');td.dataset.label=label;td.className=className;td.append(...content);tr.append(td);return td;};
+    const who=document.createElement('small');who.textContent=o.user_id?'Me llogari':'Vizitor';
+    cell('Data','date',numericDateTime(o.created_at));cell('Klienti','customer',o.customer_email,who);
     // The title stored with the order is the plan that was bought, even after the catalog renames or drops it.
-    for(const text of [numericDateTime(o.created_at),o.customer_email,o.product_title||products.get(o.product_id)?.title||o.product_id,euro(o.amount,o.currency)]){const td=document.createElement('td');td.textContent=text;tr.append(td);}
-    const status=document.createElement('td');status.append(badge(stateLabel(o),stateKind(o)));
+    cell('Paketa','plan',o.product_title||products.get(o.product_id)?.title||o.product_id);cell('Shuma','amount',euro(o.amount,o.currency));
+    const status=cell('Statusi','status',badge(stateLabel(o),stateKind(o)));
     for(const text of paymentBadges(o))status.append(' ',badge(text,'bad'));
-    tr.append(status);
-    const reference=document.createElement('td');reference.textContent=o.paypal_order_id;tr.append(reference);
     // A real link to the order page (opens in a new tab with a modified click); a plain click stays in this page.
-    const action=document.createElement('td'),link=document.createElement('a');link.className='button-link';link.textContent='Shiko';link.href=orderHref(o.id,applied);link.setAttribute('aria-label','Shiko porosinë: '+o.customer_email);
+    const action=document.createElement('td'),link=document.createElement('a');action.className='action';link.className='button-link';link.textContent='Shiko';link.href=orderHref(o.id,applied);link.setAttribute('aria-label','Shiko porosinë: '+o.customer_email);
     link.onclick=event=>{if(!plainClick(event))return;event.preventDefault();history.replaceState({...history.state,adminScroll:scrollY},'');history.pushState({adminFromList:true},'',link.getAttribute('href'));route();};
     action.append(link);tr.append(action);$('rows').append(tr);
    }
-   listReady=true;showList();
+   listReady=true;showList();loadOverview(session.access_token,current);
   }
   // Cilësimet is superadmin-only and loads once per account and role, not on every reload, filter or page;
   // an unknown role (null) is probed silently and never replaces a known one. "Rifresko cilësimet" reloads it.
@@ -100,15 +130,21 @@ async function fetchOrders(current,quiet){
   if(id===null){$('empty').hidden=orders.length!==0;$('page').textContent='Faqja '+page;$('previous').disabled=page===1;$('next').disabled=data.total!==null?page*50>=data.total:orders.length<50;}
  }catch{if(!stale()){hideData();message('Lidhja nuk u krye. Provo përsëri.');}}
 }
-const stateKind=o=>o.state==='sent'?'sent':o.state==='review'?'review':'';
+// Badge colours: delivered green, manual check red, a held PayPal capture amber, unpaid grey, any step in between blue.
+const stateKind=o=>o.state==='sent'?'ok':o.state==='review'?'bad':o.state==='awaiting_payment'?(o.paypal_capture_id?'warn':'muted'):'info';
+// The order's way from checkout to the eSIM email. The first unfinished step is the current one (a problem while the order
+// waits for a manual check); orders sent before the order confirmation existed show that step as skipped.
+const progress=o=>{const sent=o.state==='sent';return [['Porosia u krijua',true],['Pagesa u konfirmua',!!o.paypal_capture_id&&o.state!=='awaiting_payment'],['Konfirmimi me email',o.confirmation_email_id?true:sent?null:false],['eSIM-i u ble',sent||!!o.provider_order_id],['Emaili me kodin QR',sent]];};
 function badge(text,kind){const span=document.createElement('span');span.className='badge '+kind;span.textContent=text;return span;}
 function showList(){$('order-page').hidden=true;$('panel').hidden=false;document.title='MOBIALO · Administrimi';}
 // The order page: the fields of the former details dialog, grouped; supplier and buyer values are set as text only.
 function showOrder(o){
  $('panel').hidden=true;$('order-page').hidden=false;$('order-back').href='/admin'+listQuery(filtersFrom(location.search));
- $('detail-list').replaceChildren();$('order-product').replaceChildren();$('detail-list').hidden=!o;$('order-missing').hidden=!!o;$('order-refresh').hidden=!o;
+ $('detail-list').replaceChildren();$('order-product').replaceChildren();$('order-progress').replaceChildren();$('detail-list').hidden=!o;$('order-progress').hidden=!o;$('order-missing').hidden=!!o;$('order-refresh').hidden=!o;
  $('order-title').textContent=o?'Detajet e porosisë':'Porosia nuk u gjet';document.title='MOBIALO · '+$('order-title').textContent;
  if(!o)return;
+ const steps=progress(o),current=steps.findIndex(([,done])=>done===false);
+ steps.forEach(([name,done],index)=>{const li=document.createElement('li');li.textContent=name;li.className=done?'done':done===null?'skipped':index===current?(o.state==='review'?'problem':'current'):'';if(index===current)li.setAttribute('aria-current','step');$('order-progress').append(li);});
  const product=products.get(o.product_id),time=numericDateTime;
  if(product||o.product_title){const name=document.createElement('strong'),specs=product?[product.dataAmount,product.dataUnit,product.validityHours?product.validityHours/24+' ditë':''].filter(Boolean).join(' / '):'';name.textContent=o.product_title||product.title;$('order-product').append(name,specs?' · '+specs:'');}
  const groups=[
@@ -147,7 +183,7 @@ $('export').onclick=()=>{
  const rows=[['Data','Email','Paketa','Shuma EUR','Statusi','Pagesa','Rimbursuar EUR','PayPal'],...orders.map(o=>[o.created_at,o.customer_email,products.get(o.product_id)?.title||o.product_id,o.amount,stateLabel(o),paymentBadges(o).join(', '),o.refunded_amount??'',o.paypal_order_id])];
  const url=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='mobialo-porosi-faqja-'+page+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-$('filters').onsubmit=e=>{e.preventDefault();page=1;load({quiet:true});};$('refresh').onclick=()=>load({quiet:true});$('previous').onclick=()=>{page--;load({quiet:true});};$('next').onclick=()=>{page++;load({quiet:true});};
+$('filters').onsubmit=e=>{e.preventDefault();page=1;load({quiet:true});};$('refresh').onclick=()=>{overviewAt=0;load({quiet:true});};$('previous').onclick=()=>{page--;load({quiet:true});};$('next').onclick=()=>{page++;load({quiet:true});};
 $('logout').onclick=async()=>{++sequence;clear();clearSettings();const {error}=await client.auth.signOut();if(error){message('Dalja nuk u krye. Provo përsëri.');return;}$('login').hidden=false;$('logout').hidden=true;message('');};
 $('login-form').onsubmit=async e=>{e.preventDefault();$('submit').disabled=true;try{let captchaToken;try{captchaToken=await captcha.token();}catch{message('Kontrolli i sigurisë nuk përfundoi. Rifresko faqen dhe provo përsëri.');return;}const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value,options:{captchaToken}});$('password').value='';if(error){message(error.code==='captcha_failed'||/captcha/i.test(error.message||'')?'Kontrolli i sigurisë nuk përfundoi. Rifresko faqen dhe provo përsëri.':'Hyrja nuk u krye. Kontrollo emailin dhe fjalëkalimin.');return;}page=1;await load();}catch{message('Lidhja nuk u krye.');}finally{captcha.reset();$('submit').disabled=false;}};
 // The catalog (plan titles) downloads alongside the client setup; the first load still waits for it, so titles never change on screen.

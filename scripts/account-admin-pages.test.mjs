@@ -96,6 +96,28 @@ test('admin page: no dialogs or native confirms; the order page is a hidden sect
   for(const field of ['Statusi i pagesës','Shuma e rimbursuar','Kontestimi','Përditësimi i pagesës','Porosia PayPal','Pagesa PayPal','Referenca e eSIM-it','ID e emailit','ID MOBIALO'])assert.ok(adminSource.includes(`'${field}'`),field);
 });
 
+test('admin overview and order progress: server figures after the gates, badge colours and the steps of an order',async()=>{
+  const line=name=>adminSource.slice(adminSource.indexOf('const '+name+'='),adminSource.indexOf('\n',adminSource.indexOf('const '+name+'=')));
+  const ui=vm.runInNewContext(line('stateKind')+'\n'+line('progress')+'\n;({stateKind,progress})',{});
+  const order=fields=>({state:'paid',paypal_capture_id:'C',confirmation_email_id:null,provider_order_id:null,...fields});
+  assert.deepEqual(['sent','review','paid','reserved',].map(state=>ui.stateKind(order({state}))),['ok','bad','info','info']);
+  assert.equal(ui.stateKind(order({state:'awaiting_payment',paypal_capture_id:null})),'muted');assert.equal(ui.stateKind(order({state:'awaiting_payment'})),'warn');
+  const steps=o=>Array.from(ui.progress(o),([,done])=>done);
+  assert.deepEqual(steps(order({state:'awaiting_payment',paypal_capture_id:null})),[true,false,false,false,false]);
+  assert.deepEqual(steps(order({state:'reserved',confirmation_email_id:'re',provider_order_id:'mm'})),[true,true,true,true,false]);
+  assert.deepEqual(steps(order({state:'sent',confirmation_email_id:'re'})),[true,true,true,true,true]);
+  // Sent before the order confirmation existed: that step is skipped, not missing.
+  assert.deepEqual(steps(order({state:'sent'})),[true,true,null,true,true]);
+  // The overview is read only for the list, after the list itself passed the gates, and never with the list filters.
+  const body=adminSource.slice(adminSource.indexOf('async function fetchOrders'));
+  assert.ok(body.indexOf('await mfa.show();')<body.indexOf('loadOverview(session.access_token,current)'));
+  assert.match(adminSource,/fetch\('\/api\/admin\/orders\?summary=1',\{headers:\{Authorization:'Bearer '\+token\},cache:'no-store'\}\)/);
+  assert.match(adminSource,/if\(current===sequence&&orderId===null\)showOverview\(data\.summary\);/);
+  const html=await read('dist/admin.html');
+  for(const id of ['paid','orders-paid','abandoned','attention','chart','page-sum','order-progress'])assert.match(html,new RegExp(`id="${id}"`),id);
+  assert.doesNotMatch(html,/id="workflow"/);
+});
+
 test('admin page: a stored session never shows the login form first, and the header keeps the logout slot',async()=>{
   const html=await read('dist/admin.html'),css=await read('dist/admin.css');
   const snippet=html.match(/<script>(\/\* A stored session keeps the login form hidden[\s\S]*?)<\/script>/)[1];

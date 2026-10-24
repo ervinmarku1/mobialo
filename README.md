@@ -38,7 +38,9 @@ Vercel deploys every push to `main` straight to production.
 - **Delivery worker**: Supabase pg_cron job `mobialo-delivery-sweep` POSTs to
   `/api/worker/sweep` every minute. The sweep buys the eSIM from MobiMatter, emails the QR
   code through Resend and writes the heartbeat shown in Cilësimet.
-- **Admin**: https://www.mobialo.eu/admin. Orders, and Cilësimet (superadmin only): shop mode
+- **Admin**: https://www.mobialo.eu/admin. Overview (money kept and paid orders for 24 hours, 7 and 30
+  days, unpaid checkouts, orders to check, revenue per day for 14 days; `/api/admin/orders?summary=1`), orders
+  with their progress from payment to the eSIM email, and Cilësimet (superadmin only): shop mode
   (Mbyllur / Vetëm admin / Publik), payment methods, pricing, administrators and system
   status. See [supabase/ADMIN-SETUP.md](supabase/ADMIN-SETUP.md).
 
