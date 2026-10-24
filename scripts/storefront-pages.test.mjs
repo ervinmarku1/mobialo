@@ -542,6 +542,44 @@ test('a plan whose only other code has no name counts as single-country everywhe
   // Own plans first on the Türkiye page, the regional one after them although it is cheaper.
   assert.deepEqual(Array.from(context.MobialoCatalogFilter(turkey.plans,{},'TR',S.coveredCodes),({plan})=>plan.id),['tr-kt','tr-only','europe']);
 });
+test('a destination card says what its from-price buys, and unlimited plans say so instead of a nominal 3000 GB',async()=>{
+  const context=vm.createContext({console,Intl,URL,URLSearchParams});
+  for(const file of ['dist/country-names.js','dist/plan-translations.js','dist/region-icons.js','dist/catalog-filters.js','dist/storefront-core.js'])vm.runInContext(await readFile(new URL('../'+file,import.meta.url),'utf8'),context);
+  const S=context.MobialoStorefront,plan=(id,countries,price,extra={})=>({id,title:id,price,currency:'EUR',category:'esim_realtime',countries,regions:['Europe'],provider:'P',dataAmount:'1',dataUnit:'GB',validityHours:168,...extra});
+  const products=[plan('me-1',['ME'],4.51),plan('me-unl',['ME'],19,{title:'Montenegro Unlimited',dataAmount:'3000',validityHours:720}),plan('europe',['ME','GR'],3.2,{dataAmount:'3',validityHours:720}),
+    plan('al-none',['AL','GR'],2.5,{dataAmount:null,dataUnit:null}),plan('it-calls',['IT'],9,{title:'Italy 120 GB Unlimited Calls',dataAmount:'120'})];
+  const destinations=S.buildDestinations(products),find=code=>destinations.find(d=>d.code===code);
+  // The country's own cheapest plan, not the cheaper regional one.
+  assert.equal(find('ME').fromPlan.id,'me-1');
+  assert.match(S.destinationCard(find('ME'),'en'),/<p>From <b>€4\.51<\/b><span class="card-facts">1 GB · 7 days<\/span><\/p>/);
+  assert.match(S.destinationCard(find('ME'),'sq'),/<p>Nga <b>4,51 €<\/b><span class="card-facts">1 GB · 7 ditë<\/span><\/p>/);
+  assert.match(S.destinationCard(find('ME'),'it'),/<span class="card-facts">1 GB · 7 giorni<\/span>/);
+  // A region shows its cheapest plan; a plan without data facts adds no line.
+  const europe=destinations.find(d=>d.kind==='region');assert.equal(europe.fromPlan.id,'al-none');assert.doesNotMatch(S.destinationCard(europe,'en'),/card-facts/);
+  assert.equal(S.fromFacts(find('GR'),'en'),'');
+  // Unlimited data; "Unlimited Calls" keeps its real data amount.
+  assert.equal(S.dataFor(products[1],'en'),'Unlimited');assert.equal(S.dataFor(products[1],'sq'),'Pa limit');assert.equal(S.dataFor(products[1],'it'),'Illimitati');
+  assert.equal(S.dataFor(products[4],'en'),'120 GB');
+  // Many plans share the lowest price: the card names the one that gives the most data, then the longest validity.
+  const tied=S.buildDestinations([plan('a',['AE'],4.51,{title:'A small'}),plan('b',['AE'],4.51,{title:'B big',dataAmount:'2',validityHours:24}),plan('c',['AE'],4.51,{title:'C long',dataAmount:'2',validityHours:360}),plan('d',['AE'],9,{dataAmount:'20'})]);
+  assert.equal(tied.find(d=>d.code==='AE').fromPlan.id,'c');assert.equal(S.fromFacts(tied.find(d=>d.code==='AE'),'en'),'2 GB · 15 days');
+});
+test('the homepage links to popular destinations that exist, under the names and paths the catalog gives them',async()=>{
+  const context=vm.createContext({console,Intl,URL,URLSearchParams});
+  for(const file of ['dist/country-names.js','dist/plan-translations.js','dist/region-icons.js','dist/catalog-filters.js','dist/storefront-core.js'])vm.runInContext(await readFile(new URL('../'+file,import.meta.url),'utf8'),context);
+  const S=context.MobialoStorefront,index=await read('dist/index.html'),preview=JSON.parse(await read('dist/catalog-preview.json'));
+  const destinations=S.buildDestinations(preview.products||preview);
+  const row=/<p class="popular-row"><span data-i18n="popular">Popular:<\/span>(.*?)<\/p>/.exec(index);assert.ok(row,'popular row');
+  const links=[...row[1].matchAll(/<a href="([^"]+)" data-(country|region)="([^"]+)">([^<]+)<\/a>/g)];assert.equal(links.length,6);
+  for(const [,href,kind,value,text] of links){
+   const destination=kind==='country'?destinations.find(d=>d.code===value):destinations.find(d=>d.kind==='region'&&d.label===value);
+   assert.ok(destination,value);assert.equal(href,S.destinationPath('en',destination));assert.equal(text,destination.en);
+   // The script builds the same path from the code alone (app.js), in every language.
+   for(const lang of ['en','sq','it'])assert.equal(S.destinationPath(lang,kind==='country'?{kind:'country',slug:S.countrySlug(value)}:{kind:'region',slug:S.slugify(value)}),S.destinationPath(lang,destination));
+  }
+  // The from-price line has its reserved slot in the hero.
+  assert.match(index,/No account needed\.<\/p><p class="hero-from"><\/p>/);
+});
 
 test('phones collapse the plan filters before any field is parsed, so no frame shows them open',()=>{
   const html=page('/sq/esim/japan',fixture).body;

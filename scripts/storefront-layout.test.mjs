@@ -341,7 +341,7 @@ test('phone layout: the checkout reserves its finished height and appears in one
   assert.match(styles,/\.breadcrumb a\{display:block;min-height:44px;line-height:44px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\}/);
   // Cards: flag beside the name, label and price on their own lines; the homepage placeholders have the same lines.
   assert.match(styles,/\.destination-card\{display:grid;grid-template-columns:32px minmax\(0,1fr\)/);assert.match(styles,/\.destination-card p b\{display:block\}/);
-  const placeholder='<div class="destination-card skeleton" aria-hidden="true"><span class="flag"></span><div><h3><i></i></h3><p><i></i> <b><i></i></b></p></div></div>';
+  const placeholder='<div class="destination-card skeleton" aria-hidden="true"><span class="flag"></span><div><h3><i></i></h3><p><i></i> <b><i></i></b><span class="card-facts"><i></i></span></p></div></div>';
   assert.equal(index.split(placeholder).length-1,9);assert.ok(app.includes(placeholder));
   // The hub's count takes the jump links' row while searching; the eyebrow count fills a slot of its own width.
   assert.match(styles,/\.hub-hero:has\(#hub-status:not\(:empty\)\) \.hub-jump\{visibility:hidden\}/);

@@ -238,3 +238,8 @@ html.signed-in .account-link .account-out,html:not(.signed-in) .account-link .ac
  .store-hero .dest-intro{display:none}.store-hero{padding:16px 14px;margin-bottom:14px}.store-hero h1{margin:4px 0 6px}.store-hero>.flag{width:40px;height:40px}
  .store-hero .shop-regional-note{margin-top:4px}.store-layout{gap:12px}.store-layout .shop-toolbar{margin-bottom:12px}
 }
+/* What the 'from' price buys ('1 GB · 7 days'), on its own line under the price; the placeholders reserve the line. */
+.destination-card .card-facts{display:block;font-size:11px;line-height:1.4;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.skeleton .card-facts i{width:6.5em}
+/* Hero: the lowest live price (its line is reserved before the catalog arrives) and links to popular destinations. */
+.hero-from{min-height:1.5em;margin:14px 0 0;font-size:15px;line-height:1.5;color:var(--muted)}.hero-from b{color:var(--ink);font-weight:700}
+.popular-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 0;font-size:13px;color:var(--muted)}.popular-row a{display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border:1px solid #e8d8cb;border-radius:999px;background:#fff;color:var(--ink);font-weight:600;text-decoration:none;-webkit-tap-highlight-color:transparent}.popular-row a:focus-visible{border-color:var(--accent);color:var(--accent)}@media(hover:hover){.popular-row a:hover{border-color:var(--accent);color:var(--accent)}}

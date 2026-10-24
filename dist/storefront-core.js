@@ -13,7 +13,7 @@ const normalize=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036
 const slugify=text=>String(text??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[.'’]/g,'').replace(/&/g,' and ').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
 const COPY={
  en:{home:'Home',destinations:'Destinations',how:'How it works',why:'Why MOBIALO',help:'Help center',signIn:'Sign in',myAccount:'My account',skip:'Skip to content',mainNav:'Main navigation',breadcrumb:'Breadcrumb',language:'Language',searchLabel:'Search destinations',searchPlaceholder:'Where are you heading?',
-  from:'From',fromRegional:'Regional plans from',day:'day',days:'days',hour:'hour',hours:'hours',seeDetails:'See details',plan:'1 plan',plans:'{n} plans',showMore:'Show more',viewPlan:'View plan',coveredOne:'1 covered country',covered:'{n} covered countries',calls:'Calls',kyc:'Identity verification required',
+  from:'From',fromRegional:'Regional plans from',day:'day',days:'days',hour:'hour',hours:'hours',unlimited:'Unlimited',seeDetails:'See details',plan:'1 plan',plans:'{n} plans',showMore:'Show more',viewPlan:'View plan',coveredOne:'1 covered country',covered:'{n} covered countries',calls:'Calls',kyc:'Identity verification required',
   filters:'Filter plans',alsoCovers:'Also covers',minData:'Minimum data',minDays:'Minimum validity',maxPrice:'Maximum price',provider:'Provider',all:'All',clearFilters:'Clear filters',sortBy:'Sort by',sortPrice:'Lowest price',sortData:'Most data',sortDays:'Longest validity',removeFilter:'Remove filter',noPlans:'No plans match. Try removing some filters.',
   hubTitle:'eSIM destinations: countries, regions and global plans · MOBIALO',hubDescription:'Travel eSIM data plans for {n} countries, plus regional and global plans. Prices in EUR include processing costs; payment through PayPal and the QR code by email.',hubHeading:'eSIM for every destination',hubIntro:'Find your country, a region or a global plan. Prices in EUR include processing costs, payment is through PayPal and the QR code arrives by email.',countries:'Countries',regions:'Regions',globalPlans:'Global eSIM',noResults:'No matching destinations. Try another country or region.',resultsOne:'1 matching destination',results:'{n} matching destinations',
   countryHeading:'{name} eSIM',countryTitle:'{name} eSIM: travel data plans · MOBIALO',countryDescription:'{name} eSIM: {plans} from {price}. Prices in EUR include processing costs, payment through PayPal and the QR code by email.',destinationIntro:'Choose the data and validity that fit your trip, pay through PayPal and get your eSIM QR code by email.',regionalNote:'There is no plan for this country alone. These regional plans include it.',regionIntro:'Each plan covers several countries with one eSIM. Check the covered countries of a plan before buying.',regionCountries:'Countries covered by these plans',
@@ -25,7 +25,7 @@ const COPY={
   alsoIn:'This page is also in English →',notFoundTitle:'Page not found',notFoundText:'This page does not exist or has moved.',goHome:'Go to the homepage',findEsim:'Find your eSIM',helpEmail:'Help: support@mobialo.eu',unavailableTitle:'Catalog unavailable',unavailableText:'The catalog could not be loaded. Please retry.',retry:'Retry',
   footerTag:'Go places. Stay connected.',explore:'Explore',support:'Support',deviceGuide:'Device compatibility',about:'About us',previewStore:'Secure payment through PayPal',operator:'MOBIALO is operated by iSmart Shop & Service (NIPT L71614008L), Tirana, Albania.'},
  sq:{home:'Kreu',destinations:'Destinacionet',how:'Si funksionon',why:'Pse MOBIALO',help:'Ndihmë',signIn:'Hyr',myAccount:'Llogaria ime',skip:'Kalo te përmbajtja',mainNav:'Navigimi kryesor',breadcrumb:'Vendndodhja në faqe',language:'Gjuha',searchLabel:'Kërko destinacionin',searchPlaceholder:'Ku po udhëton?',
-  from:'Nga',fromRegional:'Paketa rajonale nga',day:'ditë',days:'ditë',hour:'orë',hours:'orë',seeDetails:'Shiko detajet',plan:'1 paketë',plans:'{n} paketa',showMore:'Shfaq më shumë',viewPlan:'Shiko paketën',coveredOne:'1 shtet i mbuluar',covered:'{n} shtete të mbuluara',calls:'Thirrje',kyc:'Kërkon verifikim identiteti',
+  from:'Nga',fromRegional:'Paketa rajonale nga',day:'ditë',days:'ditë',hour:'orë',hours:'orë',unlimited:'Pa limit',seeDetails:'Shiko detajet',plan:'1 paketë',plans:'{n} paketa',showMore:'Shfaq më shumë',viewPlan:'Shiko paketën',coveredOne:'1 shtet i mbuluar',covered:'{n} shtete të mbuluara',calls:'Thirrje',kyc:'Kërkon verifikim identiteti',
   filters:'Filtro paketat',alsoCovers:'Mbulon edhe',minData:'Internet minimal',minDays:'Vlefshmëria minimale',maxPrice:'Çmimi maksimal',provider:'Ofruesi',all:'Të gjitha',clearFilters:'Pastro filtrat',sortBy:'Rendit sipas',sortPrice:'Çmimi më i ulët',sortData:'Më shumë GB',sortDays:'Vlefshmëria më e gjatë',removeFilter:'Hiq filtrin',noPlans:'Nuk u gjetën paketa me këto filtra. Provo të heqësh disa filtra.',
   hubTitle:'Destinacionet eSIM: shtete, rajone dhe paketa globale · MOBIALO',hubDescription:'Paketa interneti eSIM për udhëtim në {n} shtete, si dhe paketa rajonale dhe globale. Çmimet në EUR përfshijnë kostot e përpunimit; pagesa përmes PayPal dhe kodi QR me email.',hubHeading:'eSIM për çdo destinacion',hubIntro:'Gjej shtetin, një rajon ose një paketë globale. Çmimet në EUR përfshijnë kostot e përpunimit, pagesa bëhet përmes PayPal dhe kodi QR vjen me email.',countries:'Shtetet',regions:'Rajonet',globalPlans:'eSIM globale',noResults:'Nuk u gjet destinacioni. Provo një shtet ose rajon tjetër.',resultsOne:'1 destinacion i gjetur',results:'{n} destinacione të gjetura',
   countryHeading:'eSIM {name}',countryTitle:'{name}: paketa eSIM për udhëtim · MOBIALO',countryDescription:'Destinacioni {name}: {plans} eSIM nga {price}. Çmimet në EUR përfshijnë kostot e përpunimit, pagesa përmes PayPal dhe kodi QR me email.',destinationIntro:'Zgjidh internetin dhe vlefshmërinë që i përshtaten udhëtimit, paguaj përmes PayPal dhe merr kodin QR të eSIM-it me email.',regionalNote:'Nuk ka paketë vetëm për këtë shtet. Këto paketa rajonale e përfshijnë.',regionIntro:'Çdo paketë mbulon disa shtete me një eSIM. Kontrollo shtetet e mbuluara të paketës para blerjes.',regionCountries:'Shtetet që mbulojnë këto paketa',
@@ -37,7 +37,7 @@ const COPY={
   alsoIn:'Kjo faqe është edhe në shqip →',notFoundTitle:'Faqja nuk u gjet',notFoundText:'Kjo faqe nuk ekziston ose është zhvendosur.',goHome:'Shko te faqja kryesore',findEsim:'Gjej eSIM-in tënd',helpEmail:'Ndihmë: support@mobialo.eu',unavailableTitle:'Katalogu nuk është i disponueshëm',unavailableText:'Katalogu nuk u ngarkua. Provo përsëri.',retry:'Provo përsëri',
   footerTag:'Zbulo vende. Qëndro i lidhur.',explore:'Eksploro',support:'Mbështetje',deviceGuide:'Përputhshmëria e telefonit',about:'Rreth nesh',previewStore:'Pagesë e sigurt përmes PayPal',operator:'MOBIALO administrohet nga iSmart Shop & Service (NIPT L71614008L), Tiranë, Shqipëri.'},
  it:{home:'Home',destinations:'Destinazioni',how:'Come funziona',why:'Perché MOBIALO',help:'Centro assistenza',signIn:'Accedi',myAccount:'Il mio account',skip:'Vai al contenuto',mainNav:'Navigazione principale',breadcrumb:'Percorso',language:'Lingua',searchLabel:'Cerca una destinazione',searchPlaceholder:'Dove vuoi andare?',
-  from:'Da',fromRegional:'Piani regionali da',day:'giorno',days:'giorni',hour:'ora',hours:'ore',seeDetails:'Vedi dettagli',plan:'1 piano',plans:'{n} piani',showMore:'Mostra di più',viewPlan:'Vedi piano',coveredOne:'1 paese coperto',covered:'{n} paesi coperti',calls:'Chiamate',kyc:'Verifica dell’identità richiesta',
+  from:'Da',fromRegional:'Piani regionali da',day:'giorno',days:'giorni',hour:'ora',hours:'ore',unlimited:'Illimitati',seeDetails:'Vedi dettagli',plan:'1 piano',plans:'{n} piani',showMore:'Mostra di più',viewPlan:'Vedi piano',coveredOne:'1 paese coperto',covered:'{n} paesi coperti',calls:'Chiamate',kyc:'Verifica dell’identità richiesta',
   filters:'Filtra piani',alsoCovers:'Copre anche',minData:'Dati minimi',minDays:'Validità minima',maxPrice:'Prezzo massimo',provider:'Fornitore',all:'Tutti',clearFilters:'Cancella filtri',sortBy:'Ordina per',sortPrice:'Prezzo più basso',sortData:'Più dati',sortDays:'Validità più lunga',removeFilter:'Rimuovi filtro',noPlans:'Nessun piano corrispondente. Prova a rimuovere alcuni filtri.',
   hubTitle:'Destinazioni eSIM: paesi, regioni e piani globali · MOBIALO',hubDescription:'Piani dati eSIM da viaggio per {n} paesi, oltre a piani regionali e globali. I prezzi in EUR includono i costi di elaborazione; pagamento tramite PayPal e codice QR via email.',hubHeading:'eSIM per ogni destinazione',hubIntro:'Trova il tuo paese, una regione o un piano globale. I prezzi in EUR includono i costi di elaborazione, il pagamento avviene tramite PayPal e il codice QR arriva via email.',countries:'Paesi',regions:'Regioni',globalPlans:'eSIM globale',noResults:'Nessuna destinazione trovata. Prova un altro paese o una regione.',resultsOne:'1 destinazione trovata',results:'{n} destinazioni trovate',
   countryHeading:'eSIM {name}',countryTitle:'{name}: piani eSIM da viaggio · MOBIALO',countryDescription:'Destinazione {name}: {plans} eSIM da {price}. I prezzi in EUR includono i costi di elaborazione, pagamento tramite PayPal e codice QR via email.',destinationIntro:'Scegli i dati e la validità adatti al tuo viaggio, paga tramite PayPal e ricevi il codice QR della eSIM via email.',regionalNote:'Non ci sono piani solo per questo paese. Questi piani regionali lo includono.',regionIntro:'Ogni piano copre più paesi con una sola eSIM. Controlla i paesi coperti dal piano prima di acquistare.',regionCountries:'Paesi coperti da questi piani',
@@ -84,6 +84,11 @@ const aliases={US:'USA America',GB:'UK England Angli Britain',AE:'Dubai UAE',TR:
 const purchasable=product=>product?.category==='esim_realtime'&&!product.requiresIdentityVerification;
 const isGlobal=product=>GLOBAL.test(product.title)||product.regions.some(region=>GLOBAL.test(region));
 const byPrice=(a,b)=>a.price-b.price||a.title.localeCompare(b.title);
+// The plan a 'from' price stands for: of the cheapest plans (many share one price), the one with the most data, then
+// the longest validity.
+const dataGb=plan=>unlimitedData(plan)?Infinity:(Number(plan.dataAmount)||0)*(/^MB$/i.test(plan.dataUnit||'')?1/1024:1);
+const fromPlanOf=plans=>{const low=Math.min(...plans.map(p=>p.price));return plans.filter(p=>p.price===low).sort((a,b)=>dataGb(b)-dataGb(a)||(b.validityHours||0)-(a.validityHours||0)||a.title.localeCompare(b.title))[0];};
+const cheapest=plans=>({price:Math.min(...plans.map(p=>p.price)),fromPlan:fromPlanOf(plans),plans:[...plans].sort(byPrice)});
 const regionRank=slug=>{const index=REGION_ORDER.indexOf(slug);return index<0?REGION_ORDER.length:index;};
 // Countries (one per covered code with a name), regions (MobiMatter's region labels; 'America' and 'Americas' are one,
 // multi-country plans without a label are 'Multi-country') and Global. Labels whose slugs collide are one region; a label that
@@ -105,7 +110,8 @@ function buildDestinations(products){
   }
  }
  // A country's 'from' price uses the plans for that country alone; without one, its cheapest regional plan, flagged.
- const fromPrice=items=>{const own=items.filter(p=>coveredCodes(p).length===1);return {price:Math.min(...(own.length?own:items).map(p=>p.price)),regionalPrice:!own.length};};
+ // fromPlan is the plan at that price, whose data and validity the card shows.
+ const fromPrice=items=>{const own=items.filter(p=>coveredCodes(p).length===1),plan=fromPlanOf(own.length?own:items);return {price:plan.price,regionalPrice:!own.length,fromPlan:plan};};
  const taken=new Set(),destinations=[];
  for(const code of [...countries.keys()].sort()){
   let slug=countrySlug(code);if(taken.has(slug))slug+='-'+code.toLowerCase();taken.add(slug);
@@ -115,8 +121,8 @@ function buildDestinations(products){
  const preferred=['al','tr','us','it','de','jp','gb','fr','ae'];
  destinations.sort((a,b)=>{const ai=preferred.indexOf(a.id),bi=preferred.indexOf(b.id);return (ai<0?999:ai)-(bi<0?999:bi)||a.en.localeCompare(b.en);});
  for(const [slug,{label,plans}] of [...regions].sort(([a],[b])=>regionRank(a)-regionRank(b)||a.localeCompare(b)))
-  destinations.push({kind:'region',type:'regional',id:'region-'+slug,slug,label,en:label,sq:regionName(label,'sq'),it:regionName(label,'it'),aliases:'',price:Math.min(...plans.map(p=>p.price)),plans:[...plans].sort(byPrice)});
- if(globalPlans.length)destinations.push({kind:'global',type:'global',id:'global',slug:'global',label:'Global',en:'Global',sq:'Globale',it:'Globale',aliases:'World Worldwide Bota Mondo',price:Math.min(...globalPlans.map(p=>p.price)),plans:[...globalPlans].sort(byPrice)});
+  destinations.push({kind:'region',type:'regional',id:'region-'+slug,slug,label,en:label,sq:regionName(label,'sq'),it:regionName(label,'it'),aliases:'',...cheapest(plans)});
+ if(globalPlans.length)destinations.push({kind:'global',type:'global',id:'global',slug:'global',label:'Global',en:'Global',sq:'Globale',it:'Globale',aliases:'World Worldwide Bota Mondo',...cheapest(globalPlans)});
  return destinations;
 }
 // The page that stands for a product on its own (old /?plan= links): its country, Global for a world plan, else its first region.
@@ -140,7 +146,9 @@ const planPath=(lang,destination,product)=>destinationPath(lang,destination)+'/'
 const formats={};
 const albanianMoney=value=>{const [whole,cents]=Math.abs(value).toFixed(2).split('.');return (value<0?'-':'')+(whole.length>4?whole.replace(/\B(?=(\d{3})+$)/g,' '):whole)+','+cents+' €';};
 const money=(value,lang)=>lang==='sq'?albanianMoney(Number(value)):(formats[lang]??=new Intl.NumberFormat(lang==='it'?'it-IT':'en-IE',{style:'currency',currency:'EUR'})).format(value);
-const dataFor=(plan,lang)=>plan.dataAmount&&plan.dataUnit?`${plan.dataAmount} ${plan.dataUnit}`:copy(lang).seeDetails;
+// Unlimited plans carry a nominal 1000 GB or more (Montenegro Unlimited: 3000 GB); the plan page gives the fair-use terms.
+const unlimitedData=plan=>/\bunlimited\b(?!\s+calls)/i.test(plan.title||'')&&Number(plan.dataAmount)>=1000;
+const dataFor=(plan,lang)=>unlimitedData(plan)?copy(lang).unlimited:plan.dataAmount&&plan.dataUnit?`${plan.dataAmount} ${plan.dataUnit}`:copy(lang).seeDetails;
 const durationFor=(plan,lang)=>{
  const hours=plan.validityHours,c=copy(lang);if(!hours)return c.seeDetails;
  const [n,one,many]=hours%24===0?[hours/24,c.day,c.days]:[hours,c.hour,c.hours];
@@ -164,7 +172,12 @@ function searchRank(destination,term,lang){
 const GLOBE='<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9s1.2-6.4 3.7-9z"/></svg>';
 const regionIcon=label=>{let svg='';try{svg=typeof globalThis.MobialoRegionIcon==='function'?String(globalThis.MobialoRegionIcon(label)||''):'';}catch{}return /^<svg[\s>]/.test(svg)&&!/<script|\son\w+=|javascript:/i.test(svg)?svg:GLOBE;};
 const flag=destination=>`<span class="flag${destination.kind==='country'?'':' region-icon'}" aria-hidden="true">${destination.kind==='country'?`<img src="https://flagcdn.com/w80/${escape(destination.id)}.png" alt="" width="30" height="22" loading="lazy">`:regionIcon(destination.label)}</span>`;
-const destinationCard=(destination,lang,attributes='')=>`<a class="destination-card" href="${escape(destinationPath(lang,destination))}"${attributes}>${flag(destination)}<div><h3>${escape(destination[lang])}</h3><p>${escape(fromLabel(destination,lang))} <b>${escape(money(destination.price,lang))}</b></p></div><span class="card-arrow" aria-hidden="true">→</span></a>`;
+// What the 'from' price buys ('1 GB · 7 days'); left out when the cheapest plan lacks either fact.
+const fromFacts=(destination,lang)=>{const plan=destination.fromPlan;return plan&&(unlimitedData(plan)||plan.dataAmount&&plan.dataUnit)&&plan.validityHours?`${dataFor(plan,lang)} · ${durationFor(plan,lang)}`:'';};
+const destinationCard=(destination,lang,attributes='')=>{
+ const facts=fromFacts(destination,lang);
+ return `<a class="destination-card" href="${escape(destinationPath(lang,destination))}"${attributes}>${flag(destination)}<div><h3>${escape(destination[lang])}</h3><p>${escape(fromLabel(destination,lang))} <b>${escape(money(destination.price,lang))}</b>${facts?`<span class="card-facts">${escape(facts)}</span>`:''}</p></div><span class="card-arrow" aria-hidden="true">→</span></a>`;
+};
 const providerBrand=plan=>`<div class="provider-brand">${plan.providerLogo?`<img src="${escape(plan.providerLogo)}" alt="" width="64" height="38" loading="lazy" referrerpolicy="no-referrer">`:''}<span>${escape(plan.provider)}</span></div>`;
 const badges=(plan,lang)=>[plan.features?.network&&/\b5G\b/i.test(plan.features.network)?'5G':null,plan.features?.hotspot===true?'Hotspot':null,plan.features?.calls===true?copy(lang).calls:null].filter(Boolean).map(text=>`<span>${escape(text)}</span>`).join('');
 // One compact row of a destination page: plan facts on the left, price and "View plan" on the right. The title link
@@ -177,5 +190,5 @@ const planCard=(plan,destination,lang,hidden=false)=>{
 };
 
 return {LANGUAGES,ORIGIN,PAGE_SIZE,COPY,copy,fill,escape,normalize,slugify,countryName,hasCountryName,coveredCodes,countrySlug,regionName,purchasable,isGlobal,buildDestinations,primaryDestination,findDestination,
- localPath,hubPath,destinationPath,planPath,money,dataFor,durationFor,plansLabel,coverageLabel,resultsLabel,fromLabel,ownHeading,destinationHeading,searchRank,regionIcon,flag,destinationCard,providerBrand,badges,planCard};
+ localPath,hubPath,destinationPath,planPath,money,dataFor,durationFor,plansLabel,coverageLabel,resultsLabel,fromLabel,fromFacts,ownHeading,destinationHeading,searchRank,regionIcon,flag,destinationCard,providerBrand,badges,planCard};
 })();
