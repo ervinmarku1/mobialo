@@ -10,7 +10,7 @@ Server environment variables (Production in Vercel):
 - SUPER_ADMIN_USER_IDS (the owner's UUID only; enables the approval workflow and
   always requires 2FA for that account)
 
-The owner (ervinmarku1989@hotmail.com) is the superadmin. The UUID values are saved
+The owner's account is the superadmin. The UUID values are saved
 in local .env.local; copy them to Vercel and never add them to source control.
 The existing public authentication configuration also needs SUPABASE_PUBLISHABLE_KEY.
 

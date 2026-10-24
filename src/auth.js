@@ -43,6 +43,8 @@ function render(){
   $('#auth-fields').innerHTML=(mode==='join'?field('name','text','name','name'):'')+(['join','sign','reset'].includes(mode)?field('email','email','email','email'):'')+(['join','sign','update'].includes(mode)?field('password','password','password',mode==='sign'?'current-password':'new-password',mode==='sign'?'':'password-hint'):'')+(['join','update'].includes(mode)?`<small class="auth-hint" id="password-hint">${t('passwordHint')}</small>`+field('confirm','password','confirm','new-password'):'')+(mode==='sign'?`<a class="forgot-link" href="${withNext('/forgot-password',nextPath)}">${t('forgot')}</a>`:'');
   if(mode==='account'&&user){const p=document.createElement('p');p.className='account-email';p.textContent=user.email;$('#auth-fields').append(p);}
   const sign=withNext('/sign-in',nextPath);
+  // Sign-up names the Terms and the Privacy policy right under the button.
+  $('#auth-legal').hidden=mode!=='join';$('#auth-legal').innerHTML=mode==='join'?t('joinLegal'):'';
   $('#auth-switch').innerHTML=mode==='account'?`<a href="${hub}">${t('browse')}</a>`:mode==='join'?`${t('hasAccount')} <a href="${sign}">${t('signin')}</a>`:mode==='sign'?`${t('noAccount')} <a href="${withNext('/join',nextPath)}">${t('join')}</a>`:`<a href="${sign}">${t('back')}</a> · <a href="${withNext('/forgot-password',nextPath)}">${t('forgot')}</a>`;
   status();
 }

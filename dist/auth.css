@@ -12,3 +12,5 @@
 @media(max-width:600px){.auth-page header.header .header-search{margin-left:auto}}
 /* Cloudflare Turnstile (src/captcha.js): invisible unless the visitor has to interact, then centred above the button. */
 .auth-captcha{display:flex;justify-content:center}.auth-captcha>*{margin-top:14px}
+/* Sign-up: the Terms and Privacy policy line under the button. */
+.auth-legal{margin:12px 0 0;font-size:13px;line-height:1.5;color:var(--muted,#6f6863);text-align:center}.auth-legal a{color:inherit;text-decoration:underline;text-underline-offset:2px}

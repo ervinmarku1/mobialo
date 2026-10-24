@@ -52,6 +52,8 @@ database run all of them; for an existing one, run only the files that are missi
    (no capture, no payment flag), set by the hourly job `mobialo-expire-checkouts`, and for rows held for a check that
    never had a payment. Customers see "Payment not completed", the admin panel "Skaduar pa pagesë". Apply AFTER
    deploying the code that knows the state (the webhook delivers a late completed capture, checkout refuses to capture).
+16. `migrations/20261024140000_service_role_grants.sql`: the server key (service_role) can no longer delete or truncate
+   the shop's tables (it never does); jobs and the SQL Editor keep every privilege. Independent of the code.
 
 All files are safe to run again. A null column below means that migration is missing:
 
@@ -70,7 +72,8 @@ select to_regclass('public.esim_deliveries') as m1, to_regclass('public.esim_tes
   (select coalesce(bool_and(defaclacl::text not like '%anon=%'),true) from pg_default_acl
     where defaclnamespace='public'::regnamespace and defaclrole='postgres'::regrole) as m13,
   to_regprocedure('public.reserve_account_order(uuid,uuid,text,text,numeric,text,text,timestamptz,text,integer)') as m14,
-  (select 1 from pg_constraint where conname='esim_deliveries_state_check' and pg_get_constraintdef(oid) like '%expired%') as m15;
+  (select 1 from pg_constraint where conname='esim_deliveries_state_check' and pg_get_constraintdef(oid) like '%expired%') as m15,
+  not has_table_privilege('service_role','public.esim_deliveries','DELETE') as m16;
 select jobname, schedule, active from cron.job;
 ```
 
